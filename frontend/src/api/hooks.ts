@@ -121,3 +121,12 @@ export const useProjection = (input: ProjectionInput) =>
     placeholderData: keepPreviousData,
     staleTime: Infinity,
   })
+
+// News fetches are slow the first time (GDELT throttling, FinBERT model load).
+export const useNews = (symbol: string) =>
+  useQuery({
+    queryKey: ['news', symbol],
+    queryFn: () => api.news(symbol),
+    staleTime: 10 * 60_000,
+    retry: false,
+  })

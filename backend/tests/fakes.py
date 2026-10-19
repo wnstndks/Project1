@@ -1,14 +1,17 @@
 from datetime import date, timedelta
 
-from app.data.news_sources import Article, GdeltDay
+from app.data.news_sources import Article, GdeltDay, NewsDataError
 
 
 class FakeGdelt:
     def __init__(self) -> None:
         self.calls: list[tuple[str, date, date]] = []
+        self.fail = False
 
-    def daily(self, query: str, start: date, end: date) -> list[GdeltDay]:
+    def daily(self, query: str, start: date, end: date, attempts: int = 4) -> list[GdeltDay]:
         self.calls.append((query, start, end))
+        if self.fail:
+            raise NewsDataError("GDELT rate limit: try again in a minute")
         days = []
         d = start
         while d <= end:

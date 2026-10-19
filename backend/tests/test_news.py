@@ -54,9 +54,11 @@ def service(db, provider, gdelt, finnhub):
 @pytest.mark.parametrize(
     ("symbol", "name", "expected"),
     [
-        ("AAPL", "Apple Inc.", '("Apple" OR "AAPL") sourcelang:english'),
-        ("NVDA", "NVIDIA Corporation", '("NVIDIA" OR "NVDA") sourcelang:english'),
-        ("BTC-USD", None, '("Bitcoin" OR "BTC") sourcelang:english'),
+        ("AAPL", "Apple Inc.", '"Apple" sourcelang:english'),
+        ("NVDA", "NVIDIA Corporation", '"NVIDIA" sourcelang:english'),
+        ("META", "Meta Platforms, Inc.", '"Meta Platforms" sourcelang:english'),
+        ("V", "Visa Inc.", '"Visa Inc" sourcelang:english'),
+        ("BTC-USD", None, '"Bitcoin" sourcelang:english'),
         ("VOO", "Vanguard S&P 500 ETF", '"S&P 500" sourcelang:english'),
     ],
 )
@@ -83,6 +85,15 @@ def test_sync_scores_dedupes_and_is_incremental(service, gdelt, finnhub, db):
     assert set(by_url) == {"u1", "u2"}
     assert by_url["u1"].positive > by_url["u1"].negative
     assert by_url["u2"].negative > by_url["u2"].positive
+
+
+def test_interactive_sync_degrades_to_warning(service, gdelt):
+    gdelt.fail = True
+    summary = service.summary("AAPL")
+    assert summary.warnings and "GDELT" in summary.warnings[0]
+    assert [a.url for a in summary.articles]  # Finnhub data still returned
+    with pytest.raises(NewsDataError):
+        service.sync("AAPL", date(2026, 9, 1))  # background sync surfaces the error
 
 
 def test_crypto_news_filters_by_coin(service):

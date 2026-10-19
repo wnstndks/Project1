@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { useAssetInfo, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart } from '../components/CandleChart'
+import { NewsCard } from '../components/NewsCard'
 import { PredictionPanel } from '../components/PredictionPanel'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { useMoney } from '../lib/currency'
@@ -98,6 +99,10 @@ export function AssetDetail() {
           <Muted>보유하고 있지 않은 종목입니다.</Muted>
         </Card>
       )}
+
+      <Card title="최근 해외 뉴스">
+        <NewsCard symbol={resolved} />
+      </Card>
 
       <Card title="주가 예측">
         <PredictionPanel symbol={resolved} fx={fx} />

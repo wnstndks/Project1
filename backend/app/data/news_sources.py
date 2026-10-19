@@ -56,9 +56,10 @@ class GdeltClient:
         self.sleep = sleep
         self.clock = clock
 
-    def daily(self, query: str, start: date, end: date) -> list[GdeltDay]:
-        tone = self._timeline(query, "timelinetone", start, end)
-        volume = self._timeline(query, "timelinevolraw", start, end)
+    def daily(self, query: str, start: date, end: date, attempts: int = 4) -> list[GdeltDay]:
+        """`attempts` > 1 waits and retries on rate limits (for background collection only)."""
+        tone = self._timeline(query, "timelinetone", start, end, attempts)
+        volume = self._timeline(query, "timelinevolraw", start, end, attempts)
         days = sorted(set(tone) | set(volume))
         return [
             GdeltDay(
@@ -70,7 +71,9 @@ class GdeltClient:
             for d in days
         ]
 
-    def _timeline(self, query: str, mode: str, start: date, end: date) -> dict[date, dict]:
+    def _timeline(
+        self, query: str, mode: str, start: date, end: date, attempts: int
+    ) -> dict[date, dict]:
         params = {
             "query": query,
             "mode": mode,
@@ -79,15 +82,17 @@ class GdeltClient:
             "enddatetime": _ymdhms(end, end=True),
             "timelinesmooth": 0,
         }
-        for attempt in range(4):
+        for attempt in range(attempts):
             self._throttle()
             try:
                 res = self.http.get(GDELT_URL, params=params)
             except httpx.HTTPError as exc:
                 raise NewsDataError(f"GDELT request failed: {exc}") from exc
             if res.status_code == 429:
-                self.sleep(10 * (attempt + 1))
+                if attempt + 1 < attempts:
+                    self.sleep(10 * (attempt + 1))
                 continue
+            # GDELT answers some query errors ("phrase is too short") with 200 + plain text.
             if res.status_code != 200 or not res.text.lstrip().startswith("{"):
                 raise NewsDataError(f"GDELT error {res.status_code}: {res.text[:120]}")
             timeline = res.json().get("timeline") or []

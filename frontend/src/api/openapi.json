@@ -894,6 +894,60 @@
           }
         }
       }
+    },
+    "/api/news/{symbol}": {
+      "get": {
+        "tags": [
+          "news"
+        ],
+        "summary": "News",
+        "operationId": "news_api_news__symbol__get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -924,6 +978,50 @@
           "weight"
         ],
         "title": "AllocationOut"
+      },
+      "ArticleOut": {
+        "properties": {
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "positive": {
+            "type": "number",
+            "title": "Positive"
+          },
+          "negative": {
+            "type": "number",
+            "title": "Negative"
+          },
+          "neutral": {
+            "type": "number",
+            "title": "Neutral"
+          }
+        },
+        "type": "object",
+        "required": [
+          "published_at",
+          "source",
+          "headline",
+          "url",
+          "positive",
+          "negative",
+          "neutral"
+        ],
+        "title": "ArticleOut"
       },
       "AssetInfo": {
         "properties": {
@@ -1590,6 +1688,86 @@
           "train_seconds"
         ],
         "title": "Metrics"
+      },
+      "NewsDayOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "tone": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tone"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "tone",
+          "volume"
+        ],
+        "title": "NewsDayOut"
+      },
+      "NewsOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/ArticleOut"
+            },
+            "type": "array",
+            "title": "Articles"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/NewsDayOut"
+            },
+            "type": "array",
+            "title": "Days"
+          },
+          "finnhub_enabled": {
+            "type": "boolean",
+            "title": "Finnhub Enabled"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "articles",
+          "days",
+          "finnhub_enabled",
+          "warnings"
+        ],
+        "title": "NewsOut"
       },
       "PreviewOut": {
         "properties": {

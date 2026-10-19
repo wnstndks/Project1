@@ -347,6 +347,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/news/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News */
+        get: operations["news_api_news__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -360,6 +377,26 @@ export interface components {
             market_value_krw: number;
             /** Weight */
             weight: number;
+        };
+        /** ArticleOut */
+        ArticleOut: {
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Source */
+            source: string;
+            /** Headline */
+            headline: string;
+            /** Url */
+            url: string;
+            /** Positive */
+            positive: number;
+            /** Negative */
+            negative: number;
+            /** Neutral */
+            neutral: number;
         };
         /** AssetInfo */
         AssetInfo: {
@@ -622,6 +659,31 @@ export interface components {
             best_epoch: number;
             /** Train Seconds */
             train_seconds: number;
+        };
+        /** NewsDayOut */
+        NewsDayOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Tone */
+            tone: number | null;
+            /** Volume */
+            volume: number | null;
+        };
+        /** NewsOut */
+        NewsOut: {
+            /** Symbol */
+            symbol: string;
+            /** Articles */
+            articles: components["schemas"]["ArticleOut"][];
+            /** Days */
+            days: components["schemas"]["NewsDayOut"][];
+            /** Finnhub Enabled */
+            finnhub_enabled: boolean;
+            /** Warnings */
+            warnings: string[];
         };
         /** PreviewOut */
         PreviewOut: {
@@ -1545,6 +1607,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommitOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    news_api_news__symbol__get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsOut"];
                 };
             };
             /** @description Validation Error */

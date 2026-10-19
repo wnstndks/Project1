@@ -21,7 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.assets import CRYPTO_ASSETS, trades_every_day
-from app.data.news_sources import Article, FinnhubClient, GdeltClient
+from app.data.news_sources import Article, FinnhubClient, GdeltClient, NewsDataError
 from app.data.provider import MarketDataProvider
 from app.db.models import GdeltDaily, NewsArticle, NewsSync
 from app.ml.sentiment import SentimentScorer
@@ -41,15 +41,25 @@ NEWS_FEATURES = [
     "has_gdelt",
 ]
 
+# GDELT rejects short phrases ("The specified phrase is too short"), so tickers like "AAPL"
+# or "BTC" cannot be searched; queries use names of at least MIN_PHRASE characters.
+MIN_PHRASE = 5
 _GDELT_OVERRIDES = {
-    "BTC-USD": '("Bitcoin" OR "BTC")',
-    "ETH-USD": '("Ethereum" OR "Ether")',
-    "XRP-USD": '("XRP" OR "Ripple")',
-    "SOL-USD": '("Solana")',
+    "BTC-USD": '"Bitcoin"',
+    "ETH-USD": '"Ethereum"',
+    "XRP-USD": '"Ripple"',
+    "SOL-USD": '"Solana"',
     "SPY": '"S&P 500"',
     "VOO": '"S&P 500"',
     "IVV": '"S&P 500"',
     "QQQ": '"Nasdaq 100"',
+}
+# Words used to pick a coin's headlines out of Finnhub's general crypto feed.
+_CRYPTO_KEYWORDS = {
+    "BTC-USD": ("Bitcoin", "BTC"),
+    "ETH-USD": ("Ethereum", "Ether", "ETH"),
+    "XRP-USD": ("XRP", "Ripple"),
+    "SOL-USD": ("Solana", "SOL"),
 }
 _CORP_SUFFIX = re.compile(
     r"[,.]?\s+(inc|corp|corporation|co|company|ltd|plc|holdings|group|class [a-z])\.?$", re.I
@@ -58,13 +68,19 @@ _CORP_SUFFIX = re.compile(
 
 def gdelt_query(symbol: str, name: str | None) -> str:
     if symbol in _GDELT_OVERRIDES:
-        q = _GDELT_OVERRIDES[symbol]
-    else:
-        base = (name or symbol).strip()
-        while (stripped := _CORP_SUFFIX.sub("", base)) != base:
-            base = stripped
-        q = f'("{base}" OR "{symbol}")' if base.upper() != symbol else f'"{symbol}"'
-    return f"{q} sourcelang:english"
+        return f"{_GDELT_OVERRIDES[symbol]} sourcelang:english"
+    full = re.sub(r"[^\w&.\- ]", "", name or symbol).strip()
+    base = full
+    while (stripped := _CORP_SUFFIX.sub("", base)) != base:
+        base = stripped
+    # "Meta" or "Visa" alone is too short for GDELT: fall back to the full official name.
+    phrase = base if len(base) >= MIN_PHRASE else full.rstrip(".")
+    return f'"{phrase}" sourcelang:english'
+
+
+@dataclass
+class SyncReport:
+    warnings: list[str]
 
 
 def article_feature_date(published_at: datetime, every_day: bool) -> date:
@@ -86,6 +102,7 @@ class NewsSummary:
     articles: list[NewsArticle]
     days: list[dict]
     finnhub_enabled: bool
+    warnings: list[str]
 
 
 class NewsService:
@@ -107,15 +124,28 @@ class NewsService:
 
     # ---- syncing -------------------------------------------------------------------------
 
-    def sync(self, symbol: str, start: date, gdelt: bool = True) -> None:
-        """Fetch any news for `symbol` since `start` that is not cached yet."""
+    def sync(self, symbol: str, start: date, interactive: bool = False) -> SyncReport:
+        """Fetch any news for `symbol` since `start` that is not cached yet.
+
+        Interactive syncs (a user is waiting) try each source once and report failures as
+        warnings, falling back to cached data. Background syncs wait out rate limits and raise.
+        """
         state = self._state(symbol)
         today = self.now().date()
-        if gdelt:
-            self._sync_gdelt(state, start, today)
+        warnings: list[str] = []
+        steps = [("GDELT", lambda: self._sync_gdelt(state, start, today, interactive))]
         if self.finnhub is not None:
-            self._sync_finnhub(state, max(start, today - FINNHUB_LOOKBACK), today)
+            since = max(start, today - FINNHUB_LOOKBACK)
+            steps.append(("Finnhub", lambda: self._sync_finnhub(state, since, today)))
+        for name, step in steps:
+            try:
+                step()
+            except NewsDataError as exc:
+                if not interactive:
+                    raise
+                warnings.append(f"{name}: {exc}")
         self.db.commit()
+        return SyncReport(warnings)
 
     def _state(self, symbol: str) -> NewsSync:
         state = self.db.get(NewsSync, symbol)
@@ -125,7 +155,9 @@ class NewsService:
             self.db.add(state)
         return state
 
-    def _sync_gdelt(self, state: NewsSync, start: date, today: date) -> None:
+    def _sync_gdelt(
+        self, state: NewsSync, start: date, today: date, interactive: bool = False
+    ) -> None:
         now = self.now()
         if state.gdelt_from is None or start < state.gdelt_from:
             fetch_from = start
@@ -133,7 +165,8 @@ class NewsService:
             fetch_from = self._last_gdelt_date(state.symbol) or start
         else:
             return
-        days = self.gdelt.daily(state.query, fetch_from, today)
+        attempts = 1 if interactive else 4
+        days = self.gdelt.daily(state.query, fetch_from, today, attempts=attempts)
         if days:
             stmt = sqlite_insert(GdeltDaily).values(
                 [
@@ -180,7 +213,7 @@ class NewsService:
         state.finnhub_synced_at = now
 
     def _crypto_articles(self, symbol: str) -> list[Article]:
-        words = re.findall(r'"([^"]+)"', _GDELT_OVERRIDES[symbol])
+        words = _CRYPTO_KEYWORDS[symbol]
         return [
             a
             for a in self.finnhub.crypto_news()
@@ -219,7 +252,7 @@ class NewsService:
 
     def summary(self, symbol: str, days: int = 30, limit: int = 30) -> NewsSummary:
         today = self.now().date()
-        self.sync(symbol, today - timedelta(days=days))
+        report = self.sync(symbol, today - timedelta(days=days), interactive=True)
         articles = list(
             self.db.scalars(
                 select(NewsArticle)
@@ -237,6 +270,7 @@ class NewsService:
             articles=articles,
             days=[{"date": g.date, "tone": g.tone, "volume": g.volume} for g in gd],
             finnhub_enabled=self.finnhub is not None,
+            warnings=report.warnings,
         )
 
     def daily_features(self, symbol: str, index: pd.DatetimeIndex) -> pd.DataFrame:

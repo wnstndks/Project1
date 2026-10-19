@@ -18,6 +18,7 @@ export type Assumptions = Schemas['AssumptionsOut']
 export type ProjectionInput = Schemas['ProjectionIn']
 export type Projection = Schemas['ProjectionOut']
 export type ImportStatus = Schemas['ImportStatusOut']
+export type News = Schemas['NewsOut']
 export type ImportPreview = Schemas['PreviewOut']
 export type ImportPreviewRow = Schemas['PreviewRowOut']
 export type ImportCommit = Schemas['CommitIn']
@@ -95,6 +96,7 @@ export const api = {
   },
   commitImport: (data: ImportCommit) =>
     request<{ created: number }>('/imports/commit', { method: 'POST', body: JSON.stringify(data) }),
+  news: (symbol: string) => request<News>(`/news/${encodeURIComponent(symbol)}`),
   usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>

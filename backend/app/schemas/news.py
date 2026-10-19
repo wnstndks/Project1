@@ -26,3 +26,4 @@ class NewsOut(BaseModel):
     articles: list[ArticleOut]
     days: list[NewsDayOut]
     finnhub_enabled: bool
+    warnings: list[str]
