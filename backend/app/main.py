@@ -1,5 +1,6 @@
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
@@ -23,6 +24,7 @@ from app.services.market_data import SymbolNotFoundError
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Asset Manager API", version="0.1.0")
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

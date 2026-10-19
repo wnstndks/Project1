@@ -25,7 +25,7 @@ class ProjectionIn(BaseModel):
     monthly_contribution_krw: float = Field(0, ge=0, le=1e10)
     inflation_pct: float = Field(2.5, ge=0, le=20)
     simulations: int = Field(5000, ge=500, le=20000)
-    seed: int = 42
+    seed: int = Field(42, ge=0, le=2**32 - 1)
     stock_return_pct: float | None = Field(None, ge=-50, le=100)
     crypto_return_pct: float | None = Field(None, ge=-50, le=100)
     stock_vol_pct: float | None = Field(None, ge=0, le=300)

@@ -183,3 +183,47 @@ def test_finnhub_key_sent_as_header_not_url():
     client.company_news("AAPL", date(2026, 1, 1), date(2026, 1, 10))
     assert "secret-key" not in str(seen[0].url)
     assert seen[0].headers["X-Finnhub-Token"] == "secret-key"
+
+
+def test_gdelt_sub_daily_points_are_aggregated_per_day():
+    from app.data.news_sources import _daily
+
+    tone = _daily(
+        [
+            {"date": "20261015T000000Z", "value": 1.0},
+            {"date": "20261015T120000Z", "value": 3.0},
+            {"date": "20261016T000000Z", "value": -2.0},
+        ],
+        "timelinetone",
+    )
+    assert tone[date(2026, 10, 15)]["value"] == 2.0
+    vol = _daily(
+        [
+            {"date": "20261015T000000Z", "value": 5, "norm": 100},
+            {"date": "20261015T060000Z", "value": 7, "norm": 300},
+        ],
+        "timelinevolraw",
+    )
+    assert vol[date(2026, 10, 15)] == {"value": 12, "norm": 400}
+
+
+def test_short_gdelt_syncs_request_at_least_eight_days(service, gdelt):
+    service.sync("AAPL", TODAY - timedelta(days=2))
+    _, start, end = gdelt.calls[0]
+    assert (end - start).days >= 8
+
+
+def test_finbert_coverage_mask_separates_no_data_from_no_articles(service):
+    service.sync("AAPL", date(2026, 10, 1))
+    index = pd.DatetimeIndex(pd.bdate_range("2026-09-28", "2026-10-16"))
+    f = service.daily_features("AAPL", index)
+    assert f.loc["2026-09-30", "finbert_covered"] == 0  # before collection started
+    assert f.loc["2026-10-14", "finbert_covered"] == 1  # covered, even with no articles
+    assert f.loc["2026-10-14", "has_finbert"] == 0
+
+
+def test_crypto_coverage_starts_at_oldest_returned_article(service, db):
+    from app.db.models import NewsSync
+
+    service.sync("BTC-USD", date(2026, 9, 1))
+    assert db.get(NewsSync, "BTC-USD").finnhub_from == date(2026, 10, 16)

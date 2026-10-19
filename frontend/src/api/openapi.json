@@ -1926,6 +1926,28 @@
               }
             ],
             "title": "Diff"
+          },
+          "delta_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Quantity"
+          },
+          "delta_price_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Price Usd"
           }
         },
         "type": "object",
@@ -1943,7 +1965,9 @@
           "status",
           "message",
           "current_quantity",
-          "diff"
+          "diff",
+          "delta_quantity",
+          "delta_price_usd"
         ],
         "title": "PreviewRowOut"
       },
@@ -1979,6 +2003,8 @@
           },
           "seed": {
             "type": "integer",
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
             "title": "Seed",
             "default": 42
           },
@@ -2415,6 +2441,14 @@
             "title": "Fx Rate",
             "description": "USD/KRW actually paid; defaults to the market rate on trade_date"
           },
+          "seq": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Seq",
+            "description": "Order among same-day trades",
+            "default": 0
+          },
           "note": {
             "anyOf": [
               {
@@ -2483,6 +2517,10 @@
             ],
             "title": "Fx Rate"
           },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
           "note": {
             "anyOf": [
               {
@@ -2523,6 +2561,7 @@
           "price",
           "fee",
           "fx_rate",
+          "seq",
           "note",
           "created_at"
         ],

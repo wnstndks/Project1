@@ -46,7 +46,7 @@ export function Transactions() {
         <TransactionForm
           key={editing?.id ?? 'new'}
           editing={editing}
-          onSubmit={(data) => save(data).catch(() => undefined)}
+          onSubmit={save}
           onCancel={() => {
             setEditing(null)
             update.reset()

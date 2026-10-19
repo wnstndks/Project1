@@ -20,7 +20,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import delete, func, select
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db.models import AssetType, Side, Transaction
 from app.db.session import SessionLocal
 from app.deps import get_provider, get_quote_cache
@@ -68,20 +68,24 @@ def main() -> None:
     parser.add_argument("--reset", action="store_true", help="delete all transactions first")
     args = parser.parse_args()
 
-    print(f"Database: {get_settings().database_url}")
+    url = get_settings().database_url
+    print(f"Database: {url}")
+    if args.reset and url == Settings.model_fields["database_url"].default:
+        sys.exit(
+            "Refusing --reset on the default database, which may hold real holdings.\n"
+            'Point AM_DATABASE_URL at a demo file first, e.g. AM_DATABASE_URL="sqlite:///demo.db"'
+        )
     command.upgrade(Config(str(BACKEND_DIR / "alembic.ini")), "head")
 
     with SessionLocal() as db:
         existing = db.scalar(select(func.count()).select_from(Transaction))
         if existing and not args.reset:
             sys.exit(f"{existing} transactions already exist. Use --reset to replace them.")
-        if args.reset:
-            db.execute(delete(Transaction))
-            db.commit()
 
         market = MarketDataService(db, get_provider(), get_quote_cache())
-        txs = TransactionService(db, market)
+        # Look up every price first: if the network fails, nothing has been deleted yet.
         today = date.today()
+        items = []
         for asset_type, symbol, side, days_ago, qty in sorted(DEMO_TRADES, key=lambda t: -t[3]):
             day = today - timedelta(days=days_ago)
             price = _close_on(market, symbol, day)
@@ -89,7 +93,7 @@ def main() -> None:
             fee = Decimal("0")
             if asset_type == C:
                 fee = (quantity * price * CRYPTO_FEE_RATE).quantize(Decimal("0.01"))
-            txs.create(
+            items.append(
                 TransactionIn(
                     asset_type=asset_type,
                     symbol=symbol,
@@ -102,6 +106,11 @@ def main() -> None:
                 )
             )
             print(f"  {day} {side.value:<4} {qty:>6} {symbol:<8} @ {price}")
+
+        # Delete and insert in one transaction (create_many commits once at the end).
+        if args.reset:
+            db.execute(delete(Transaction))
+        TransactionService(db, market).create_many(items)
 
     print(f"Loaded {len(DEMO_TRADES)} demo transactions.")
 

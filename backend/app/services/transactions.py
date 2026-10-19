@@ -51,9 +51,12 @@ class TransactionService:
         return txs
 
     def update(self, tx_id: int, data: TransactionIn) -> Transaction:
+        """Replace the fields the client sent; fields it omitted (e.g. fx_rate) are kept."""
         tx = self._get(tx_id)
-        values = self._clean(data)
-        updated = Transaction(id=tx.id, **values)
+        sent = self._clean(data)
+        values = {k: v for k, v in sent.items() if k in data.model_fields_set or k == "symbol"}
+        current = {c: getattr(tx, c) for c in sent}
+        updated = Transaction(id=tx.id, **(current | values))
         # The edit can break the ledger of the new symbol and, if renamed, the old one.
         self._check_ledger(updated.symbol, adds=[updated], remove=tx)
         if tx.symbol != updated.symbol:

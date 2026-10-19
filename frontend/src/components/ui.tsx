@@ -56,13 +56,29 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
   label: string
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex rounded-lg border border-line p-0.5"
+      onKeyDown={(e) => {
+        // Radio-group keyboard pattern: arrows move the selection, focus follows.
+        const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
+        if (!step) return
+        e.preventDefault()
+        const i = options.findIndex((o) => o.value === value)
+        const next = options[(i + step + options.length) % options.length]
+        onChange(next.value)
+        const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+        buttons[(i + step + options.length) % options.length]?.focus()
+      }}
+    >
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          tabIndex={o.value === value ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
             o.value === value ? 'bg-ink text-surface' : 'text-ink-2 hover:bg-hover'

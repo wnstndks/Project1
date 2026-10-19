@@ -5,6 +5,7 @@ rate of its own trade date, which is how Korean brokers report won P&L: the KRW 
 is what was actually spent in won, so KRW P&L includes the currency gain or loss.
 """
 
+import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date
@@ -88,9 +89,14 @@ def trade_fx(tx: Transaction, fx_on: FxLookup) -> Decimal:
 
 
 def ordered(transactions: Iterable[Transaction]) -> list[Transaction]:
-    """Chronological order; same-day trades keep insertion order, with buys before sells."""
+    """Chronological order. Same-day trades follow `seq`, then entry order (id).
+
+    Unsaved trades (no id yet) sort after saved ones from the same day, in the given order.
+    A same-day sell-then-buy round trip therefore realizes P&L against the earlier cost.
+    """
     return sorted(
-        transactions, key=lambda t: (t.trade_date, 0 if t.side == Side.BUY else 1, t.id or 0)
+        transactions,
+        key=lambda t: (t.trade_date, t.seq or 0, t.id if t.id is not None else math.inf),
     )
 
 

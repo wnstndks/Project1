@@ -14,9 +14,13 @@ def make_engine(url: str, **kwargs) -> Engine:
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")
-        def _enable_foreign_keys(dbapi_conn, _record) -> None:
+        def _sqlite_pragmas(dbapi_conn, _record) -> None:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            # WAL lets readers proceed while one request writes; busy_timeout makes a second
+            # writer wait instead of failing immediately with "database is locked".
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=15000")
             cursor.close()
 
     return engine

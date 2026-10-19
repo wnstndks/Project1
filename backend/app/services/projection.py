@@ -25,6 +25,8 @@ CLASSES = (AssetType.STOCK, AssetType.CRYPTO)
 PROXY = {AssetType.STOCK: "SPY", AssetType.CRYPTO: "BTC-USD"}
 DEFAULT_RETURN_PCT = {AssetType.STOCK: 7.0, AssetType.CRYPTO: 10.0}
 LOOKBACK_YEARS = 5
+# Volatility from fewer monthly returns than this is too noisy (or NaN): use the proxy.
+MIN_MONTHS = 12
 
 
 @dataclass
@@ -162,6 +164,10 @@ class ProjectionService:
             mine = [h for h in holdings if h.asset_type == cls]
             weights = {h.symbol: float(h.market_value) for h in mine} or {PROXY[cls]: 1.0}
             series = self._class_monthly_returns(weights, start)
+            proxied = not mine
+            if len(series) < MIN_MONTHS:
+                series = self._class_monthly_returns({PROXY[cls]: 1.0}, start)
+                proxied = True
             class_returns[cls] = series
             value = sum(float(h.market_value_krw) for h in mine)
             stats[cls] = ClassStats(
@@ -172,7 +178,7 @@ class ProjectionService:
                 hist_return_pct=float(series.mean() * 12 * 100),
                 vol_pct=float(series.std() * np.sqrt(12) * 100),
                 default_return_pct=DEFAULT_RETURN_PCT[cls],
-                proxy=None if mine else PROXY[cls],
+                proxy=PROXY[cls] if proxied else None,
             )
 
         joined = pd.concat(class_returns.values(), axis=1, join="inner").dropna()

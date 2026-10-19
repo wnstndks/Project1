@@ -29,6 +29,8 @@ from app.ml.sentiment import SentimentScorer
 NEW_YORK = ZoneInfo("America/New_York")
 US_CLOSE = time(16, 0)
 GDELT_TTL = timedelta(hours=6)
+# GDELT returns sub-daily buckets for ranges of a week or less; always ask for more.
+GDELT_MIN_SPAN = timedelta(days=8)
 FINNHUB_TTL = timedelta(minutes=30)
 FINNHUB_LOOKBACK = timedelta(days=365)
 
@@ -39,6 +41,9 @@ NEWS_FEATURES = [
     "gdelt_volume",
     "has_finbert",
     "has_gdelt",
+    # 1 where headline collection covered the date. Separates "no articles" from "no data":
+    # Finnhub's free tier only reaches back about a year.
+    "finbert_covered",
 ]
 
 # GDELT rejects short phrases ("The specified phrase is too short"), so tickers like "AAPL"
@@ -47,8 +52,9 @@ MIN_PHRASE = 5
 _GDELT_OVERRIDES = {
     "BTC-USD": '"Bitcoin"',
     "ETH-USD": '"Ethereum"',
-    "XRP-USD": '"Ripple"',
-    "SOL-USD": '"Solana"',
+    # Bare "Ripple" matches "ripple effect" and "Solana" matches place names.
+    "XRP-USD": '("XRP price" OR "XRP Ledger" OR "Ripple Labs")',
+    "SOL-USD": '("Solana blockchain" OR "Solana network" OR "Solana price")',
     "SPY": '"S&P 500"',
     "VOO": '"S&P 500"',
     "IVV": '"S&P 500"',
@@ -133,17 +139,24 @@ class NewsService:
         state = self._state(symbol)
         today = self.now().date()
         warnings: list[str] = []
-        steps = [("GDELT", lambda: self._sync_gdelt(state, start, today, interactive))]
+        # Phase 1: network and FinBERT only. Each step returns a write to apply later, so the
+        # SQLite write lock is never held while waiting on GDELT, Finnhub or the model.
+        steps = [("GDELT", lambda: self._fetch_gdelt(state, start, today, interactive))]
         if self.finnhub is not None:
             since = max(start, today - FINNHUB_LOOKBACK)
-            steps.append(("Finnhub", lambda: self._sync_finnhub(state, since, today)))
+            steps.append(("Finnhub", lambda: self._fetch_finnhub(state, since, today)))
+        writes = []
         for name, step in steps:
             try:
-                step()
+                writes.append(step())
             except NewsDataError as exc:
                 if not interactive:
                     raise
                 warnings.append(f"{name}: {exc}")
+        # Phase 2: one short write transaction.
+        for write in writes:
+            if write is not None:
+                write()
         self.db.commit()
         return SyncReport(warnings)
 
@@ -155,18 +168,28 @@ class NewsService:
             self.db.add(state)
         return state
 
-    def _sync_gdelt(
+    def _fetch_gdelt(
         self, state: NewsSync, start: date, today: date, interactive: bool = False
-    ) -> None:
+    ) -> Callable[[], None] | None:
         now = self.now()
         if state.gdelt_from is None or start < state.gdelt_from:
             fetch_from = start
         elif state.gdelt_synced_at is None or now - state.gdelt_synced_at > GDELT_TTL:
             fetch_from = self._last_gdelt_date(state.symbol) or start
         else:
-            return
+            return None
+        fetch_from = min(fetch_from, today - GDELT_MIN_SPAN)
         attempts = 1 if interactive else 4
         days = self.gdelt.daily(state.query, fetch_from, today, attempts=attempts)
+
+        def write() -> None:
+            self._write_gdelt(state, days)
+            state.gdelt_from = min(state.gdelt_from or fetch_from, fetch_from)
+            state.gdelt_synced_at = now
+
+        return write
+
+    def _write_gdelt(self, state: NewsSync, days: list) -> None:
         if days:
             stmt = sqlite_insert(GdeltDaily).values(
                 [
@@ -186,10 +209,10 @@ class NewsService:
                     set_={k: stmt.excluded[k] for k in ("tone", "volume", "volume_norm")},
                 )
             )
-        state.gdelt_from = min(state.gdelt_from or fetch_from, fetch_from)
-        state.gdelt_synced_at = now
 
-    def _sync_finnhub(self, state: NewsSync, start: date, today: date) -> None:
+    def _fetch_finnhub(
+        self, state: NewsSync, start: date, today: date
+    ) -> Callable[[], None] | None:
         now = self.now()
         if state.finnhub_from is None or start < state.finnhub_from:
             fetch_from = start
@@ -202,15 +225,24 @@ class NewsService:
             )
             fetch_from = last.date() if last else start
         else:
-            return
+            return None
 
         if state.symbol in CRYPTO_ASSETS:
             articles = self._crypto_articles(state.symbol)
+            # The general crypto feed only holds recent items: coverage starts at the oldest
+            # article actually returned, not at the requested start.
+            covered_from = min((a.published_at.date() for a in articles), default=today)
         else:
             articles = self.finnhub.company_news(state.symbol, fetch_from, today)
-        self._store_articles(state.symbol, articles)
-        state.finnhub_from = min(state.finnhub_from or fetch_from, fetch_from)
-        state.finnhub_synced_at = now
+            covered_from = fetch_from
+        rows = self._score_articles(state.symbol, articles)
+
+        def write() -> None:
+            self.db.add_all(rows)
+            state.finnhub_from = min(state.finnhub_from or covered_from, covered_from)
+            state.finnhub_synced_at = now
+
+        return write
 
     def _crypto_articles(self, symbol: str) -> list[Article]:
         words = _CRYPTO_KEYWORDS[symbol]
@@ -220,13 +252,13 @@ class NewsService:
             if any(re.search(rf"\b{re.escape(w)}\b", a.headline, re.I) for w in words)
         ]
 
-    def _store_articles(self, symbol: str, articles: list[Article]) -> None:
+    def _score_articles(self, symbol: str, articles: list[Article]) -> list[NewsArticle]:
         known = set(self.db.scalars(select(NewsArticle.url).where(NewsArticle.symbol == symbol)))
-        fresh = {a.url: a for a in articles if a.url not in known}.values()
+        fresh = list({a.url: a for a in articles if a.url not in known}.values())
         if not fresh:
-            return
+            return []
         scores = self.scorer.score([a.headline for a in fresh])
-        self.db.add_all(
+        return [
             NewsArticle(
                 symbol=symbol,
                 published_at=a.published_at.astimezone(UTC).replace(tzinfo=None),
@@ -238,7 +270,7 @@ class NewsService:
                 neutral=s.neutral,
             )
             for a, s in zip(fresh, scores, strict=True)
-        )
+        ]
 
     def _last_gdelt_date(self, symbol: str) -> date | None:
         return self.db.scalar(
@@ -298,6 +330,10 @@ class NewsService:
             out.loc[has, "finbert_score"] = sums[has] / counts[has]
             out["article_count"] = np.log1p(counts)
             out["has_finbert"] = has.astype(float)
+
+        state = self.db.get(NewsSync, symbol)
+        if state is not None and state.finnhub_from is not None:
+            out["finbert_covered"] = (index >= pd.Timestamp(state.finnhub_from)).astype(float)
 
         gd = self.db.execute(
             select(GdeltDaily.date, GdeltDaily.tone, GdeltDaily.volume, GdeltDaily.volume_norm)

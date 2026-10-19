@@ -43,6 +43,10 @@ class PreviewRow:
     message: str | None
     current_quantity: Decimal | None
     diff: Diff | None
+    # When the screenshot shows more than is held: the extra units, and the price that makes
+    # the moving-average cost after the buy equal the screenshot's average price.
+    delta_quantity: Decimal | None
+    delta_price_usd: Decimal | None
 
 
 @dataclass
@@ -58,6 +62,19 @@ class CommitRow:
     quantity: Decimal
     avg_price_usd: Decimal
     fx_rate: Decimal | None = None
+
+
+_MAGIC = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/webp": (b"RIFF",),
+}
+
+
+def _looks_like(img: Image) -> bool:
+    if img.media_type == "image/webp":
+        return img.data[:4] == b"RIFF" and img.data[8:12] == b"WEBP"
+    return img.data.startswith(_MAGIC[img.media_type])
 
 
 def _decimal(raw: str | None) -> Decimal | None:
@@ -95,9 +112,12 @@ class StatementImportService:
                 raise DomainError(f"Unsupported image type {img.media_type}; use PNG or JPEG")
             if len(img.data) > MAX_IMAGE_BYTES:
                 raise DomainError("Each screenshot must be 10 MB or smaller")
+            # The declared type comes from the client; check the file really is that image.
+            if not _looks_like(img):
+                raise DomainError("The file content is not a valid PNG, JPEG or WebP image")
 
         statement = self.extractor.extract(images)
-        held = {h.symbol: h.quantity for h in self.portfolio.holdings()}
+        held = {h.symbol: (h.quantity, h.cost_basis) for h in self.portfolio.holdings()}
         fx_today = Decimal(str(self.market.usd_krw().price))
         return Preview(
             broker=statement.broker,
@@ -123,7 +143,12 @@ class StatementImportService:
             ]
         )
 
-    def _row(self, h: ExtractedHolding, held: dict[str, Decimal], fx_today: Decimal) -> PreviewRow:
+    def _row(
+        self,
+        h: ExtractedHolding,
+        held: dict[str, tuple[Decimal, Decimal]],
+        fx_today: Decimal,
+    ) -> PreviewRow:
         qty = _decimal(h.quantity)
         avg_usd = _decimal(h.avg_price_usd)
         cost_krw = _decimal(h.cost_krw)
@@ -144,7 +169,14 @@ class StatementImportService:
         if status == "ok" and (qty is None or avg_usd is None):
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
 
-        current = held.get(symbol) if symbol else None
+        current, current_cost = held.get(symbol, (None, None)) if symbol else (None, None)
+        delta_qty = delta_price = None
+        if current is not None and qty is not None and qty > current:
+            delta_qty = qty - current
+            if avg_usd is not None:
+                price = (qty * avg_usd - current_cost) / delta_qty
+                if price > 0:
+                    delta_price = price.quantize(Decimal("0.0001"), ROUND_HALF_UP)
         diff: Diff | None = None
         if symbol and qty is not None:
             diff = "new" if current is None else ("same" if current == qty else "different")
@@ -164,6 +196,8 @@ class StatementImportService:
             message=message,
             current_quantity=current,
             diff=diff,
+            delta_quantity=delta_qty,
+            delta_price_usd=delta_price,
         )
 
     def _resolve(

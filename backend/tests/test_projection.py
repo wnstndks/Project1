@@ -65,6 +65,45 @@ def test_target_probability():
     assert run(params=params).prob_target == 100.0
 
 
+def test_projection_falls_back_to_proxy_for_short_history(client, provider):
+    import math
+    from datetime import timedelta
+
+    from tests.conftest import TODAY
+
+    # NEWCO only has two months of bars: too few monthly returns for a volatility estimate.
+    original = provider.get_history
+
+    def short_history(symbol, start, end):
+        bars = original(symbol, start, end)
+        return (
+            [b for b in bars if b.date >= TODAY - timedelta(days=60)] if symbol == "NEWCO" else bars
+        )
+
+    provider.get_history = short_history
+    client.post(
+        "/api/transactions",
+        json={
+            "asset_type": "stock",
+            "symbol": "NEWCO",
+            "side": "buy",
+            "trade_date": str(TODAY - timedelta(days=3)),
+            "quantity": 1,
+            "price": 100,
+        },
+    )
+    a = client.get("/api/projection/assumptions")
+    assert a.status_code == 200
+    stock = a.json()["classes"]["stock"]
+    assert stock["proxy"] == "SPY"
+    assert math.isfinite(stock["vol_pct"]) and stock["vol_pct"] > 0
+    assert client.post("/api/projection/simulate", json={"years": 1}).status_code == 200
+
+
+def test_projection_rejects_negative_seed(client):
+    assert client.post("/api/projection/simulate", json={"years": 1, "seed": -1}).status_code == 422
+
+
 def test_projection_api(client, provider):
     client.post(
         "/api/transactions",

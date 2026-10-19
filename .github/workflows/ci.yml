@@ -52,6 +52,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Generated API types match the committed OpenAPI spec
+        run: |
+          npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts
+          git diff --exit-code src/api/schema.d.ts || {
+            echo "::error::Run 'npm run gen:api' in frontend/ and commit the result"; exit 1; }
       - run: npm run lint
       - run: npm test
       - run: npm run build

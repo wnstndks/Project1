@@ -3,7 +3,7 @@ import pytest
 from app.deps import get_extractor
 from app.services.screenshot_extractor import ExtractedHolding, ExtractedStatement, FakeExtractor
 
-PNG = ("holdings.png", b"\x89PNG fake bytes", "image/png")
+PNG = ("holdings.png", b"\x89PNG\r\n\x1a\nfake image body", "image/png")
 
 
 def holding(name, ticker, qty, avg=None, cost_krw=None, asset_type="stock", confidence="high"):
@@ -83,12 +83,17 @@ def test_preview_reports_difference_from_current_holdings(client, extractor):
     apple = next(r for r in upload(client).json()["rows"] if r["symbol"] == "AAPL")
     assert apple["diff"] == "different"
     assert apple["current_quantity"] == 4
+    # Screenshot: 10 @ 150 avg. Held: 4 @ 100. Recording 6 @ x keeps the average at 150:
+    # (10*150 - 400) / 6 = 183.3333
+    assert apple["delta_quantity"] == 6
+    assert apple["delta_price_usd"] == pytest.approx(183.3333)
 
 
 @pytest.mark.parametrize(
     "files",
     [
         [("a.gif", b"GIF89a", "image/gif")],
+        [("fake.png", b"<html>not an image</html>", "image/png")],
         [PNG] * 6,
     ],
 )

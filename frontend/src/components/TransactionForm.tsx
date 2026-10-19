@@ -13,6 +13,8 @@ type FormState = {
   quantity: string
   price: string
   fee: string
+  fx_rate: string
+  seq: string
   note: string
 }
 
@@ -24,6 +26,8 @@ const empty = (): FormState => ({
   quantity: '',
   price: '',
   fee: '0',
+  fx_rate: '',
+  seq: '0',
   note: '',
 })
 
@@ -35,6 +39,8 @@ const fromTransaction = (t: Transaction): FormState => ({
   quantity: String(t.quantity),
   price: String(t.price),
   fee: String(t.fee),
+  fx_rate: t.fx_rate != null ? String(t.fx_rate) : '',
+  seq: String(t.seq),
   note: t.note ?? '',
 })
 
@@ -75,16 +81,23 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     // Numbers stay strings so the backend parses them as exact decimals.
-    await onSubmit({
-      asset_type: form.asset_type,
-      symbol: form.symbol,
-      side: form.side,
-      trade_date: form.trade_date,
-      quantity: form.quantity,
-      price: form.price,
-      fee: form.fee || '0',
-      note: form.note || null,
-    })
+    try {
+      await onSubmit({
+        asset_type: form.asset_type,
+        symbol: form.symbol,
+        side: form.side,
+        trade_date: form.trade_date,
+        quantity: form.quantity,
+        price: form.price,
+        fee: form.fee || '0',
+        fx_rate: form.fx_rate.trim() || null,
+        seq: Number(form.seq) || 0,
+        note: form.note || null,
+      })
+    } catch {
+      // Keep what the user typed; the parent shows the error.
+      return
+    }
     if (!editing) setForm((f) => ({ ...empty(), asset_type: f.asset_type, trade_date: f.trade_date }))
     setPriceHint(null)
   }
@@ -187,7 +200,25 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
             onChange={(e) => set('fee', e.target.value)}
           />
         </Field>
-        <Field label="메모" className="sm:col-span-2 lg:col-span-3">
+        <Field label="매입 환율 (선택, 원/달러)">
+          <input
+            inputMode="decimal"
+            className={`${inputClass} num`}
+            placeholder="비우면 거래일 환율"
+            value={form.fx_rate}
+            onChange={(e) => set('fx_rate', e.target.value)}
+          />
+        </Field>
+        <Field label="같은 날 순서">
+          <input
+            type="number"
+            min={0}
+            className={`${inputClass} num`}
+            value={form.seq}
+            onChange={(e) => set('seq', e.target.value)}
+          />
+        </Field>
+        <Field label="메모" className="sm:col-span-2">
           <input
             className={inputClass}
             maxLength={200}

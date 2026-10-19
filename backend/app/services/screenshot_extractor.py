@@ -229,8 +229,9 @@ class FakeExtractor:
 
     def __init__(self, statement: ExtractedStatement = DEMO_STATEMENT) -> None:
         self.statement = statement
-        self.calls: list[list[Image]] = []
+        # Only the number of images per call is kept: a demo server must not retain uploads.
+        self.calls: list[int] = []
 
     def extract(self, images: list[Image]) -> ExtractedStatement:
-        self.calls.append(images)
+        self.calls.append(len(images))
         return self.statement

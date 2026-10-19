@@ -29,6 +29,8 @@ class PreviewRowOut(BaseModel):
     message: str | None
     current_quantity: Num | None
     diff: str | None
+    delta_quantity: Num | None
+    delta_price_usd: Num | None
 
 
 class PreviewOut(BaseModel):

@@ -74,9 +74,30 @@ def test_sell_before_buy_is_rejected_even_if_total_is_enough():
         build_positions([tx("sell", "1", "10", 1), tx("buy", "5", "10", 2)])
 
 
-def test_same_day_buy_is_applied_before_sell():
-    pos = build_positions([tx("sell", "1", "12", 1, id_=1), tx("buy", "1", "10", 1, id_=2)])["AAPL"]
+def test_same_day_round_trip_follows_entry_order():
+    # Hold 10 @ 100; same day sell 10 @ 120, then buy 10 @ 130.
+    pos = build_positions(
+        [
+            tx("buy", "10", "100", 1, id_=1),
+            tx("sell", "10", "120", 2, id_=2),
+            tx("buy", "10", "130", 2, id_=3),
+        ]
+    )["AAPL"]
+    assert pos.realized_pnl == D("200")
+    assert pos.avg_cost == D("130")
+
+
+def test_seq_overrides_entry_order_within_a_day():
+    sell = tx("sell", "1", "12", 1, id_=1)
+    buy = tx("buy", "1", "10", 1, id_=2)
+    sell.seq, buy.seq = 1, 0
+    pos = build_positions([sell, buy])["AAPL"]
     assert pos.realized_pnl == D("2")
+
+
+def test_sell_entered_before_its_same_day_buy_is_an_oversell():
+    with pytest.raises(OversellError):
+        build_positions([tx("sell", "1", "12", 1, id_=1), tx("buy", "1", "10", 1, id_=2)])
 
 
 def test_krw_cost_uses_trade_date_rates():

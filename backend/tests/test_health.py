@@ -4,6 +4,12 @@ from decimal import Decimal
 from app.db.models import AssetType, Side, Transaction
 
 
+def test_untrusted_host_is_rejected(client):
+    # A DNS-rebinding page would send its own hostname.
+    assert client.get("/api/health", headers={"host": "evil.example"}).status_code == 400
+    assert client.get("/api/health", headers={"host": "localhost:8000"}).status_code == 200
+
+
 def test_health(client):
     res = client.get("/api/health")
     assert res.status_code == 200

@@ -39,6 +39,27 @@ def _ymdhms(d: date, end: bool = False) -> str:
     return d.strftime("%Y%m%d") + ("235959" if end else "000000")
 
 
+def _daily(points: list[dict], mode: str) -> dict[date, dict]:
+    """Collapse GDELT points to one per UTC day.
+
+    Short ranges come back in 15-minute or hourly buckets; keying them by date would keep
+    only the last bucket of each day. Tone is averaged, article counts are summed.
+    """
+    buckets: dict[date, list[dict]] = {}
+    for p in points:
+        buckets.setdefault(datetime.strptime(p["date"][:8], "%Y%m%d").date(), []).append(p)
+    out: dict[date, dict] = {}
+    for d, ps in buckets.items():
+        if mode == "timelinetone":
+            out[d] = {"value": sum(p["value"] for p in ps) / len(ps)}
+        else:
+            out[d] = {
+                "value": sum(p["value"] for p in ps),
+                "norm": sum(p.get("norm") or 0 for p in ps) or None,
+            }
+    return out
+
+
 class GdeltClient:
     """GDELT DOC 2.0 timelines. GDELT allows one request every 5 seconds per client."""
 
@@ -96,8 +117,7 @@ class GdeltClient:
             if res.status_code != 200 or not res.text.lstrip().startswith("{"):
                 raise NewsDataError(f"GDELT error {res.status_code}: {res.text[:120]}")
             timeline = res.json().get("timeline") or []
-            points = timeline[0]["data"] if timeline else []
-            return {datetime.strptime(p["date"][:8], "%Y%m%d").date(): p for p in points}
+            return _daily(timeline[0]["data"] if timeline else [], mode)
         raise NewsDataError("GDELT rate limit: try again in a minute")
 
     def _throttle(self) -> None:

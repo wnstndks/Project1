@@ -44,6 +44,8 @@ class Transaction(Base):
     # Actual USD/KRW rate paid, when known (e.g. read from a broker screenshot).
     # Overrides the market rate on the trade date for KRW cost basis.
     fx_rate: Mapped[Decimal | None] = mapped_column(DecimalText)
+    # Order among trades on the same date (lower first). Ties fall back to entry order.
+    seq: Mapped[int] = mapped_column(default=0, server_default="0")
     note: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

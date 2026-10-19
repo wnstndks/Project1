@@ -725,6 +725,10 @@ export interface components {
             current_quantity: number | null;
             /** Diff */
             diff: string | null;
+            /** Delta Quantity */
+            delta_quantity: number | null;
+            /** Delta Price Usd */
+            delta_price_usd: number | null;
         };
         /** ProjectionIn */
         ProjectionIn: {
@@ -906,6 +910,12 @@ export interface components {
              * @description USD/KRW actually paid; defaults to the market rate on trade_date
              */
             fx_rate?: number | string | null;
+            /**
+             * Seq
+             * @description Order among same-day trades
+             * @default 0
+             */
+            seq: number;
             /** Note */
             note?: string | null;
         };
@@ -930,6 +940,8 @@ export interface components {
             fee: number;
             /** Fx Rate */
             fx_rate: number | null;
+            /** Seq */
+            seq: number;
             /** Note */
             note: string | null;
             /**

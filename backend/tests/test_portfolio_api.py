@@ -64,6 +64,37 @@ def test_oversell_rejected_on_create_update_and_delete(client):
     assert client.get("/api/transactions").json() == []
 
 
+def test_update_keeps_fields_the_client_did_not_send(client):
+    b = buy(client, "AAPL", 10, 100).json()
+    client.put(
+        f"/api/transactions/{b['id']}",
+        json={
+            "asset_type": "stock",
+            "symbol": "AAPL",
+            "side": "buy",
+            "trade_date": "2026-10-01",
+            "quantity": 10,
+            "price": 100,
+            "fx_rate": "1320",
+        },
+    )
+    # A later edit of only the note must not wipe the recorded purchase FX rate.
+    res = client.put(
+        f"/api/transactions/{b['id']}",
+        json={
+            "asset_type": "stock",
+            "symbol": "AAPL",
+            "side": "buy",
+            "trade_date": "2026-10-01",
+            "quantity": 10,
+            "price": 100,
+            "note": "typo fixed",
+        },
+    )
+    assert res.json()["fx_rate"] == 1320
+    assert res.json()["note"] == "typo fixed"
+
+
 def test_update_and_missing_transaction(client):
     b = buy(client, "AAPL", 1, 100).json()
     edit = {

@@ -2,6 +2,8 @@
 
 import json
 import re
+import shutil
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -51,11 +53,19 @@ def save(
     backtest: list[dict],
 ) -> Path:
     out = symbol_dir(artifacts_dir, symbol)
-    out.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), out / "model.pt")
-    (out / "meta.json").write_text(json.dumps(meta | {"config": asdict(config)}, indent=2))
-    (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
-    (out / "backtest.json").write_text(json.dumps(backtest))
+    # Write everything to a temp dir, then swap it in, so a concurrent reader never sees new
+    # weights next to old scalers.
+    tmp = out.with_name(f"{out.name}.tmp-{uuid.uuid4().hex}")
+    tmp.mkdir(parents=True)
+    torch.save(model.state_dict(), tmp / "model.pt")
+    (tmp / "meta.json").write_text(json.dumps(meta | {"config": asdict(config)}, indent=2))
+    (tmp / "metrics.json").write_text(json.dumps(metrics, indent=2))
+    (tmp / "backtest.json").write_text(json.dumps(backtest))
+    old = out.with_name(f"{out.name}.old-{uuid.uuid4().hex}")
+    if out.exists():
+        out.rename(old)
+    tmp.rename(out)
+    shutil.rmtree(old, ignore_errors=True)
     return out
 
 

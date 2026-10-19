@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -110,36 +110,50 @@ class MarketDataService:
         return lookup
 
     def _sync(self, symbol: str, start: date, today: date) -> None:
+        """Fetch any missing bars, then write them in one short transaction.
+
+        All network calls happen before the first write, so the SQLite write lock is never
+        held while waiting on the provider.
+        """
         sync = self.db.get(SymbolSync, symbol)
         now = self.now()
 
+        bars: list[Bar] = []
+        fetched_from = start if sync is None else min(start, sync.fetched_from)
         if sync is None:
             bars = self.provider.get_history(symbol, start, today)
             # Nothing came back (unknown symbol or a flaky upstream): record nothing so the
             # next request retries instead of trusting an empty cache.
-            if bars:
-                self._store(symbol, bars)
-                self.db.add(SymbolSync(symbol=symbol, fetched_from=start, synced_at=now))
-                self.db.commit()
-            return
+            if not bars:
+                return
+        else:
+            if start < sync.fetched_from:
+                end = sync.fetched_from - timedelta(days=1)
+                bars += self.provider.get_history(symbol, start, end)
+            stale = now - sync.synced_at > HISTORY_TTL
+            if stale:
+                last = self._last_bar_date(symbol) or sync.fetched_from
+                bars += self.provider.get_history(symbol, last, today)
+            if not bars and not stale and start >= sync.fetched_from:
+                return
 
-        changed = False
-        if start < sync.fetched_from:
-            self._store(
-                symbol,
-                self.provider.get_history(symbol, start, sync.fetched_from - timedelta(days=1)),
+        self._store(symbol, bars)
+        # Upsert, not insert: concurrent first requests for the same symbol must not collide.
+        stmt = sqlite_insert(SymbolSync).values(
+            symbol=symbol, fetched_from=fetched_from, synced_at=now
+        )
+        self.db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["symbol"],
+                set_={
+                    "fetched_from": func.min(SymbolSync.fetched_from, stmt.excluded.fetched_from),
+                    "synced_at": stmt.excluded.synced_at,
+                },
             )
-            sync.fetched_from = start
-            changed = True
-
-        if now - sync.synced_at > HISTORY_TTL:
-            last = self._last_bar_date(symbol) or sync.fetched_from
-            self._store(symbol, self.provider.get_history(symbol, last, today))
-            sync.synced_at = now
-            changed = True
-
-        if changed:
-            self.db.commit()
+        )
+        self.db.commit()
+        if sync is not None:
+            self.db.expire(sync)  # reload the upserted row on next access
 
     def _store(self, symbol: str, bars: list[Bar]) -> None:
         # Chunked to stay under SQLite's bound-parameter limit.

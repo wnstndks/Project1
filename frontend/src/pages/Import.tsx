@@ -24,15 +24,17 @@ type EditableRow = {
 }
 
 function toEditable(r: ImportPreviewRow): EditableRow {
+  // The screenshot shows TOTAL holdings. For a symbol already held, only the extra units are
+  // recorded (at the price that keeps the average cost equal to the screenshot's), so a
+  // re-upload never double counts. Rows held in the same or a smaller amount start unticked.
+  const delta = r.diff === 'different' && r.delta_quantity != null && r.delta_price_usd != null
   return {
-    // Only rows that are readable and not already held are pre-selected, so a re-upload
-    // of the same screenshot never doubles positions by accident.
-    include: r.status === 'ok' && r.diff === 'new',
+    include: r.status === 'ok' && (r.diff === 'new' || delta),
     name: r.name,
     asset_type: r.asset_type,
     symbol: r.symbol ? displaySymbol(r.symbol) : '',
-    quantity: r.quantity != null ? String(r.quantity) : '',
-    avg_price_usd: r.avg_price_usd != null ? String(r.avg_price_usd) : '',
+    quantity: String((delta ? r.delta_quantity : r.quantity) ?? ''),
+    avg_price_usd: String((delta ? r.delta_price_usd : r.avg_price_usd) ?? ''),
     fx_rate: r.implied_fx != null ? String(r.implied_fx) : '',
     source: r,
   }
@@ -160,7 +162,7 @@ export function Import() {
         <label
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
-          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-6 py-10 text-center hover:bg-hover"
+          className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-line px-6 py-10 text-center hover:bg-hover focus-within:ring-2 focus-within:ring-accent"
         >
           <span className="text-sm font-medium">이미지를 끌어다 놓거나 클릭해서 선택</span>
           <span className="mt-1 text-xs text-muted">PNG·JPEG, 한 번에 최대 {MAX_FILES}장, 장당 10MB 이하</span>
@@ -325,7 +327,9 @@ function RowStatus({ row }: { row: ImportPreviewRow }) {
     return (
       <>
         <span className="text-ink-2">
-          현재 {formatQty(row.current_quantity ?? 0)} 보유 · 가져오면 추가 매수로 기록
+          {row.delta_quantity != null
+            ? `현재 ${formatQty(row.current_quantity ?? 0)} → 화면 ${formatQty(row.quantity ?? 0)}: 차이 ${formatQty(row.delta_quantity)}만 매수로 기록`
+            : `화면 수량이 현재(${formatQty(row.current_quantity ?? 0)})보다 적습니다. 매도는 거래 내역에서 직접 기록하세요`}
         </span>
         {confidence}
       </>
