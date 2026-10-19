@@ -76,6 +76,11 @@ export const api = {
     request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(data) }),
   updateTransaction: (id: number, data: TransactionInput) =>
     request<Transaction>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  convertCurrency: (symbol: string, currency: Currency) =>
+    request<Transaction[]>('/transactions/convert-currency', {
+      method: 'POST',
+      body: JSON.stringify({ symbol, currency }),
+    }),
   deleteTransaction: (id: number) => request<void>(`/transactions/${id}`, { method: 'DELETE' }),
 
   supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),

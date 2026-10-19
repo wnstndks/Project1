@@ -68,17 +68,30 @@ class CommitRow:
     fx_rate: Decimal | None = None
 
 
-_MAGIC = {
-    "image/png": (b"\x89PNG\r\n\x1a\n",),
-    "image/jpeg": (b"\xff\xd8\xff",),
-    "image/webp": (b"RIFF",),
-}
+def sniff_image_type(data: bytes) -> str | None:
+    """The real image format from the file's first bytes.
+
+    Browsers label uploads by file extension, and screenshots shared through messengers or
+    saved by some apps are often JPEG or WebP files named ".png". The content decides.
+    """
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
-def _looks_like(img: Image) -> bool:
-    if img.media_type == "image/webp":
-        return img.data[:4] == b"RIFF" and img.data[8:12] == b"WEBP"
-    return img.data.startswith(_MAGIC[img.media_type])
+def _describe_unsupported(data: bytes) -> str:
+    if data[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftyphevc"):
+        return (
+            "아이폰 HEIC 사진 형식은 지원하지 않습니다. 스크린샷을 PNG/JPEG로 저장하거나 "
+            "설정 > 카메라 > 포맷에서 '높은 호환성'을 선택해 다시 캡처하세요"
+        )
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "GIF는 지원하지 않습니다. PNG나 JPEG로 저장해 주세요"
+    return "이미지 파일이 아니거나 손상된 파일입니다. PNG, JPEG 또는 WebP 스크린샷을 올려 주세요"
 
 
 def _decimal(raw: str | None) -> Decimal | None:
@@ -111,14 +124,16 @@ class StatementImportService:
             raise DomainError("Upload at least one screenshot")
         if len(images) > MAX_IMAGES:
             raise DomainError(f"Upload at most {MAX_IMAGES} screenshots at a time")
+        checked = []
         for img in images:
-            if img.media_type not in ALLOWED_TYPES:
-                raise DomainError(f"Unsupported image type {img.media_type}; use PNG or JPEG")
             if len(img.data) > MAX_IMAGE_BYTES:
-                raise DomainError("Each screenshot must be 10 MB or smaller")
-            # The declared type comes from the client; check the file really is that image.
-            if not _looks_like(img):
-                raise DomainError("The file content is not a valid PNG, JPEG or WebP image")
+                raise DomainError("스크린샷은 한 장에 10MB 이하여야 합니다")
+            # Trust the bytes, not the client's label; the vision model needs the real type.
+            real = sniff_image_type(img.data)
+            if real not in ALLOWED_TYPES:
+                raise DomainError(_describe_unsupported(img.data))
+            checked.append(Image(img.data, real))
+        images = checked
 
         statement = self.extractor.extract(images)
         held = {

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.concurrency import run_in_threadpool
 
-from app.data.assets import resolve_symbol
+from app.data.assets import base_symbol, resolve_symbol
 from app.deps import get_news_service
 from app.schemas.news import NewsOut
 from app.services.news import NewsService
@@ -15,7 +15,7 @@ async def news(
     days: int = Query(30, ge=1, le=90),
     service: NewsService = Depends(get_news_service),
 ):
-    resolved = resolve_symbol(symbol)
+    resolved = base_symbol(resolve_symbol(symbol))  # news is per coin, not per exchange
     # Network fetches (GDELT is throttled to one call per 6 s) and FinBERT scoring block.
     summary = await run_in_threadpool(service.summary, resolved, days)
     return NewsOut(

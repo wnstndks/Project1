@@ -249,3 +249,26 @@ def test_history_values_krw_coins_in_won(client):
 def test_krw_coins_carry_no_fx_pnl(client):
     krw_trade(client, "BTC", "0.01", "80000000")
     assert client.get("/api/portfolio/summary").json()["fx_pnl_krw"] == 0
+
+
+def test_convert_existing_usd_coin_trades_to_krw(client):
+    buy(client, "BTC", 0.02, 60000, asset_type="crypto", fee=6)
+    res = client.post(
+        "/api/transactions/convert-currency", json={"symbol": "btc", "currency": "KRW"}
+    )
+    assert res.status_code == 200
+    tx = client.get("/api/transactions").json()[0]
+    assert tx["currency"] == "KRW" and tx["fx_rate"] is None
+    assert tx["price"] == pytest.approx(60000 * tx["usd_krw"], rel=1e-6)
+    # Now an Upbit buy fits the position.
+    assert krw_trade(client, "BTC", "0.01", "80000000").status_code == 201
+    h = next(h for h in client.get("/api/portfolio/holdings").json() if h["symbol"] == "BTC-USD")
+    assert h["currency"] == "KRW" and h["quantity"] == pytest.approx(0.03)
+
+
+def test_stocks_cannot_be_converted_to_krw(client):
+    buy(client, "AAPL", 1, 100)
+    res = client.post(
+        "/api/transactions/convert-currency", json={"symbol": "AAPL", "currency": "KRW"}
+    )
+    assert res.status_code == 422

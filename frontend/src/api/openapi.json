@@ -461,6 +461,51 @@
         }
       }
     },
+    "/api/transactions/convert-currency": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Convert Currency",
+        "operationId": "convert_currency_api_transactions_convert_currency_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertCurrencyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionOut"
+                  },
+                  "type": "array",
+                  "title": "Response Convert Currency Api Transactions Convert Currency Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/portfolio/holdings": {
       "get": {
         "tags": [
@@ -1374,6 +1419,25 @@
         ],
         "title": "CommitRowIn"
       },
+      "ConvertCurrencyIn": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Symbol"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "currency"
+        ],
+        "title": "ConvertCurrencyIn"
+      },
       "Currency": {
         "type": "string",
         "enum": [
@@ -1743,6 +1807,25 @@
           "premium_pct": {
             "type": "number",
             "title": "Premium Pct"
+          },
+          "upbit_as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Upbit As Of"
+          },
+          "global_as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Global As Of"
+          },
+          "fx_as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fx As Of"
+          },
+          "fx_stale": {
+            "type": "boolean",
+            "title": "Fx Stale"
           }
         },
         "type": "object",
@@ -1752,7 +1835,11 @@
           "global_usd",
           "usd_krw",
           "global_krw",
-          "premium_pct"
+          "premium_pct",
+          "upbit_as_of",
+          "global_as_of",
+          "fx_as_of",
+          "fx_stale"
         ],
         "title": "KimchiPremiumOut"
       },

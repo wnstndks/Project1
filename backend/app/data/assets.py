@@ -58,7 +58,16 @@ def resolve_symbol(raw: str) -> str:
 
 
 def asset_type_of(symbol: str) -> AssetType:
-    return AssetType.CRYPTO if symbol in CRYPTO_ASSETS else AssetType.STOCK
+    is_coin = symbol in CRYPTO_ASSETS or symbol in UPBIT_MARKETS.values()
+    return AssetType.CRYPTO if is_coin else AssetType.STOCK
+
+
+def base_symbol(symbol: str) -> str:
+    """The canonical symbol for an Upbit market: "KRW-BTC" -> "BTC-USD"."""
+    for base, market in UPBIT_MARKETS.items():
+        if market == symbol:
+            return base
+    return symbol
 
 
 def trades_every_day(symbol: str) -> bool:

@@ -109,6 +109,19 @@ def test_no_delta_offered_when_it_cannot_be_priced(client, extractor):
     assert apple["delta_quantity"] is None and apple["delta_price"] is None
 
 
+def test_jpeg_named_png_is_accepted_and_relabelled(client, extractor):
+    # Messengers often save JPEG screenshots with a .png name; the browser then says image/png.
+    jpeg_as_png = ("shot.png", b"\xff\xd8\xff\xe0" + b"jpeg body", "image/png")
+    assert upload(client, jpeg_as_png).status_code == 200
+
+
+def test_heic_gets_a_helpful_message(client, extractor):
+    heic = ("IMG_0001.png", b"\x00\x00\x00\x18ftypheic" + b"body", "image/png")
+    res = upload(client, heic)
+    assert res.status_code == 422
+    assert "HEIC" in res.json()["detail"]
+
+
 @pytest.mark.parametrize(
     "files",
     [

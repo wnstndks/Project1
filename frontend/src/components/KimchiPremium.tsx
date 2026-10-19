@@ -19,6 +19,11 @@ export function KimchiPremium() {
           </li>
         ))}
       </ul>
+      {kimchi.data.some((k) => k.fx_stale) && (
+        <p className="mt-3 text-xs text-ink-2">
+          환율이 {kimchi.data[0].fx_as_of.slice(0, 10)} 기준이라(주말·휴일) 프리미엄이 1% 안팎 부정확할 수 있습니다.
+        </p>
+      )}
       <p className="mt-3 text-xs text-muted">
         업비트 원화 가격이 해외 시세×환율보다 비싼 정도입니다. 업비트에 보유한 코인은 업비트 가격으로 평가합니다.
       </p>

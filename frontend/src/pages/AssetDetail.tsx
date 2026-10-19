@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-import { useAssetInfo, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
+import { useAssetInfo, useConvertCurrency, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart } from '../components/CandleChart'
 import { NewsCard } from '../components/NewsCard'
 import { PredictionPanel } from '../components/PredictionPanel'
@@ -16,17 +16,23 @@ export function AssetDetail() {
   const { symbol = '' } = useParams()
   const info = useAssetInfo(symbol)
   const [range, setRange] = useState<RangeKey>('6M')
-  const history = useHistory(info.data?.symbol ?? symbol, rangeStart(range))
   const holdings = useHoldings()
   const fx = useUsdKrw().data?.price
   const { currency, pick, format, formatOther } = useMoney()
+  const convert = useConvertCurrency()
+  const [confirmConvert, setConfirmConvert] = useState(false)
+  // Coins in the won view show the Upbit KRW market, the price KRW holdings are valued at.
+  const base = info.data?.symbol ?? symbol
+  const upbit = info.data?.asset_type === 'crypto' && currency === 'KRW'
+  const chartSymbol = upbit ? `KRW-${displaySymbol(base)}` : base
+  const history = useHistory(chartSymbol, rangeStart(range))
 
   if (info.error) return <ErrorBox error={info.error} />
   if (!info.data) return <Muted>불러오는 중…</Muted>
 
-  // Market prices are quoted in USD; KRW figures use today's rate.
+  // Upbit bars are already in KRW; other market prices are USD and use today's rate.
   const krw = currency === 'KRW' && fx !== undefined
-  const toDisplay = (usd: number) => format(krw ? usd * fx : usd)
+  const toDisplay = (price: number) => format(upbit || !krw ? price : price * fx)
 
   const resolved = info.data.symbol
   const position = holdings.data?.find((h) => h.symbol === resolved)
@@ -49,9 +55,9 @@ export function AssetDetail() {
         {last && (
           <div className="mt-2 flex flex-wrap items-baseline gap-3">
             <span className="text-3xl font-semibold">{toDisplay(last.close)}</span>
-            {krw && <span className="text-sm text-ink-2">{formatUsd(last.close)}</span>}
+            {krw && !upbit && <span className="text-sm text-ink-2">{formatUsd(last.close)}</span>}
             <span className="text-sm">
-              <PnL value={krw ? change * fx : change} pct={changePct} />
+              <PnL value={upbit || !krw ? change : change * fx} pct={changePct} />
               <span className="ml-1 text-muted">
                 ({CHART_RANGES.find((r) => r.value === range)?.label})
               </span>
@@ -61,7 +67,7 @@ export function AssetDetail() {
       </div>
 
       <Card
-        title="가격 (USD)"
+        title={upbit ? '가격 (KRW · 업비트)' : '가격 (USD)'}
         actions={<SegmentedControl label="기간" options={CHART_RANGES} value={range} onChange={setRange} />}
       >
         {history.error ? (
@@ -72,6 +78,47 @@ export function AssetDetail() {
           </div>
         )}
       </Card>
+
+      {position?.asset_type === 'crypto' && position.currency === 'USD' && (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <p className="text-ink-2">
+              이 코인은 달러로 기록되어 있습니다. 업비트·빗썸에서 산 코인이라면 원화로 전환하세요. 각 거래를
+              거래일 환율로 원화로 바꿔 다시 기록합니다.
+            </p>
+            {confirmConvert ? (
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-surface disabled:opacity-50"
+                  disabled={convert.isPending}
+                  onClick={() =>
+                    convert.mutate({ symbol: resolved, currency: 'KRW' }, { onSettled: () => setConfirmConvert(false) })
+                  }
+                >
+                  원화로 전환 확인
+                </button>
+                <button type="button" className="text-xs text-ink-2 hover:underline" onClick={() => setConfirmConvert(false)}>
+                  취소
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover"
+                onClick={() => setConfirmConvert(true)}
+              >
+                원화(업비트)로 전환
+              </button>
+            )}
+          </div>
+          {convert.error && (
+            <div className="mt-3">
+              <ErrorBox error={convert.error} />
+            </div>
+          )}
+        </Card>
+      )}
 
       {position ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

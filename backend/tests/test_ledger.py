@@ -100,6 +100,19 @@ def test_sell_entered_before_its_same_day_buy_is_an_oversell():
         build_positions([tx("sell", "1", "12", 1, id_=1), tx("buy", "1", "10", 1, id_=2)])
 
 
+def test_flat_position_can_restart_in_another_currency():
+    from app.db.models import Currency
+
+    usd_buy = tx("buy", "1", "60000", 1, symbol="BTC-USD", id_=1)
+    usd_sell = tx("sell", "1", "61000", 2, symbol="BTC-USD", id_=2)
+    krw_buy = tx("buy", "1", "80000000", 3, symbol="BTC-USD", id_=3)
+    for t in (usd_buy, usd_sell):
+        t.currency = Currency.USD
+    krw_buy.currency = Currency.KRW
+    pos = build_positions([usd_buy, usd_sell, krw_buy])["BTC-USD"]
+    assert pos.currency == Currency.KRW and pos.quantity == D("1")
+
+
 def test_krw_cost_uses_trade_date_rates():
     rates = {1: D("1300"), 2: D("1400"), 3: D("1500")}
     pos = build_positions(

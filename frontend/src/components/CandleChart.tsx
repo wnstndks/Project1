@@ -76,6 +76,12 @@ export function CandleChart({ bars }: { bars: Bar[] }) {
       low: b.low,
       close: b.close,
     }))
+    // Won prices in the millions need no decimals; sub-dollar coins need four.
+    const last = bars.at(-1)?.close ?? 0
+    const precision = last >= 1000 ? 0 : last >= 1 ? 2 : 4
+    seriesRef.current?.applyOptions({
+      priceFormat: { type: 'price', precision, minMove: 1 / 10 ** precision },
+    })
     seriesRef.current?.setData(data)
     chartRef.current?.timeScale().fitContent()
   }, [bars])

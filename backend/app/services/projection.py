@@ -19,7 +19,7 @@ import pandas as pd
 
 from app.db.models import AssetType
 from app.services.market_data import MarketDataService
-from app.services.portfolio import PortfolioService
+from app.services.portfolio import PortfolioService, quote_symbol
 
 CLASSES = (AssetType.STOCK, AssetType.CRYPTO)
 PROXY = {AssetType.STOCK: "SPY", AssetType.CRYPTO: "BTC-USD"}
@@ -162,7 +162,11 @@ class ProjectionService:
         total = sum(float(h.market_value_krw) for h in holdings)
         for cls in CLASSES:
             mine = [h for h in holdings if h.asset_type == cls]
-            weights = {h.symbol: float(h.market_value) for h in mine} or {PROXY[cls]: 1.0}
+            # Model what is actually held: KRW coins move with their Upbit KRW price (which
+            # carries the USD/KRW rate and the kimchi premium), not the USD price.
+            weights = {quote_symbol(h.symbol, h.currency): float(h.market_value) for h in mine} or {
+                PROXY[cls]: 1.0
+            }
             series = self._class_monthly_returns(weights, start)
             proxied = not mine
             if len(series) < MIN_MONTHS:

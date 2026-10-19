@@ -105,7 +105,8 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
         quantity: form.quantity,
         price: form.price,
         fee: form.fee || '0',
-        fx_rate: form.fx_rate.trim() || null,
+        // A won trade is exact; a leftover FX rate from a USD edit must not be saved.
+        fx_rate: form.currency === 'KRW' ? null : form.fx_rate.trim() || null,
         seq: Number(form.seq) || 0,
         note: form.note || null,
       })

@@ -123,10 +123,13 @@ def test_kimchi_premium(client, provider):
     btc = rows["BTC-USD"]
     assert btc["global_krw"] == pytest.approx(btc["global_usd"] * btc["usd_krw"])
     assert btc["premium_pct"] == pytest.approx((btc["upbit_krw"] / btc["global_krw"] - 1) * 100)
+    assert isinstance(btc["fx_stale"], bool)
 
 
 def test_upbit_market_symbols_resolve(client):
     assert client.get("/api/market/krw-btc/quote").json()["symbol"] == "KRW-BTC"
+    info = client.get("/api/market/KRW-BTC/info").json()
+    assert info["asset_type"] == "crypto" and info["name"] == "Bitcoin"
 
 
 def test_supported_crypto_list(client):

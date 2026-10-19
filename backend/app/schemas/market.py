@@ -30,6 +30,12 @@ class KimchiPremiumOut(BaseModel):
     usd_krw: float
     global_krw: float
     premium_pct: float
+    upbit_as_of: datetime
+    global_as_of: datetime
+    fx_as_of: datetime
+    # The FX leg is old (weekends, holidays): the premium may be off by about as much as
+    # the premium itself.
+    fx_stale: bool
 
 
 class AssetInfo(BaseModel):

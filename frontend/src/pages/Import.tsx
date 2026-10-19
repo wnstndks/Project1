@@ -101,7 +101,7 @@ export function Import() {
           quantity: r.quantity,
           currency: r.currency,
           price: r.price,
-          fx_rate: r.fx_rate || null,
+          fx_rate: r.currency === 'KRW' ? null : r.fx_rate || null,
         })),
       },
       {
@@ -268,7 +268,11 @@ export function Import() {
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <CellInput value={r.fx_rate} onChange={(v) => update(i, { fx_rate: v })} placeholder="자동" />
+                      {r.currency === 'KRW' ? (
+                        <span className="text-xs text-muted">원화 거래</span>
+                      ) : (
+                        <CellInput value={r.fx_rate} onChange={(v) => update(i, { fx_rate: v })} placeholder="자동" />
+                      )}
                       {r.source.cost_krw != null && (
                         <div className="mt-1 text-[11px] text-muted">매입 {formatKrw(r.source.cost_krw)}</div>
                       )}

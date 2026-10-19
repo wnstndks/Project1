@@ -1,6 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type ImportCommit, type ProjectionInput, type TransactionInput } from './client'
+import {
+  api,
+  type Currency,
+  type ImportCommit,
+  type ProjectionInput,
+  type TransactionInput,
+} from './client'
 
 export const keys = {
   summary: ['portfolio', 'summary'] as const,
@@ -72,6 +78,11 @@ export const useUpdateTransaction = () =>
   )
 
 export const useDeleteTransaction = () => useLedgerMutation((id: number) => api.deleteTransaction(id))
+
+export const useConvertCurrency = () =>
+  useLedgerMutation(({ symbol, currency }: { symbol: string; currency: Currency }) =>
+    api.convertCurrency(symbol, currency),
+  )
 
 export const useImportStatus = () =>
   useQuery({ queryKey: ['imports', 'status'], queryFn: api.importStatus, staleTime: 0 })

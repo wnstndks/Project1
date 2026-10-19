@@ -162,6 +162,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transactions/convert-currency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convert Currency */
+        post: operations["convert_currency_api_transactions_convert_currency_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio/holdings": {
         parameters: {
             query?: never;
@@ -542,6 +559,12 @@ export interface components {
             /** Fx Rate */
             fx_rate?: number | string | null;
         };
+        /** ConvertCurrencyIn */
+        ConvertCurrencyIn: {
+            /** Symbol */
+            symbol: string;
+            currency: components["schemas"]["Currency"];
+        };
         /**
          * Currency
          * @enum {string}
@@ -698,6 +721,23 @@ export interface components {
             global_krw: number;
             /** Premium Pct */
             premium_pct: number;
+            /**
+             * Upbit As Of
+             * Format: date-time
+             */
+            upbit_as_of: string;
+            /**
+             * Global As Of
+             * Format: date-time
+             */
+            global_as_of: string;
+            /**
+             * Fx As Of
+             * Format: date-time
+             */
+            fx_as_of: string;
+            /** Fx Stale */
+            fx_stale: boolean;
         };
         /** Metrics */
         Metrics: {
@@ -1345,6 +1385,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_currency_api_transactions_convert_currency_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConvertCurrencyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionOut"][];
+                };
             };
             /** @description Validation Error */
             422: {

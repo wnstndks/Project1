@@ -68,6 +68,37 @@ class TransactionService:
         self.db.commit()
         return tx
 
+    def convert_currency(self, symbol: str, to: Currency) -> list[Transaction]:
+        """Re-express every trade of a coin in another currency at each trade date's rate.
+
+        For moving a coin recorded in USD (before KRW support) to KRW. Converting to KRW uses
+        the recorded fx_rate when there is one, else the market rate, then drops fx_rate (a
+        won trade is exact). Converting to USD keeps the KRW cost exact by recording the rate.
+        """
+        txs = list(self.db.scalars(select(Transaction).where(Transaction.symbol == symbol)))
+        if not txs:
+            raise NotFoundError(f"No transactions for {symbol}")
+        if any(t.asset_type != AssetType.CRYPTO for t in txs) and to == Currency.KRW:
+            raise DomainError("Only coins can be held in KRW")
+        fx_on = self.market.usd_krw_lookup(min(t.trade_date for t in txs))
+        for t in txs:
+            current = t.currency or Currency.USD
+            if current == to:
+                continue
+            rate = trade_fx(t, fx_on)
+            if to == Currency.KRW:
+                t.price = (t.price * rate).quantize(Decimal("0.01"))
+                t.fee = (t.fee * rate).quantize(Decimal("0.01"))
+                t.fx_rate = None
+            else:
+                t.price = (t.price / rate).quantize(Decimal("0.00000001"))
+                t.fee = (t.fee / rate).quantize(Decimal("0.00000001"))
+                t.fx_rate = rate
+            t.currency = to
+        build_positions(txs)  # still a valid ledger
+        self.db.commit()
+        return txs
+
     def delete(self, tx_id: int) -> None:
         tx = self._get(tx_id)
         self._check_ledger(tx.symbol, remove=tx)

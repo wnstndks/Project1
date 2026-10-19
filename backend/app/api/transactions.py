@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Response, status
 
+from app.data.assets import resolve_symbol
 from app.db.models import AssetType
 from app.deps import get_transaction_service
-from app.schemas.transactions import TransactionIn, TransactionOut
+from app.schemas.transactions import ConvertCurrencyIn, TransactionIn, TransactionOut
 from app.services.transactions import TransactionService
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -31,6 +32,13 @@ def update_transaction(
     tx_id: int, data: TransactionIn, service: TransactionService = Depends(get_transaction_service)
 ):
     return service.update(tx_id, data)
+
+
+@router.post("/convert-currency", response_model=list[TransactionOut])
+def convert_currency(
+    body: ConvertCurrencyIn, service: TransactionService = Depends(get_transaction_service)
+):
+    return service.convert_currency(resolve_symbol(body.symbol), body.currency)
 
 
 @router.delete("/{tx_id}", status_code=status.HTTP_204_NO_CONTENT)

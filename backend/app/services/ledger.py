@@ -61,11 +61,15 @@ class Position:
 
     def apply(self, tx: Transaction, fx: Decimal | None = None) -> None:
         currency = tx.currency or Currency.USD
-        if self.currency is None:
+        # A flat position can restart in another currency (e.g. sold on Binance in USD,
+        # later bought on Upbit in KRW). An open one cannot mix.
+        if self.currency is None or self.quantity == ZERO:
             self.currency = currency
         elif currency != self.currency:
             raise MixedCurrencyError(
-                f"{tx.symbol} is recorded in {self.currency}; a {currency} trade cannot be mixed in"
+                f"{tx.symbol} is currently held in {self.currency}, so a {currency} trade "
+                "cannot be mixed in. Convert the existing trades on the asset page, "
+                "or close the position first"
             )
         self.trades += 1
         self.fees_paid += tx.fee

@@ -48,3 +48,8 @@ class TransactionOut(BaseModel):
     note: str | None
     created_at: datetime
     usd_krw: Num | None = Field(None, description="USD/KRW rate on the trade date")
+
+
+class ConvertCurrencyIn(BaseModel):
+    symbol: str = Field(min_length=1, max_length=20)
+    currency: Currency
