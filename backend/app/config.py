@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +17,8 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'asset_manager.db').as_posix()}"
     artifacts_dir: Path = BACKEND_DIR / "artifacts"
     cors_origins: list[str] = ["http://localhost:5173"]
+    # "fake" serves deterministic synthetic prices without network access.
+    market_provider: Literal["yfinance", "fake"] = "yfinance"
 
 
 @lru_cache

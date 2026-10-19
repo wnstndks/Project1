@@ -62,4 +62,16 @@ class PriceBar(Base):
     high: Mapped[float] = mapped_column(Float)
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
+    # Split- and dividend-adjusted close; use for return calculations and ML.
+    adj_close: Mapped[float] = mapped_column(Float)
     volume: Mapped[float] = mapped_column(Float)
+
+
+class SymbolSync(Base):
+    """Tracks which date range of a symbol has been fetched, so the cache is filled only once."""
+
+    __tablename__ = "symbol_syncs"
+
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    fetched_from: Mapped[date] = mapped_column(Date)
+    synced_at: Mapped[datetime] = mapped_column(DateTime)

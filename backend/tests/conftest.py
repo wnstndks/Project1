@@ -1,13 +1,19 @@
 from collections.abc import Iterator
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.data.fake_provider import FakeProvider
 from app.db.base import Base
 from app.db.session import get_db, make_engine
+from app.deps import get_provider, get_quote_cache
 from app.main import create_app
+from app.services.market_data import QuoteCache
+
+TODAY = date(2026, 10, 16)  # a Friday
 
 
 @pytest.fixture
@@ -23,8 +29,16 @@ def db() -> Iterator[Session]:
 
 
 @pytest.fixture
-def client(db: Session) -> Iterator[TestClient]:
+def provider() -> FakeProvider:
+    return FakeProvider(today=TODAY, unknown={"ZZZZ"})
+
+
+@pytest.fixture
+def client(db: Session, provider: FakeProvider) -> Iterator[TestClient]:
     app = create_app()
+    quote_cache = QuoteCache()
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_provider] = lambda: provider
+    app.dependency_overrides[get_quote_cache] = lambda: quote_cache
     with TestClient(app) as c:
         yield c

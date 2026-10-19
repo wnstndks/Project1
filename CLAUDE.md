@@ -25,14 +25,18 @@ Frontend (`frontend/`):
 - 라우터(`app/api`) → 서비스(`app/services`) → DB(`app/db`)·시세 공급자(`app/data`). 계산 로직은 서비스에만 둔다.
 - yfinance는 `app/data/yfinance_provider.py`에서만 import한다. 주식과 코인(`BTC-USD` 형식) 모두 `MarketDataProvider`를 거친다. 테스트는 `FakeProvider`로 네트워크 없이 돈다.
 - 코인은 `app/data/assets.py`의 허용 목록 4종만 받는다. 코인은 365일 거래되므로 거래일을 가정하지 않는다.
-- 일봉은 `price_bars`에 캐시하고 없는 날짜만 증분으로 받아온다.
+- 시세 캐시는 `app/services/market_data.py`가 담당한다. 일봉은 `price_bars`에 저장하고, `symbol_syncs`에 받아온 범위를 기록해 없는 날짜만 받는다. 15분이 지나면 마지막 봉부터 다시 받아 진행 중인 봉을 덮어쓴다. 현재가는 메모리 캐시(60초)를 쓴다.
+- USD/KRW 환율도 별도 테이블 없이 `price_bars`에 심볼 `KRW=X`로 저장한다.
+- `AM_MARKET_PROVIDER=fake`로 실행하면 네트워크 없이 `FakeProvider`의 합성 시세를 쓴다.
 - 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다.
 - LSTM 학습은 CLI로만 하고 결과는 `backend/artifacts/{symbol}/`에 저장한다(git 제외). API는 추론만 한다.
 - 장기 전망은 LSTM이 아니라 `services/projection.py`의 몬테카를로 시뮬레이션이 담당한다.
 - 프론트엔드는 백엔드 `/api`만 호출하고, OpenAPI에서 생성한 타입 파일은 직접 수정하지 않는다.
 
 ## 도메인 규칙
-- 금액·수량은 `Decimal` / `Numeric`. 레코드는 원래 통화로 저장(주식·코인 USD)하고 합계는 KRW로 환산한다(USD/KRW는 yfinance `KRW=X`).
+- 거래 장부의 금액·수량은 `Decimal`이고, DB에는 `DecimalText` 타입(TEXT 저장)으로 넣는다. SQLite의 Numeric은 float로 변환되어 정확도가 깨지기 때문이다. 시세 데이터(`price_bars`)는 float로 둔다.
+- 레코드는 원래 통화로 저장(주식·코인 USD)하고 합계는 KRW로 환산한다.
+- 모델을 바꾼 뒤 마이그레이션을 생성하면 `alembic check`로 누락이 없는지 확인한다. SQLite라서 `render_as_batch=True`로 설정되어 있다.
 - 시계열 누수 금지: 시간순 분할, 셔플 금지, 스케일러는 train에만 fit한다.
 - 예측 성능은 항상 기준선(전일 종가 유지)과 함께 보고한다. 예측·시뮬레이션 화면에 투자 조언 아님 고지.
 - 시뮬레이션은 seed를 받아 재현 가능해야 한다.
