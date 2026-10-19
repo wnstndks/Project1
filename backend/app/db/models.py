@@ -70,6 +70,50 @@ class PriceBar(Base):
     volume: Mapped[float] = mapped_column(Float)
 
 
+class NewsArticle(Base):
+    """A headline with its FinBERT sentiment. published_at is UTC (stored naive)."""
+
+    __tablename__ = "news_articles"
+    __table_args__ = (Index("ix_news_articles_symbol_url", "symbol", "url", unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    source: Mapped[str] = mapped_column(String(100))
+    headline: Mapped[str] = mapped_column(String(500))
+    url: Mapped[str] = mapped_column(String(1000))
+    positive: Mapped[float] = mapped_column(Float)
+    negative: Mapped[float] = mapped_column(Float)
+    neutral: Mapped[float] = mapped_column(Float)
+
+
+class GdeltDaily(Base):
+    """GDELT daily news tone and article volume for a symbol's query (UTC calendar days)."""
+
+    __tablename__ = "gdelt_daily"
+    __table_args__ = (Index("ix_gdelt_daily_symbol_date", "symbol", "date", unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    date: Mapped[date] = mapped_column(Date)
+    tone: Mapped[float | None] = mapped_column(Float)
+    volume: Mapped[int | None] = mapped_column()
+    volume_norm: Mapped[int | None] = mapped_column()
+
+
+class NewsSync(Base):
+    """What news range has been fetched per symbol, so syncs are incremental."""
+
+    __tablename__ = "news_syncs"
+
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    query: Mapped[str] = mapped_column(String(200))
+    gdelt_from: Mapped[date | None] = mapped_column(Date)
+    gdelt_synced_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finnhub_from: Mapped[date | None] = mapped_column(Date)
+    finnhub_synced_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class SymbolSync(Base):
     """Tracks which date range of a symbol has been fetched, so the cache is filled only once."""
 

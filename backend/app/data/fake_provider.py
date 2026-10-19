@@ -44,6 +44,9 @@ class FakeProvider:
             symbol=symbol, price=last.close, as_of=datetime.combine(last.date, datetime.min.time())
         )
 
+    def get_name(self, symbol: str) -> str | None:
+        return None if symbol in self.unknown else f"{symbol} Inc."
+
     def _series(self, symbol: str, end: date) -> list[Bar]:
         seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed)

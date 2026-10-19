@@ -17,6 +17,7 @@ dependencies = [
     "torch>=2.4",
     "anthropic>=1.15.0",
     "python-multipart>=0.0.32",
+    "httpx2>=2.14.0",
 ]
 
 [dependency-groups]
@@ -25,8 +26,13 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.6",
 ]
+ml = [
+    "transformers>=4.46",
+]
 
 [tool.uv]
+# `ml` (transformers, forecasting libs) is heavy; CI syncs with --no-group ml and uses fakes.
+default-groups = ["dev", "ml"]
 package = false
 
 [tool.uv.sources]

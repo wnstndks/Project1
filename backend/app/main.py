@@ -6,6 +6,7 @@ from app.api import (
     health,
     imports,
     market,
+    news,
     portfolio,
     predictions,
     projection,
@@ -13,6 +14,7 @@ from app.api import (
 )
 from app.config import get_settings
 from app.data.assets import UnsupportedSymbolError
+from app.data.news_sources import NewsDataError
 from app.data.provider import MarketDataError
 from app.services.errors import DomainError
 from app.services.market_data import SymbolNotFoundError
@@ -40,12 +42,25 @@ def create_app() -> FastAPI:
     async def _symbol_not_found(_: Request, exc: SymbolNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": f"Unknown symbol '{exc}'"})
 
+    @app.exception_handler(NewsDataError)
+    async def _news_data_error(_: Request, exc: NewsDataError) -> JSONResponse:
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+
     @app.exception_handler(MarketDataError)
     async def _market_data_error(_: Request, exc: MarketDataError) -> JSONResponse:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     api = APIRouter(prefix="/api")
-    for module in (health, market, transactions, portfolio, predictions, projection, imports):
+    for module in (
+        health,
+        market,
+        transactions,
+        portfolio,
+        predictions,
+        projection,
+        imports,
+        news,
+    ):
         api.include_router(module.router)
     app.include_router(api)
     return app

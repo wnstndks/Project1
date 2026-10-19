@@ -8,6 +8,9 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      # Keep `uv run` from re-syncing the default groups, which would pull in the heavy `ml` group.
+      UV_NO_SYNC: "1"
     defaults:
       run:
         working-directory: backend
@@ -17,7 +20,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install
-        run: uv sync --locked
+        run: uv sync --locked --no-group ml
       - name: Lint
         run: |
           uv run ruff check .

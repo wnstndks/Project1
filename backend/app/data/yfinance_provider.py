@@ -39,6 +39,13 @@ class YFinanceProvider:
         ts = df.index[-1]
         return Quote(symbol=symbol, price=float(df["Close"].iloc[-1]), as_of=_to_datetime(ts))
 
+    def get_name(self, symbol: str) -> str | None:
+        try:
+            info = yf.Ticker(symbol).info
+        except Exception as exc:  # yfinance raises many unrelated exception types
+            raise MarketDataError(f"yfinance info failed for {symbol}: {exc}") from exc
+        return info.get("shortName") or info.get("longName")
+
     @staticmethod
     def _download(symbol: str, **kwargs) -> pd.DataFrame:
         try:

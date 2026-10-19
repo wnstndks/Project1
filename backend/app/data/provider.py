@@ -33,3 +33,7 @@ class MarketDataProvider(Protocol):
     def get_quote(self, symbol: str) -> Quote | None:
         """Latest price, or None when the symbol is unknown."""
         ...
+
+    def get_name(self, symbol: str) -> str | None:
+        """Short company or fund name, e.g. "Apple Inc."; None when unavailable."""
+        ...

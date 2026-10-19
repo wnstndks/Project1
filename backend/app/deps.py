@@ -6,9 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.data.fake_provider import FakeProvider
+from app.data.news_sources import FinnhubClient, GdeltClient
 from app.data.provider import MarketDataProvider
 from app.db.session import get_db
+from app.ml.sentiment import FinBertScorer, SentimentScorer
 from app.services.market_data import MarketDataService, QuoteCache
+from app.services.news import NewsService
 from app.services.portfolio import PortfolioService
 from app.services.predictions import PredictionService, TrainingJobs
 from app.services.projection import ProjectionService
@@ -90,3 +93,29 @@ def get_import_service(
     transactions: TransactionService = Depends(get_transaction_service),
 ) -> StatementImportService:
     return StatementImportService(extractor, market, portfolio, transactions)
+
+
+@lru_cache
+def get_gdelt() -> GdeltClient:
+    return GdeltClient()
+
+
+@lru_cache
+def get_finnhub() -> FinnhubClient | None:
+    key = get_settings().finnhub_api_key
+    return FinnhubClient(key.get_secret_value()) if key else None
+
+
+@lru_cache
+def get_scorer() -> SentimentScorer:
+    return FinBertScorer()
+
+
+def get_news_service(
+    db: Session = Depends(get_db),
+    provider: MarketDataProvider = Depends(get_provider),
+    gdelt: GdeltClient = Depends(get_gdelt),
+    finnhub: FinnhubClient | None = Depends(get_finnhub),
+    scorer: SentimentScorer = Depends(get_scorer),
+) -> NewsService:
+    return NewsService(db, provider, gdelt, finnhub, scorer)
