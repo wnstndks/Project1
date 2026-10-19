@@ -14,6 +14,7 @@ def holding(name, ticker, qty, avg=None, cost_krw=None, asset_type="stock", conf
         asset_type=asset_type,
         quantity=qty,
         avg_price_usd=avg,
+        avg_price_krw=None,
         cost_krw=cost_krw,
         confidence=confidence,
     )
@@ -63,7 +64,7 @@ def test_preview_classifies_rows(client, extractor):
     msft = rows["마이크로소프트"]
     assert msft["price_estimated"] is True
     assert msft["implied_fx"] is None
-    assert msft["avg_price_usd"] > 0
+    assert msft["avg_price"] > 0 and msft["currency"] == "USD"
 
     assert len(extractor.calls) == 1
 
@@ -86,7 +87,7 @@ def test_preview_reports_difference_from_current_holdings(client, extractor):
     # Screenshot: 10 @ 150 avg. Held: 4 @ 100. Recording 6 @ x keeps the average at 150:
     # (10*150 - 400) / 6 = 183.3333
     assert apple["delta_quantity"] == 6
-    assert apple["delta_price_usd"] == pytest.approx(183.3333)
+    assert apple["delta_price"] == pytest.approx(183.3333)
 
 
 def test_no_delta_offered_when_it_cannot_be_priced(client, extractor):
@@ -105,7 +106,7 @@ def test_no_delta_offered_when_it_cannot_be_priced(client, extractor):
     extractor.statement.holdings[0] = holding("애플", "AAPL", "12", avg="150")
     apple = next(r for r in upload(client).json()["rows"] if r["symbol"] == "AAPL")
     assert apple["diff"] == "different"
-    assert apple["delta_quantity"] is None and apple["delta_price_usd"] is None
+    assert apple["delta_quantity"] is None and apple["delta_price"] is None
 
 
 @pytest.mark.parametrize(
@@ -131,14 +132,14 @@ def test_commit_creates_buys_with_actual_fx(client, extractor):
                     "asset_type": "stock",
                     "symbol": "AAPL",
                     "quantity": "10",
-                    "avg_price_usd": "150",
+                    "price": "150",
                     "fx_rate": "1400",
                 },
                 {
                     "asset_type": "crypto",
                     "symbol": "BTC",
                     "quantity": "0.05",
-                    "avg_price_usd": "60000",
+                    "price": "60000",
                 },
             ],
         },
@@ -162,8 +163,8 @@ def test_commit_is_all_or_nothing(client, extractor):
         json={
             "trade_date": "2026-10-01",
             "rows": [
-                {"asset_type": "stock", "symbol": "AAPL", "quantity": "1", "avg_price_usd": "1"},
-                {"asset_type": "stock", "symbol": "ZZZZ", "quantity": "1", "avg_price_usd": "1"},
+                {"asset_type": "stock", "symbol": "AAPL", "quantity": "1", "price": "1"},
+                {"asset_type": "stock", "symbol": "ZZZZ", "quantity": "1", "price": "1"},
             ],
         },
     )
@@ -198,6 +199,7 @@ def test_ollama_extractor_parses_structured_reply():
                         "asset_type": "stock",
                         "quantity": "3",
                         "avg_price_usd": None,
+                        "avg_price_krw": None,
                         "cost_krw": "1,200,000",
                         "confidence": "medium",
                     }
@@ -249,3 +251,44 @@ def test_decimal_parsing_strips_units(raw, expected):
     from app.services.statement_import import _decimal
 
     assert _decimal(raw) == (Decimal(expected) if expected else None)
+
+
+def test_upbit_coin_rows_are_kept_in_krw(client, extractor):
+    extractor.statement.holdings[:] = [
+        ExtractedHolding(
+            name="비트코인",
+            ticker="BTC",
+            ticker_shown=True,
+            asset_type="crypto",
+            quantity="0.05",
+            avg_price_usd=None,
+            avg_price_krw="80,000,000",
+            cost_krw="4,000,000",
+            confidence="high",
+        )
+    ]
+    row = upload(client).json()["rows"][0]
+    assert row["currency"] == "KRW"
+    assert row["avg_price"] == 80_000_000
+    assert row["implied_fx"] is None
+
+    res = client.post(
+        "/api/imports/commit",
+        json={
+            "trade_date": "2026-10-01",
+            "rows": [
+                {
+                    "asset_type": "crypto",
+                    "symbol": "BTC",
+                    "quantity": "0.05",
+                    "currency": "KRW",
+                    "price": "80000000",
+                    "fx_rate": "1400",
+                }
+            ],
+        },
+    )
+    assert res.status_code == 200
+    tx = client.get("/api/transactions").json()[0]
+    assert tx["currency"] == "KRW" and tx["price"] == 80_000_000
+    assert tx["fx_rate"] is None  # a won trade needs no FX rate

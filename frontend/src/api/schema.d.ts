@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market/kimchi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kimchi Premium
+         * @description Upbit KRW price vs the global USD price converted at today's USD/KRW rate.
+         */
+        get: operations["kimchi_premium_api_market_kimchi_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/fx/usdkrw": {
         parameters: {
             query?: never;
@@ -512,11 +532,21 @@ export interface components {
             symbol: string;
             /** Quantity */
             quantity: number | string;
-            /** Avg Price Usd */
-            avg_price_usd: number | string;
+            /** @default USD */
+            currency: components["schemas"]["Currency"];
+            /**
+             * Price
+             * @description In currency
+             */
+            price: number | string;
             /** Fx Rate */
             fx_rate?: number | string | null;
         };
+        /**
+         * Currency
+         * @enum {string}
+         */
+        Currency: "USD" | "KRW";
         /** ErrorMetrics */
         ErrorMetrics: {
             /** Mae */
@@ -597,6 +627,7 @@ export interface components {
             /** Name */
             name: string;
             asset_type: components["schemas"]["AssetType"];
+            currency: components["schemas"]["Currency"];
             /** Quantity */
             quantity: number;
             /** Avg Cost */
@@ -653,6 +684,21 @@ export interface components {
             /** Problem */
             problem: string | null;
         };
+        /** KimchiPremiumOut */
+        KimchiPremiumOut: {
+            /** Symbol */
+            symbol: string;
+            /** Upbit Krw */
+            upbit_krw: number;
+            /** Global Usd */
+            global_usd: number;
+            /** Usd Krw */
+            usd_krw: number;
+            /** Global Krw */
+            global_krw: number;
+            /** Premium Pct */
+            premium_pct: number;
+        };
         /** Metrics */
         Metrics: {
             /** Samples */
@@ -705,8 +751,9 @@ export interface components {
             asset_type: components["schemas"]["AssetType"];
             /** Quantity */
             quantity: number | null;
-            /** Avg Price Usd */
-            avg_price_usd: number | null;
+            currency: components["schemas"]["Currency"];
+            /** Avg Price */
+            avg_price: number | null;
             /** Cost Krw */
             cost_krw: number | null;
             /** Implied Fx */
@@ -727,8 +774,8 @@ export interface components {
             diff: string | null;
             /** Delta Quantity */
             delta_quantity: number | null;
-            /** Delta Price Usd */
-            delta_price_usd: number | null;
+            /** Delta Price */
+            delta_price: number | null;
         };
         /** ProjectionIn */
         ProjectionIn: {
@@ -893,11 +940,16 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+            /**
+             * @description USD for stocks; KRW for coins bought on Upbit/Bithumb
+             * @default USD
+             */
+            currency: components["schemas"]["Currency"];
             /** Quantity */
             quantity: number | string;
             /**
              * Price
-             * @description USD per unit
+             * @description Per unit, in currency
              */
             price: number | string;
             /**
@@ -932,6 +984,7 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+            currency: components["schemas"]["Currency"];
             /** Quantity */
             quantity: number;
             /** Price */
@@ -1034,6 +1087,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetInfo"][];
+                };
+            };
+        };
+    };
+    kimchi_premium_api_market_kimchi_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KimchiPremiumOut"][];
                 };
             };
         };

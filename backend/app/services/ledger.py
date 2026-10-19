@@ -1,8 +1,9 @@
 """Pure ledger math: derive positions from transactions using the moving-average cost method.
 
-USD figures come straight from the trades. KRW figures convert every trade at the USD/KRW
-rate of its own trade date, which is how Korean brokers report won P&L: the KRW cost basis
-is what was actually spent in won, so KRW P&L includes the currency gain or loss.
+Each trade is in its own currency (USD for stocks, KRW for coins bought on Upbit). The other
+currency is derived at that trade date's USD/KRW rate, which is how Korean brokers report:
+the KRW cost basis is what was actually spent in won, so KRW P&L includes the currency
+gain or loss. A position may not mix currencies.
 """
 
 import math
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from app.db.models import AssetType, Side, Transaction
+from app.db.models import AssetType, Currency, Side, Transaction
 from app.services.errors import DomainError
 
 ZERO = Decimal("0")
@@ -28,15 +29,22 @@ class OversellError(DomainError):
         self.symbol = symbol
 
 
+class MixedCurrencyError(DomainError):
+    pass
+
+
 @dataclass
 class Position:
     symbol: str
     asset_type: AssetType
+    # Currency the position trades in; set by its first trade.
+    currency: Currency | None = None
     quantity: Decimal = ZERO
     # Total cost of the shares still held, including buy fees.
     cost_basis: Decimal = ZERO
     realized_pnl: Decimal = ZERO
-    # Same figures in KRW at each trade date's rate; only tracked when an FX lookup is given.
+    # KRW figures. For KRW trades these are exact; for USD trades they use the trade date's
+    # rate. The derived currency is only tracked when an FX lookup is given.
     cost_basis_krw: Decimal = ZERO
     realized_pnl_krw: Decimal = ZERO
     fees_paid: Decimal = ZERO
@@ -52,35 +60,49 @@ class Position:
         return self.cost_basis_krw / self.quantity if self.quantity else ZERO
 
     def apply(self, tx: Transaction, fx: Decimal | None = None) -> None:
+        currency = tx.currency or Currency.USD
+        if self.currency is None:
+            self.currency = currency
+        elif currency != self.currency:
+            raise MixedCurrencyError(
+                f"{tx.symbol} is recorded in {self.currency}; a {currency} trade cannot be mixed in"
+            )
         self.trades += 1
         self.fees_paid += tx.fee
         if self.first_trade is None:
             self.first_trade = tx.trade_date
 
+        def in_usd_krw(native: Decimal) -> tuple[Decimal | None, Decimal | None]:
+            if currency == Currency.KRW:
+                return (native / fx if fx else None), native
+            return native, (native * fx if fx is not None else None)
+
         if tx.side == Side.BUY:
             self.quantity += tx.quantity
-            spent = tx.quantity * tx.price + tx.fee
-            self.cost_basis += spent
-            if fx is not None:
-                self.cost_basis_krw += spent * fx
+            usd, krw = in_usd_krw(tx.quantity * tx.price + tx.fee)
+            if usd is not None:
+                self.cost_basis += usd
+            if krw is not None:
+                self.cost_basis_krw += krw
             return
 
         if tx.quantity > self.quantity:
             raise OversellError(tx.symbol, tx.trade_date, self.quantity, tx.quantity)
         share = tx.quantity / self.quantity
-        released_cost = self.avg_cost * tx.quantity
-        proceeds = tx.quantity * tx.price - tx.fee
-        self.realized_pnl += proceeds - released_cost
-        if fx is not None:
-            released_krw = self.cost_basis_krw * share
-            self.realized_pnl_krw += proceeds * fx - released_krw
-            self.cost_basis_krw -= released_krw
+        released_usd = self.cost_basis * share
+        released_krw = self.cost_basis_krw * share
+        usd, krw = in_usd_krw(tx.quantity * tx.price - tx.fee)
+        if usd is not None:
+            self.realized_pnl += usd - released_usd
+        if krw is not None:
+            self.realized_pnl_krw += krw - released_krw
         self.quantity -= tx.quantity
         # Avoid leaving rounding dust once everything is sold.
         if self.quantity == ZERO:
             self.cost_basis = self.cost_basis_krw = ZERO
         else:
-            self.cost_basis -= released_cost
+            self.cost_basis -= released_usd
+            self.cost_basis_krw -= released_krw
 
 
 def trade_fx(tx: Transaction, fx_on: FxLookup) -> Decimal:

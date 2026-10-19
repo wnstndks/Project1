@@ -55,6 +55,32 @@
         }
       }
     },
+    "/api/market/kimchi": {
+      "get": {
+        "tags": [
+          "market"
+        ],
+        "summary": "Kimchi Premium",
+        "description": "Upbit KRW price vs the global USD price converted at today's USD/KRW rate.",
+        "operationId": "kimchi_premium_api_market_kimchi_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KimchiPremiumOut"
+                  },
+                  "type": "array",
+                  "title": "Response Kimchi Premium Api Market Kimchi Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market/fx/usdkrw": {
       "get": {
         "tags": [
@@ -1306,7 +1332,11 @@
             ],
             "title": "Quantity"
           },
-          "avg_price_usd": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency",
+            "default": "USD"
+          },
+          "price": {
             "anyOf": [
               {
                 "type": "number",
@@ -1316,7 +1346,8 @@
                 "type": "string"
               }
             ],
-            "title": "Avg Price Usd"
+            "title": "Price",
+            "description": "In currency"
           },
           "fx_rate": {
             "anyOf": [
@@ -1339,9 +1370,17 @@
           "asset_type",
           "symbol",
           "quantity",
-          "avg_price_usd"
+          "price"
         ],
         "title": "CommitRowIn"
+      },
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "USD",
+          "KRW"
+        ],
+        "title": "Currency"
       },
       "ErrorMetrics": {
         "properties": {
@@ -1523,6 +1562,9 @@
           "asset_type": {
             "$ref": "#/components/schemas/AssetType"
           },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
           "quantity": {
             "type": "number",
             "title": "Quantity"
@@ -1598,6 +1640,7 @@
           "symbol",
           "name",
           "asset_type",
+          "currency",
           "quantity",
           "avg_cost",
           "cost_basis",
@@ -1674,6 +1717,44 @@
           "problem"
         ],
         "title": "ImportStatusOut"
+      },
+      "KimchiPremiumOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "upbit_krw": {
+            "type": "number",
+            "title": "Upbit Krw"
+          },
+          "global_usd": {
+            "type": "number",
+            "title": "Global Usd"
+          },
+          "usd_krw": {
+            "type": "number",
+            "title": "Usd Krw"
+          },
+          "global_krw": {
+            "type": "number",
+            "title": "Global Krw"
+          },
+          "premium_pct": {
+            "type": "number",
+            "title": "Premium Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "upbit_krw",
+          "global_usd",
+          "usd_krw",
+          "global_krw",
+          "premium_pct"
+        ],
+        "title": "KimchiPremiumOut"
       },
       "Metrics": {
         "properties": {
@@ -1845,7 +1926,10 @@
             ],
             "title": "Quantity"
           },
-          "avg_price_usd": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "avg_price": {
             "anyOf": [
               {
                 "type": "number"
@@ -1854,7 +1938,7 @@
                 "type": "null"
               }
             ],
-            "title": "Avg Price Usd"
+            "title": "Avg Price"
           },
           "cost_krw": {
             "anyOf": [
@@ -1938,7 +2022,7 @@
             ],
             "title": "Delta Quantity"
           },
-          "delta_price_usd": {
+          "delta_price": {
             "anyOf": [
               {
                 "type": "number"
@@ -1947,7 +2031,7 @@
                 "type": "null"
               }
             ],
-            "title": "Delta Price Usd"
+            "title": "Delta Price"
           }
         },
         "type": "object",
@@ -1956,7 +2040,8 @@
           "symbol",
           "asset_type",
           "quantity",
-          "avg_price_usd",
+          "currency",
+          "avg_price",
           "cost_krw",
           "implied_fx",
           "price_estimated",
@@ -1967,7 +2052,7 @@
           "current_quantity",
           "diff",
           "delta_quantity",
-          "delta_price_usd"
+          "delta_price"
         ],
         "title": "PreviewRowOut"
       },
@@ -2387,6 +2472,11 @@
             "format": "date",
             "title": "Trade Date"
           },
+          "currency": {
+            "$ref": "#/components/schemas/Currency",
+            "description": "USD for stocks; KRW for coins bought on Upbit/Bithumb",
+            "default": "USD"
+          },
           "quantity": {
             "anyOf": [
               {
@@ -2410,7 +2500,7 @@
               }
             ],
             "title": "Price",
-            "description": "USD per unit"
+            "description": "Per unit, in currency"
           },
           "fee": {
             "anyOf": [
@@ -2494,6 +2584,9 @@
             "format": "date",
             "title": "Trade Date"
           },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
           "quantity": {
             "type": "number",
             "title": "Quantity"
@@ -2557,6 +2650,7 @@
           "symbol",
           "side",
           "trade_date",
+          "currency",
           "quantity",
           "price",
           "fee",

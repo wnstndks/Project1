@@ -14,6 +14,11 @@ _BASE_PRICES = {
     "XRP-USD": 0.6,
     "SOL-USD": 150.0,
     FX_USDKRW: 1350.0,
+    # Upbit KRW markets, roughly USD price x 1350 plus a small premium.
+    "KRW-BTC": 82_000_000.0,
+    "KRW-ETH": 4_100_000.0,
+    "KRW-XRP": 820.0,
+    "KRW-SOL": 205_000.0,
 }
 _EPOCH = date(2015, 1, 1)
 
@@ -50,7 +55,7 @@ class FakeProvider:
     def _series(self, symbol: str, end: date) -> list[Bar]:
         seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed)
-        crypto = symbol in CRYPTO_ASSETS
+        crypto = symbol in CRYPTO_ASSETS or symbol.startswith("KRW-")
         vol = 0.035 if crypto else 0.015
         drift = 0.0006 if crypto else 0.0003
         price = _BASE_PRICES.get(symbol, 50.0 + seed % 300)

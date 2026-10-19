@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.data.fake_provider import FakeProvider
 from app.data.news_sources import FinnhubClient, GdeltClient
 from app.data.provider import MarketDataProvider
+from app.data.upbit_provider import RoutingProvider, UpbitProvider
 from app.db.session import get_db
 from app.ml.sentiment import FinBertScorer, SentimentScorer
 from app.services.market_data import MarketDataService, QuoteCache
@@ -31,7 +32,8 @@ def get_provider() -> MarketDataProvider:
         return FakeProvider()
     from app.data.yfinance_provider import YFinanceProvider
 
-    return YFinanceProvider()
+    # Upbit KRW markets ("KRW-BTC") come from Upbit, everything else from yfinance.
+    return RoutingProvider(YFinanceProvider(), UpbitProvider())
 
 
 @lru_cache

@@ -1,7 +1,7 @@
 import { useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 
-import type { AssetType, ImportPreview, ImportPreviewRow } from '../api/client'
+import type { AssetType, Currency, ImportPreview, ImportPreviewRow } from '../api/client'
 import { useCommitImport, useImportStatus, usePreviewScreenshots } from '../api/hooks'
 import { Card, ErrorBox, Muted } from '../components/ui'
 import { displaySymbol, formatKrw, formatQty, isoDate } from '../lib/format'
@@ -18,7 +18,8 @@ type EditableRow = {
   asset_type: AssetType
   symbol: string
   quantity: string
-  avg_price_usd: string
+  currency: Currency
+  price: string
   fx_rate: string
   source: ImportPreviewRow
 }
@@ -27,14 +28,15 @@ function toEditable(r: ImportPreviewRow): EditableRow {
   // The screenshot shows TOTAL holdings. For a symbol already held, only the extra units are
   // recorded (at the price that keeps the average cost equal to the screenshot's), so a
   // re-upload never double counts. Rows held in the same or a smaller amount start unticked.
-  const delta = r.diff === 'different' && r.delta_quantity != null && r.delta_price_usd != null
+  const delta = r.diff === 'different' && r.delta_quantity != null && r.delta_price != null
   return {
     include: r.status === 'ok' && (r.diff === 'new' || delta),
     name: r.name,
     asset_type: r.asset_type,
     symbol: r.symbol ? displaySymbol(r.symbol) : '',
     quantity: String((delta ? r.delta_quantity : r.quantity) ?? ''),
-    avg_price_usd: String((delta ? r.delta_price_usd : r.avg_price_usd) ?? ''),
+    currency: r.currency,
+    price: String((delta ? r.delta_price : r.avg_price) ?? ''),
     fx_rate: r.implied_fx != null ? String(r.implied_fx) : '',
     source: r,
   }
@@ -97,7 +99,8 @@ export function Import() {
           asset_type: r.asset_type,
           symbol: r.symbol,
           quantity: r.quantity,
-          avg_price_usd: r.avg_price_usd,
+          currency: r.currency,
+          price: r.price,
           fx_rate: r.fx_rate || null,
         })),
       },
@@ -228,7 +231,7 @@ export function Import() {
                   <th className="px-3 py-2 font-medium">화면 이름</th>
                   <th className="px-3 py-2 font-medium">티커</th>
                   <th className="px-3 py-2 font-medium">수량</th>
-                  <th className="px-3 py-2 font-medium">평균단가 (USD)</th>
+                  <th className="px-3 py-2 font-medium">평균단가</th>
                   <th className="px-3 py-2 font-medium">매입 환율</th>
                   <th className="px-5 py-2 font-medium">상태</th>
                 </tr>
@@ -258,7 +261,8 @@ export function Import() {
                       <CellInput value={r.quantity} onChange={(v) => update(i, { quantity: v })} />
                     </td>
                     <td className="px-3 py-2">
-                      <CellInput value={r.avg_price_usd} onChange={(v) => update(i, { avg_price_usd: v })} />
+                      <CellInput value={r.price} onChange={(v) => update(i, { price: v })} />
+                      <div className="mt-1 text-[11px] text-muted">{r.currency}</div>
                       {r.source.price_estimated && (
                         <div className="mt-1 text-[11px] text-muted">원화 매입금액÷오늘 환율로 추정</div>
                       )}
@@ -327,7 +331,7 @@ function RowStatus({ row }: { row: ImportPreviewRow }) {
     return (
       <>
         <span className="text-ink-2">
-          {row.delta_quantity != null && row.delta_price_usd != null
+          {row.delta_quantity != null && row.delta_price != null
             ? `현재 ${formatQty(row.current_quantity ?? 0)} → 화면 ${formatQty(row.quantity ?? 0)}: 차이 ${formatQty(row.delta_quantity)}만 매수로 기록`
             : (row.quantity ?? 0) > (row.current_quantity ?? 0)
               ? `현재 ${formatQty(row.current_quantity ?? 0)} 보유. 늘어난 수량의 매입가를 계산할 수 없어 자동 기록하지 않습니다. 거래 내역에서 직접 입력하세요`

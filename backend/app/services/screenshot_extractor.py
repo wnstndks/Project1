@@ -30,6 +30,10 @@ class ExtractedHolding(BaseModel):
     avg_price_usd: str | None = Field(
         description="Average purchase price per unit in USD as a decimal string; null if not shown"
     )
+    avg_price_krw: str | None = Field(
+        description="Average purchase price per unit in KRW (평균매수가) when shown in won; "
+        "typical for coins on Upbit/Bithumb. Null if not shown"
+    )
     cost_krw: str | None = Field(
         description="Total purchase amount in KRW (매입금액) as a decimal string; null if not shown"
     )
@@ -61,7 +65,8 @@ holdings (잔고) of US stocks and cryptocurrencies, and extract one entry per h
 - Copy numbers exactly as displayed, without thousands separators. Never estimate a value \
 that is not visible: use null instead.
 - Korean apps often show prices in both USD and KRW. Put the per-unit average purchase price \
-in USD into avg_price_usd, and the total purchase amount in KRW (매입금액) into cost_krw.
+in USD into avg_price_usd, a per-unit average price shown in won into avg_price_krw (usual for \
+coins on Upbit/Bithumb), and the total purchase amount in KRW (매입금액) into cost_krw.
 - Infer the US ticker from Korean or English company names (애플 -> AAPL, 엔비디아 -> NVDA). \
 For ETFs use the exchange-traded ticker, never a mutual fund share class \
 (Vanguard S&P 500 ETF -> VOO, not VFINX). Set ticker_shown to false whenever you inferred the \
@@ -187,6 +192,7 @@ DEMO_STATEMENT = ExtractedStatement(
             asset_type="stock",
             quantity="12",
             avg_price_usd="231.40",
+            avg_price_krw=None,
             cost_krw="3,840,000",
             confidence="high",
         ),
@@ -197,6 +203,7 @@ DEMO_STATEMENT = ExtractedStatement(
             asset_type="stock",
             quantity="25",
             avg_price_usd="128.75",
+            avg_price_krw=None,
             cost_krw="4,410,000",
             confidence="high",
         ),
@@ -207,6 +214,7 @@ DEMO_STATEMENT = ExtractedStatement(
             asset_type="crypto",
             quantity="0.031",
             avg_price_usd=None,
+            avg_price_krw=None,
             cost_krw="3,520,000",
             confidence="medium",
         ),
@@ -217,6 +225,7 @@ DEMO_STATEMENT = ExtractedStatement(
             asset_type="stock",
             quantity="40",
             avg_price_usd="92.10",
+            avg_price_krw=None,
             cost_krw=None,
             confidence="low",
         ),

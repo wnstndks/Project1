@@ -117,6 +117,18 @@ def test_endpoint_errors(client):
     assert client.get("/api/market/DOGE-USD/quote").status_code == 422
 
 
+def test_kimchi_premium(client, provider):
+    rows = {r["symbol"]: r for r in client.get("/api/market/kimchi").json()}
+    assert set(rows) == {"BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD"}
+    btc = rows["BTC-USD"]
+    assert btc["global_krw"] == pytest.approx(btc["global_usd"] * btc["usd_krw"])
+    assert btc["premium_pct"] == pytest.approx((btc["upbit_krw"] / btc["global_krw"] - 1) * 100)
+
+
+def test_upbit_market_symbols_resolve(client):
+    assert client.get("/api/market/krw-btc/quote").json()["symbol"] == "KRW-BTC"
+
+
 def test_supported_crypto_list(client):
     symbols = [a["symbol"] for a in client.get("/api/market/crypto").json()]
     assert symbols == ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD"]

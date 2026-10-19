@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import AssetType, Side
+from app.db.models import AssetType, Currency, Side
 from app.schemas.common import Num
 
 
@@ -12,8 +12,13 @@ class TransactionIn(BaseModel):
     symbol: str = Field(min_length=1, max_length=20, examples=["AAPL", "BTC"])
     side: Side
     trade_date: date
+    currency: Currency = Field(
+        Currency.USD, description="USD for stocks; KRW for coins bought on Upbit/Bithumb"
+    )
     quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
-    price: Decimal = Field(gt=0, max_digits=20, decimal_places=8, description="USD per unit")
+    price: Decimal = Field(
+        gt=0, max_digits=20, decimal_places=8, description="Per unit, in currency"
+    )
     fee: Decimal = Field(default=Decimal("0"), ge=0, max_digits=20, decimal_places=8)
     fx_rate: Decimal | None = Field(
         default=None,
@@ -34,6 +39,7 @@ class TransactionOut(BaseModel):
     symbol: str
     side: Side
     trade_date: date
+    currency: Currency
     quantity: Num
     price: Num
     fee: Num

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { useHoldings, usePortfolioHistory, useSummary } from '../api/hooks'
 import { AllocationBar } from '../components/AllocationBar'
+import { KimchiPremium } from '../components/KimchiPremium'
 import { HoldingsTable } from '../components/HoldingsTable'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { ValueHistoryChart } from '../components/ValueHistoryChart'
@@ -92,9 +93,14 @@ export function Dashboard() {
             <div className="h-80" />
           )}
         </Card>
-        <Card title="자산군 비중">
-          <AllocationBar allocation={s.allocation} />
-        </Card>
+        <div className="space-y-6">
+          <Card title="자산군 비중">
+            <AllocationBar allocation={s.allocation} />
+          </Card>
+          <Card title="김치 프리미엄">
+            <KimchiPremium />
+          </Card>
+        </div>
       </div>
 
       <Card title="보유 종목">

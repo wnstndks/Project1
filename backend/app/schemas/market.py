@@ -23,6 +23,15 @@ class QuoteOut(BaseModel):
     as_of: datetime
 
 
+class KimchiPremiumOut(BaseModel):
+    symbol: str
+    upbit_krw: float
+    global_usd: float
+    usd_krw: float
+    global_krw: float
+    premium_pct: float
+
+
 class AssetInfo(BaseModel):
     symbol: str
     name: str

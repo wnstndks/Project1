@@ -13,6 +13,11 @@ class AssetType(enum.StrEnum):
     CRYPTO = "crypto"
 
 
+class Currency(enum.StrEnum):
+    USD = "USD"
+    KRW = "KRW"
+
+
 class Side(enum.StrEnum):
     BUY = "buy"
     SELL = "sell"
@@ -26,7 +31,9 @@ def _str_enum(enum_cls: type[enum.StrEnum], length: int) -> Enum:
 
 
 class Transaction(Base):
-    """A buy or sell of a stock or coin. Prices and fees are in USD.
+    """A buy or sell of a stock or coin. Price and fee are in `currency`.
+
+    Stocks trade in USD. Coins bought on a Korean exchange (Upbit, Bithumb) trade in KRW.
 
     Holdings are never stored; they are derived from this ledger.
     """
@@ -38,6 +45,9 @@ class Transaction(Base):
     symbol: Mapped[str] = mapped_column(String(20), index=True)
     side: Mapped[Side] = mapped_column(_str_enum(Side, 4))
     trade_date: Mapped[date] = mapped_column(Date)
+    currency: Mapped[Currency] = mapped_column(
+        _str_enum(Currency, 3), default=Currency.USD, server_default="USD"
+    )
     quantity: Mapped[Decimal] = mapped_column(DecimalText)
     price: Mapped[Decimal] = mapped_column(DecimalText)
     fee: Mapped[Decimal] = mapped_column(DecimalText, default=Decimal("0"))

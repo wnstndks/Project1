@@ -14,6 +14,14 @@ CRYPTO_ASSETS: dict[str, str] = {
     "SOL-USD": "Solana",
 }
 
+# Upbit KRW market for each supported coin (prices include the "kimchi premium").
+UPBIT_MARKETS: dict[str, str] = {
+    "BTC-USD": "KRW-BTC",
+    "ETH-USD": "KRW-ETH",
+    "XRP-USD": "KRW-XRP",
+    "SOL-USD": "KRW-SOL",
+}
+
 # yfinance symbol for the USD/KRW exchange rate (KRW per 1 USD).
 FX_USDKRW = "KRW=X"
 
@@ -43,6 +51,8 @@ def normalize_symbol(asset_type: AssetType, symbol: str) -> str:
 def resolve_symbol(raw: str) -> str:
     """Guess the asset type from user input ("AAPL", "btc", "SOL-USD") and normalize it."""
     s = raw.strip().upper()
+    if s in UPBIT_MARKETS.values():
+        return s  # an Upbit KRW market, e.g. "KRW-BTC"
     is_crypto = s.endswith("-USD") or f"{s}-USD" in CRYPTO_ASSETS
     return normalize_symbol(AssetType.CRYPTO if is_crypto else AssetType.STOCK, s)
 
@@ -53,4 +63,4 @@ def asset_type_of(symbol: str) -> AssetType:
 
 def trades_every_day(symbol: str) -> bool:
     """Coins trade 24/7, so their daily bars include weekends; stocks do not."""
-    return symbol in CRYPTO_ASSETS
+    return symbol in CRYPTO_ASSETS or symbol in UPBIT_MARKETS.values()

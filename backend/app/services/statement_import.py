@@ -7,7 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 
 from app.data.assets import UnsupportedSymbolError, normalize_symbol
-from app.db.models import AssetType, Side, Transaction
+from app.db.models import AssetType, Currency, Side, Transaction
 from app.schemas.transactions import TransactionIn
 from app.services.errors import DomainError
 from app.services.market_data import MarketDataService, SymbolNotFoundError
@@ -30,11 +30,14 @@ class PreviewRow:
     symbol: str | None
     asset_type: AssetType
     quantity: Decimal | None
-    avg_price_usd: Decimal | None
+    # The trade currency: USD for stocks, KRW for coins held on Korean exchanges.
+    currency: Currency
+    # Average purchase price per unit, in `currency`.
+    avg_price: Decimal | None
     cost_krw: Decimal | None
-    # USD/KRW actually paid, implied by the KRW cost and the USD average price.
+    # USD/KRW actually paid, implied by the KRW cost and the USD average price (USD rows).
     implied_fx: Decimal | None
-    # True when avg_price_usd was not shown and was derived from cost_krw at today's rate.
+    # True when a USD price was not shown and was derived from cost_krw at today's rate.
     price_estimated: bool
     # True when the ticker was inferred from the name rather than printed on screen.
     ticker_guessed: bool
@@ -46,7 +49,7 @@ class PreviewRow:
     # When the screenshot shows more than is held: the extra units, and the price that makes
     # the moving-average cost after the buy equal the screenshot's average price.
     delta_quantity: Decimal | None
-    delta_price_usd: Decimal | None
+    delta_price: Decimal | None
 
 
 @dataclass
@@ -60,7 +63,8 @@ class CommitRow:
     asset_type: AssetType
     symbol: str
     quantity: Decimal
-    avg_price_usd: Decimal
+    price: Decimal
+    currency: Currency = Currency.USD
     fx_rate: Decimal | None = None
 
 
@@ -117,7 +121,14 @@ class StatementImportService:
                 raise DomainError("The file content is not a valid PNG, JPEG or WebP image")
 
         statement = self.extractor.extract(images)
-        held = {h.symbol: (h.quantity, h.cost_basis) for h in self.portfolio.holdings()}
+        held = {
+            h.symbol: (
+                h.quantity,
+                h.cost_basis_krw if h.currency == Currency.KRW else h.cost_basis,
+                h.currency,
+            )
+            for h in self.portfolio.holdings()
+        }
         fx_today = Decimal(str(self.market.usd_krw().price))
         return Preview(
             broker=statement.broker,
@@ -134,9 +145,11 @@ class StatementImportService:
                     symbol=r.symbol,
                     side=Side.BUY,
                     trade_date=trade_date,
+                    currency=r.currency,
                     quantity=r.quantity,
-                    price=r.avg_price_usd,
-                    fx_rate=r.fx_rate,
+                    price=r.price,
+                    # A KRW trade's won cost is exact; a separate FX rate would be meaningless.
+                    fx_rate=r.fx_rate if r.currency == Currency.USD else None,
                     note=IMPORT_NOTE,
                 )
                 for r in rows
@@ -146,34 +159,56 @@ class StatementImportService:
     def _row(
         self,
         h: ExtractedHolding,
-        held: dict[str, tuple[Decimal, Decimal]],
+        held: dict[str, tuple[Decimal, Decimal, Currency]],
         fx_today: Decimal,
     ) -> PreviewRow:
         qty = _decimal(h.quantity)
         avg_usd = _decimal(h.avg_price_usd)
+        avg_krw = _decimal(h.avg_price_krw)
         cost_krw = _decimal(h.cost_krw)
         asset_type = AssetType(h.asset_type)
 
         estimated = False
-        if avg_usd is None and cost_krw is not None and qty:
-            avg_usd = (cost_krw / qty / fx_today).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-            estimated = True
         implied_fx = None
-        if cost_krw is not None and avg_usd is not None and qty and not estimated:
-            implied_fx = (cost_krw / (qty * avg_usd)).quantize(Decimal("0.01"), ROUND_HALF_UP)
-            # A wildly off rate means a misread number, not a real purchase rate.
-            if not (Decimal("500") <= implied_fx <= Decimal("3000")):
-                implied_fx = None
+        # Coins on Korean exchanges are bought in won: keep them in KRW (exact won cost).
+        krw_coin = asset_type == AssetType.CRYPTO and (avg_krw is not None or avg_usd is None)
+        if krw_coin:
+            currency = Currency.KRW
+            avg = avg_krw
+            if avg is None and cost_krw is not None and qty:
+                avg = (cost_krw / qty).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        else:
+            currency = Currency.USD
+            avg = avg_usd
+            if avg is None and cost_krw is not None and qty:
+                avg = (cost_krw / qty / fx_today).quantize(Decimal("0.0001"), ROUND_HALF_UP)
+                estimated = True
+            if cost_krw is not None and avg is not None and qty and not estimated:
+                implied_fx = (cost_krw / (qty * avg)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                # A wildly off rate means a misread number, not a real purchase rate.
+                if not (Decimal("500") <= implied_fx <= Decimal("3000")):
+                    implied_fx = None
 
         symbol, status, message = self._resolve(h, asset_type)
-        if status == "ok" and (qty is None or avg_usd is None):
+        if status == "ok" and (qty is None or avg is None):
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
 
-        current, current_cost = held.get(symbol, (None, None)) if symbol else (None, None)
+        current, current_cost, held_currency = (
+            held.get(symbol, (None, None, None)) if symbol else (None, None, None)
+        )
+        if status == "ok" and held_currency is not None and held_currency != currency:
+            status = "invalid"
+            message = f"이미 {held_currency}로 기록된 종목입니다. 통화를 맞춰 직접 입력하세요"
         # Both or neither: a delta without a valid price must not be recordable.
         delta_qty = delta_price = None
-        if current is not None and qty is not None and qty > current and avg_usd is not None:
-            price = (qty * avg_usd - current_cost) / (qty - current)
+        if (
+            current is not None
+            and held_currency == currency
+            and qty is not None
+            and qty > current
+            and avg is not None
+        ):
+            price = (qty * avg - current_cost) / (qty - current)
             if price > 0:
                 delta_qty = qty - current
                 delta_price = price.quantize(Decimal("0.0001"), ROUND_HALF_UP)
@@ -186,7 +221,8 @@ class StatementImportService:
             symbol=symbol,
             asset_type=asset_type,
             quantity=qty,
-            avg_price_usd=avg_usd,
+            currency=currency,
+            avg_price=avg,
             cost_krw=cost_krw,
             implied_fx=implied_fx,
             price_estimated=estimated,
@@ -197,7 +233,7 @@ class StatementImportService:
             current_quantity=current,
             diff=diff,
             delta_quantity=delta_qty,
-            delta_price_usd=delta_price,
+            delta_price=delta_price,
         )
 
     def _resolve(

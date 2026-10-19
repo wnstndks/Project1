@@ -8,9 +8,9 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.data.assets import CRYPTO_ASSETS
+from app.data.assets import CRYPTO_ASSETS, UPBIT_MARKETS
 from app.data.provider import Quote
-from app.db.models import AssetType, Transaction
+from app.db.models import AssetType, Currency, Transaction
 from app.services.ledger import ZERO, Position, build_positions, ordered, trade_fx
 from app.services.market_data import MarketDataService
 
@@ -25,11 +25,19 @@ def _pct(part: Decimal, whole: Decimal) -> Decimal:
     return (part / whole * HUNDRED) if whole else ZERO
 
 
+def quote_symbol(symbol: str, currency: Currency | None) -> str:
+    """Where a position is priced: coins held in KRW use their Upbit KRW market."""
+    if currency == Currency.KRW and symbol in UPBIT_MARKETS:
+        return UPBIT_MARKETS[symbol]
+    return symbol
+
+
 @dataclass
 class Holding:
     symbol: str
     name: str
     asset_type: AssetType
+    currency: Currency
     quantity: Decimal
     avg_cost: Decimal
     cost_basis: Decimal
@@ -110,9 +118,10 @@ class PortfolioService:
         open_positions = [p for p in positions.values() if p.quantity > ZERO]
         if not open_positions:
             return []
-        quotes = self.market.get_quotes([p.symbol for p in open_positions])
+        qsyms = {p.symbol: quote_symbol(p.symbol, p.currency) for p in open_positions}
+        quotes = self.market.get_quotes(list(qsyms.values()))
         fx = _dec(self.market.usd_krw().price)
-        holdings = [self._value(p, quotes[p.symbol], fx) for p in open_positions]
+        holdings = [self._value(p, quotes[qsyms[p.symbol]], fx) for p in open_positions]
         total = sum((h.market_value for h in holdings), ZERO)
         for h in holdings:
             h.weight = _pct(h.market_value, total)
@@ -154,7 +163,7 @@ class PortfolioService:
             unrealized_pct_krw=_pct(unrealized_krw, cost_krw),
             realized_pnl_krw=realized_krw,
             total_pnl_krw=unrealized_krw + realized_krw,
-            fx_pnl_krw=unrealized_krw - unrealized * fx,
+            fx_pnl_krw=self._fx_pnl_krw(holdings, fx),
             usd_krw=fx,
             allocation=allocation,
             holdings_count=len(holdings),
@@ -171,9 +180,16 @@ class PortfolioService:
         # Look back a little so the first day has a previous close to forward-fill from.
         fetch_from = first - timedelta(days=7)
 
+        currency = {}
+        for t in txs:
+            currency.setdefault(t.symbol, t.currency or Currency.USD)
+        # KRW coins are valued at Upbit KRW closes, everything else at USD closes.
         closes = {
-            sym: {b.date: b.close for b in self.market.get_history(sym, fetch_from, today)}
-            for sym in {t.symbol for t in txs}
+            sym: {
+                b.date: b.close
+                for b in self.market.get_history(quote_symbol(sym, cur), fetch_from, today)
+            }
+            for sym, cur in currency.items()
         }
         fx_on = self.market.usd_krw_lookup(fetch_from)
 
@@ -194,19 +210,22 @@ class PortfolioService:
 
             if d >= start:
                 fx = float(fx_on(d))
-                value = 0.0
+                value = value_krw = 0.0
                 for sym, pos in positions.items():
                     if pos.quantity == ZERO:
                         continue
+                    krw = pos.currency == Currency.KRW
                     # Before the first bar arrives, value the position at its cost.
-                    price = last_price.get(sym, float(pos.avg_cost))
-                    value += float(pos.quantity) * price
+                    fallback = pos.avg_cost_krw if krw else pos.avg_cost
+                    native = float(pos.quantity) * last_price.get(sym, float(fallback))
+                    value += native / fx if krw else native
+                    value_krw += native if krw else native * fx
                 held = positions.values()
                 points.append(
                     HistoryPoint(
                         date=d,
                         market_value=round(value, 2),
-                        market_value_krw=round(value * fx),
+                        market_value_krw=round(value_krw),
                         cost_basis=round(float(sum(p.cost_basis for p in held)), 2),
                         # Fixed at each buy date's rate, so it only moves on trade days.
                         cost_basis_krw=round(float(sum(p.cost_basis_krw for p in held))),
@@ -216,14 +235,21 @@ class PortfolioService:
         return points
 
     def _value(self, p: Position, quote: Quote, fx: Decimal) -> Holding:
-        price = _dec(quote.price)
+        if p.currency == Currency.KRW:
+            price_krw = _dec(quote.price)
+            price = price_krw / fx
+        else:
+            price = _dec(quote.price)
+            price_krw = price * fx
         market_value = p.quantity * price
+        market_value_krw = p.quantity * price_krw
         unrealized = market_value - p.cost_basis
-        unrealized_krw = market_value * fx - p.cost_basis_krw
+        unrealized_krw = market_value_krw - p.cost_basis_krw
         return Holding(
             symbol=p.symbol,
             name=CRYPTO_ASSETS.get(p.symbol, p.symbol),
             asset_type=p.asset_type,
+            currency=p.currency or Currency.USD,
             quantity=p.quantity,
             avg_cost=p.avg_cost,
             cost_basis=p.cost_basis,
@@ -235,12 +261,23 @@ class PortfolioService:
             realized_pnl=p.realized_pnl,
             avg_cost_krw=p.avg_cost_krw,
             cost_basis_krw=p.cost_basis_krw,
-            price_krw=price * fx,
-            market_value_krw=market_value * fx,
+            price_krw=price_krw,
+            market_value_krw=market_value_krw,
             unrealized_pnl_krw=unrealized_krw,
             unrealized_pct_krw=_pct(unrealized_krw, p.cost_basis_krw),
             realized_pnl_krw=p.realized_pnl_krw,
         )
+
+    @staticmethod
+    def _fx_pnl_krw(holdings: list[Holding], fx: Decimal) -> Decimal:
+        """Part of the KRW P&L caused by USD/KRW moving since purchase.
+
+        Only USD positions carry currency risk; a coin bought in won has none.
+        """
+        usd = [h for h in holdings if h.currency == Currency.USD]
+        unrealized_krw = sum((h.unrealized_pnl_krw for h in usd), ZERO)
+        unrealized_usd = sum((h.unrealized_pnl for h in usd), ZERO)
+        return unrealized_krw - unrealized_usd * fx
 
     def _transactions(self) -> list[Transaction]:
         return list(self.db.scalars(select(Transaction)))

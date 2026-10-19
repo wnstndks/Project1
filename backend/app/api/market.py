@@ -2,10 +2,10 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
 
-from app.data.assets import CRYPTO_ASSETS, asset_type_of, resolve_symbol
+from app.data.assets import CRYPTO_ASSETS, UPBIT_MARKETS, asset_type_of, resolve_symbol
 from app.db.models import AssetType
 from app.deps import get_market_service
-from app.schemas.market import AssetInfo, BarOut, QuoteOut
+from app.schemas.market import AssetInfo, BarOut, KimchiPremiumOut, QuoteOut
 from app.services.market_data import MarketDataService
 
 router = APIRouter(prefix="/market", tags=["market"])
@@ -16,6 +16,27 @@ def list_supported_crypto() -> list[AssetInfo]:
     return [
         AssetInfo(symbol=s, name=n, asset_type=AssetType.CRYPTO) for s, n in CRYPTO_ASSETS.items()
     ]
+
+
+@router.get("/kimchi", response_model=list[KimchiPremiumOut])
+def kimchi_premium(market: MarketDataService = Depends(get_market_service)):
+    """Upbit KRW price vs the global USD price converted at today's USD/KRW rate."""
+    fx = market.usd_krw().price
+    quotes = market.get_quotes([*UPBIT_MARKETS, *UPBIT_MARKETS.values()])
+    out = []
+    for symbol, upbit in UPBIT_MARKETS.items():
+        global_krw = quotes[symbol].price * fx
+        out.append(
+            KimchiPremiumOut(
+                symbol=symbol,
+                upbit_krw=quotes[upbit].price,
+                global_usd=quotes[symbol].price,
+                usd_krw=fx,
+                global_krw=global_krw,
+                premium_pct=(quotes[upbit].price / global_krw - 1) * 100,
+            )
+        )
+    return out
 
 
 @router.get("/fx/usdkrw", response_model=QuoteOut)

@@ -180,3 +180,72 @@ def test_history_krw_cost_shrinks_proportionally_on_sell(client):
     by_date = {p["date"]: p for p in client.get("/api/portfolio/history").json()}
     before, after = by_date["2026-10-04"]["cost_basis_krw"], by_date["2026-10-05"]["cost_basis_krw"]
     assert after == pytest.approx(before * 0.6, abs=1)
+
+
+def krw_trade(client, symbol, qty, price, day="2026-10-01", side="buy", fee=0):
+    return client.post(
+        "/api/transactions",
+        json={
+            "asset_type": "crypto",
+            "symbol": symbol,
+            "side": side,
+            "trade_date": day,
+            "currency": "KRW",
+            "quantity": qty,
+            "price": price,
+            "fee": fee,
+        },
+    )
+
+
+def test_krw_coin_is_valued_at_upbit_price_with_exact_krw_cost(client, provider):
+    assert krw_trade(client, "BTC", "0.01", "80000000", fee="400").status_code == 201
+    h = next(h for h in client.get("/api/portfolio/holdings").json() if h["symbol"] == "BTC-USD")
+    assert h["currency"] == "KRW"
+    assert h["cost_basis_krw"] == 800_400  # exact won spent, fee included
+    upbit = provider.get_quote("KRW-BTC").price
+    assert h["price_krw"] == pytest.approx(upbit)  # Upbit KRW price, not USD x FX
+    assert h["market_value_krw"] == pytest.approx(0.01 * upbit)
+    fx = client.get("/api/portfolio/summary").json()["usd_krw"]
+    assert h["market_value"] == pytest.approx(0.01 * upbit / fx)
+
+
+def test_krw_coin_realized_pnl_is_exact_in_won(client):
+    krw_trade(client, "ETH", "2", "3000000", day="2026-10-01")
+    krw_trade(client, "ETH", "1", "3500000", day="2026-10-05", side="sell", fee="1750")
+    summary = client.get("/api/portfolio/summary").json()
+    assert summary["realized_pnl_krw"] == 500_000 - 1_750
+
+
+def test_currency_rules(client):
+    # Stocks are USD only; a coin position cannot mix KRW and USD trades.
+    stock_krw = client.post(
+        "/api/transactions",
+        json={
+            "asset_type": "stock",
+            "symbol": "AAPL",
+            "side": "buy",
+            "trade_date": "2026-10-01",
+            "currency": "KRW",
+            "quantity": 1,
+            "price": 1,
+        },
+    )
+    assert stock_krw.status_code == 422
+    krw_trade(client, "SOL", "1", "200000")
+    usd = buy(client, "SOL", 1, 150, asset_type="crypto")
+    assert usd.status_code == 422
+    assert "mixed" in usd.json()["detail"]
+
+
+def test_history_values_krw_coins_in_won(client):
+    krw_trade(client, "BTC", "0.01", "80000000", day="2026-10-01")
+    points = client.get("/api/portfolio/history").json()
+    by_date = {p["date"]: p for p in points}
+    assert by_date["2026-10-05"]["cost_basis_krw"] == 800_000
+    assert by_date["2026-10-05"]["market_value_krw"] > 0
+
+
+def test_krw_coins_carry_no_fx_pnl(client):
+    krw_trade(client, "BTC", "0.01", "80000000")
+    assert client.get("/api/portfolio/summary").json()["fx_pnl_krw"] == 0

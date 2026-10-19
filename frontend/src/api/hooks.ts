@@ -130,3 +130,6 @@ export const useNews = (symbol: string) =>
     staleTime: 10 * 60_000,
     retry: false,
   })
+
+export const useKimchi = () =>
+  useQuery({ queryKey: ['market', 'kimchi'], queryFn: api.kimchi, staleTime: 5 * 60_000 })

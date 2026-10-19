@@ -21,7 +21,8 @@ from alembic.config import Config
 from sqlalchemy import delete, func, select
 
 from app.config import Settings, get_settings
-from app.db.models import AssetType, Side, Transaction
+from app.data.assets import UPBIT_MARKETS
+from app.db.models import AssetType, Currency, Side, Transaction
 from app.db.session import SessionLocal
 from app.deps import get_provider, get_quote_cache
 from app.schemas.transactions import TransactionIn
@@ -52,7 +53,7 @@ DEMO_TRADES = [
     (C, "SOL-USD", X, 90, "4"),
     (S, "VOO", B, 60, "3"),
 ]
-CRYPTO_FEE_RATE = Decimal("0.001")
+CRYPTO_FEE_RATE = Decimal("0.0005")  # Upbit KRW market fee
 
 
 def _close_on(market: MarketDataService, symbol: str, day: date) -> Decimal:
@@ -96,17 +97,20 @@ def main() -> None:
         items = []
         for asset_type, symbol, side, days_ago, qty in sorted(DEMO_TRADES, key=lambda t: -t[3]):
             day = today - timedelta(days=days_ago)
-            price = _close_on(market, symbol, day)
+            # Coins are bought on Upbit in won, like a typical Korean investor.
+            currency = Currency.KRW if asset_type == C else Currency.USD
+            price = _close_on(market, UPBIT_MARKETS[symbol] if asset_type == C else symbol, day)
             quantity = Decimal(qty)
             fee = Decimal("0")
             if asset_type == C:
-                fee = (quantity * price * CRYPTO_FEE_RATE).quantize(Decimal("0.01"))
+                fee = (quantity * price * CRYPTO_FEE_RATE).quantize(Decimal("1"))
             items.append(
                 TransactionIn(
                     asset_type=asset_type,
                     symbol=symbol,
                     side=side,
                     trade_date=day,
+                    currency=currency,
                     quantity=quantity,
                     price=price,
                     fee=fee,

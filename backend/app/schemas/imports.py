@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.db.models import AssetType
+from app.db.models import AssetType, Currency
 from app.schemas.common import Num
 
 
@@ -19,7 +19,8 @@ class PreviewRowOut(BaseModel):
     symbol: str | None
     asset_type: AssetType
     quantity: Num | None
-    avg_price_usd: Num | None
+    currency: Currency
+    avg_price: Num | None
     cost_krw: Num | None
     implied_fx: Num | None
     price_estimated: bool
@@ -30,7 +31,7 @@ class PreviewRowOut(BaseModel):
     current_quantity: Num | None
     diff: str | None
     delta_quantity: Num | None
-    delta_price_usd: Num | None
+    delta_price: Num | None
 
 
 class PreviewOut(BaseModel):
@@ -42,7 +43,8 @@ class CommitRowIn(BaseModel):
     asset_type: AssetType
     symbol: str = Field(min_length=1, max_length=20)
     quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
-    avg_price_usd: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
+    currency: Currency = Currency.USD
+    price: Decimal = Field(gt=0, max_digits=20, decimal_places=8, description="In currency")
     fx_rate: Decimal | None = Field(None, gt=0, max_digits=20, decimal_places=6)
 
 

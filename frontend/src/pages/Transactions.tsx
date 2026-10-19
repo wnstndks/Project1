@@ -25,8 +25,12 @@ export function Transactions() {
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const { currency, format } = useMoney()
   // KRW amounts use the rate on each trade's own date, not today's.
-  const money = (t: Transaction, usd: number) =>
-    format(currency === 'KRW' && t.usd_krw ? usd * t.usd_krw : usd)
+  // Amounts are stored in the trade's own currency; the other one uses the rate on the
+  // trade's own date, not today's.
+  const money = (t: Transaction, amount: number) => {
+    if (t.currency === currency || !t.usd_krw) return format(amount)
+    return format(t.currency === 'KRW' ? amount / t.usd_krw : amount * t.usd_krw)
+  }
 
   const save = async (data: TransactionInput) => {
     if (editing) {

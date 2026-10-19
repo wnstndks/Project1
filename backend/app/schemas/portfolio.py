@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.db.models import AssetType
+from app.db.models import AssetType, Currency
 from app.schemas.common import Num
 
 
@@ -12,6 +12,7 @@ class HoldingOut(BaseModel):
     symbol: str
     name: str
     asset_type: AssetType
+    currency: Currency
     quantity: Num
     avg_cost: Num
     cost_basis: Num

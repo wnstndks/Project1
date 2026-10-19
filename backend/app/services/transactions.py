@@ -6,11 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.data.assets import normalize_symbol
-from app.db.models import AssetType, Transaction
+from app.db.models import AssetType, Currency, Transaction
 from app.schemas.transactions import TransactionIn
 from app.services.errors import DomainError, NotFoundError
 from app.services.ledger import build_positions, trade_fx
 from app.services.market_data import MarketDataService, SymbolNotFoundError
+from app.services.portfolio import quote_symbol
 
 
 class TransactionService:
@@ -86,8 +87,10 @@ class TransactionService:
             raise DomainError(str(exc)) from exc
         if data.trade_date > self.today():
             raise DomainError("trade_date cannot be in the future")
+        if data.currency == Currency.KRW and data.asset_type != AssetType.CRYPTO:
+            raise DomainError("US stocks are recorded in USD; KRW is for coins on Korean exchanges")
         try:
-            self.market.get_quote(symbol)
+            self.market.get_quote(quote_symbol(symbol, data.currency))
         except SymbolNotFoundError as exc:
             raise DomainError(f"Unknown symbol '{symbol}'") from exc
         return data.model_dump() | {"symbol": symbol}

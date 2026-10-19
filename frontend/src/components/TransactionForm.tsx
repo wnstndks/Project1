@@ -1,12 +1,20 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 
-import { api, type AssetType, type Side, type Transaction, type TransactionInput } from '../api/client'
+import {
+  api,
+  type AssetType,
+  type Currency,
+  type Side,
+  type Transaction,
+  type TransactionInput,
+} from '../api/client'
 import { useSupportedCrypto } from '../api/hooks'
 import { daysAgo, displaySymbol, isoDate } from '../lib/format'
 import { ErrorBox, SegmentedControl } from './ui'
 
 type FormState = {
   asset_type: AssetType
+  currency: Currency
   symbol: string
   side: Side
   trade_date: string
@@ -20,6 +28,7 @@ type FormState = {
 
 const empty = (): FormState => ({
   asset_type: 'stock',
+  currency: 'USD',
   symbol: '',
   side: 'buy',
   trade_date: isoDate(new Date()),
@@ -33,6 +42,7 @@ const empty = (): FormState => ({
 
 const fromTransaction = (t: Transaction): FormState => ({
   asset_type: t.asset_type,
+  currency: t.currency,
   symbol: t.symbol,
   side: t.side,
   trade_date: t.trade_date,
@@ -68,10 +78,14 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
     try {
       // Look back a week so a weekend or holiday still finds the previous close.
       const start = daysAgo(7, new Date(`${form.trade_date}T00:00:00`))
-      const bars = await api.history(form.symbol, start, form.trade_date)
+      // KRW coins are priced on Upbit ("KRW-BTC"); everything else in USD.
+      const priced =
+        form.currency === 'KRW' ? `KRW-${form.symbol.replace(/-USD$/, '')}` : form.symbol
+      const bars = await api.history(priced, start, form.trade_date)
       const last = bars.at(-1)
       if (!last) throw new Error('해당 기간 시세가 없습니다')
-      set('price', String(Number(last.close.toFixed(last.close < 10 ? 4 : 2))))
+      const places = form.currency === 'KRW' ? (last.close < 1000 ? 2 : 0) : last.close < 10 ? 4 : 2
+      set('price', String(Number(last.close.toFixed(places))))
       setPriceHint(`${last.date} 종가`)
     } catch (e) {
       setPriceHint(e instanceof Error ? e.message : '종가를 불러오지 못했습니다')
@@ -84,6 +98,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
     try {
       await onSubmit({
         asset_type: form.asset_type,
+        currency: form.currency,
         symbol: form.symbol,
         side: form.side,
         trade_date: form.trade_date,
@@ -108,12 +123,26 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
         <SegmentedControl
           label="자산 유형"
           value={form.asset_type}
-          onChange={(v) => setForm((f) => ({ ...f, asset_type: v, symbol: '' }))}
+          // Coins default to won (bought on Upbit/Bithumb); stocks are always USD.
+          onChange={(v) =>
+            setForm((f) => ({ ...f, asset_type: v, symbol: '', currency: v === 'crypto' ? 'KRW' : 'USD' }))
+          }
           options={[
             { value: 'stock', label: '주식' },
             { value: 'crypto', label: '코인' },
           ]}
         />
+        {form.asset_type === 'crypto' && (
+          <SegmentedControl
+            label="거래 통화"
+            value={form.currency}
+            onChange={(v) => set('currency', v)}
+            options={[
+              { value: 'KRW', label: '원화 (업비트·빗썸)' },
+              { value: 'USD', label: '달러 (해외 거래소)' },
+            ]}
+          />
+        )}
         <SegmentedControl
           label="매수/매도"
           value={form.side}
@@ -172,7 +201,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
           />
         </Field>
         <Field
-          label="단가 (USD)"
+          label={`단가 (${form.currency})`}
           hint={
             <button
               type="button"
@@ -192,7 +221,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
             onChange={(e) => set('price', e.target.value)}
           />
         </Field>
-        <Field label="수수료 (USD)">
+        <Field label={`수수료 (${form.currency})`}>
           <input
             inputMode="decimal"
             className={`${inputClass} num`}
@@ -200,6 +229,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
             onChange={(e) => set('fee', e.target.value)}
           />
         </Field>
+        {form.currency === 'USD' && (
         <Field label="매입 환율 (선택, 원/달러)">
           <input
             inputMode="decimal"
@@ -209,6 +239,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
             onChange={(e) => set('fx_rate', e.target.value)}
           />
         </Field>
+        )}
         <Field label="같은 날 순서">
           <input
             type="number"
