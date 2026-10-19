@@ -10,3 +10,9 @@ class NotFoundError(DomainError):
 
 class ConflictError(DomainError):
     status_code = 409
+
+
+class UpstreamError(DomainError):
+    """An external service (e.g. the Claude API) failed or is unavailable."""
+
+    status_code = 502

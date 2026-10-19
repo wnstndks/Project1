@@ -12,6 +12,8 @@ from app.services.market_data import MarketDataService, QuoteCache
 from app.services.portfolio import PortfolioService
 from app.services.predictions import PredictionService, TrainingJobs
 from app.services.projection import ProjectionService
+from app.services.screenshot_extractor import ClaudeExtractor, FakeExtractor, HoldingsExtractor
+from app.services.statement_import import StatementImportService
 from app.services.transactions import TransactionService
 
 
@@ -70,3 +72,21 @@ def get_projection_service(
     portfolio: PortfolioService = Depends(get_portfolio_service),
 ) -> ProjectionService:
     return ProjectionService(market, portfolio)
+
+
+@lru_cache
+def get_extractor() -> HoldingsExtractor:
+    settings = get_settings()
+    if settings.import_extractor == "fake":
+        return FakeExtractor()
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+    return ClaudeExtractor(settings.import_model, api_key=key)
+
+
+def get_import_service(
+    extractor: HoldingsExtractor = Depends(get_extractor),
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+    transactions: TransactionService = Depends(get_transaction_service),
+) -> StatementImportService:
+    return StatementImportService(extractor, market, portfolio, transactions)

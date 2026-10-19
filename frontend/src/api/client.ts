@@ -17,6 +17,10 @@ export type TrainingJob = Schemas['TrainingJobOut']
 export type Assumptions = Schemas['AssumptionsOut']
 export type ProjectionInput = Schemas['ProjectionIn']
 export type Projection = Schemas['ProjectionOut']
+export type ImportStatus = Schemas['ImportStatusOut']
+export type ImportPreview = Schemas['PreviewOut']
+export type ImportPreviewRow = Schemas['PreviewRowOut']
+export type ImportCommit = Schemas['CommitIn']
 
 export class ApiError extends Error {
   readonly status: number
@@ -42,9 +46,11 @@ function errorMessage(body: unknown, fallback: string): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData bodies must let the browser set the multipart boundary header itself.
+  const json = !(init?.body instanceof FormData)
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...(json && { 'Content-Type': 'application/json' }), ...init?.headers },
   })
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => null)
@@ -81,6 +87,14 @@ export const api = {
   assumptions: () => request<Assumptions>('/projection/assumptions'),
   simulate: (input: ProjectionInput) =>
     request<Projection>('/projection/simulate', { method: 'POST', body: JSON.stringify(input) }),
+  importStatus: () => request<ImportStatus>('/imports/status'),
+  previewScreenshots: (files: File[]) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return request<ImportPreview>('/imports/screenshot', { method: 'POST', body: form })
+  },
+  commitImport: (data: ImportCommit) =>
+    request<{ created: number }>('/imports/commit', { method: 'POST', body: JSON.stringify(data) }),
   usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>

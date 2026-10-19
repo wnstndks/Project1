@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.data.assets import CRYPTO_ASSETS
 from app.data.provider import Quote
 from app.db.models import AssetType, Transaction
-from app.services.ledger import ZERO, Position, build_positions, ordered
+from app.services.ledger import ZERO, Position, build_positions, ordered, trade_fx
 from app.services.market_data import MarketDataService
 
 HUNDRED = Decimal("100")
@@ -189,7 +189,7 @@ class PortfolioService:
             while i < len(txs) and txs[i].trade_date <= d:
                 tx = txs[i]
                 pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
-                pos.apply(tx, fx_on(tx.trade_date))
+                pos.apply(tx, trade_fx(tx, fx_on))
                 i += 1
 
             if d >= start:

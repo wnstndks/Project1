@@ -41,6 +41,9 @@ class Transaction(Base):
     quantity: Mapped[Decimal] = mapped_column(DecimalText)
     price: Mapped[Decimal] = mapped_column(DecimalText)
     fee: Mapped[Decimal] = mapped_column(DecimalText, default=Decimal("0"))
+    # Actual USD/KRW rate paid, when known (e.g. read from a broker screenshot).
+    # Overrides the market rate on the trade date for KRW cost basis.
+    fx_rate: Mapped[Decimal | None] = mapped_column(DecimalText)
     note: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

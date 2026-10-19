@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -9,7 +9,7 @@ from app.data.assets import normalize_symbol
 from app.db.models import AssetType, Transaction
 from app.schemas.transactions import TransactionIn
 from app.services.errors import DomainError, NotFoundError
-from app.services.ledger import build_positions
+from app.services.ledger import build_positions, trade_fx
 from app.services.market_data import MarketDataService, SymbolNotFoundError
 
 
@@ -36,21 +36,26 @@ class TransactionService:
         if not txs:
             return {}
         fx_on = self.market.usd_krw_lookup(min(t.trade_date for t in txs))
-        return {t.id: fx_on(t.trade_date) for t in txs}
+        return {t.id: trade_fx(t, fx_on) for t in txs}
 
     def create(self, data: TransactionIn) -> Transaction:
-        tx = Transaction(**self._clean(data))
-        self._check_ledger(tx.symbol, add=tx)
-        self.db.add(tx)
+        return self.create_many([data])[0]
+
+    def create_many(self, items: list[TransactionIn]) -> list[Transaction]:
+        """Validate every item first, then insert all of them in one commit (all or nothing)."""
+        txs = [Transaction(**self._clean(d)) for d in items]
+        for symbol in {t.symbol for t in txs}:
+            self._check_ledger(symbol, adds=[t for t in txs if t.symbol == symbol])
+        self.db.add_all(txs)
         self.db.commit()
-        return tx
+        return txs
 
     def update(self, tx_id: int, data: TransactionIn) -> Transaction:
         tx = self._get(tx_id)
         values = self._clean(data)
         updated = Transaction(id=tx.id, **values)
         # The edit can break the ledger of the new symbol and, if renamed, the old one.
-        self._check_ledger(updated.symbol, add=updated, remove=tx)
+        self._check_ledger(updated.symbol, adds=[updated], remove=tx)
         if tx.symbol != updated.symbol:
             self._check_ledger(tx.symbol, remove=tx)
 
@@ -85,13 +90,12 @@ class TransactionService:
         return data.model_dump() | {"symbol": symbol}
 
     def _check_ledger(
-        self, symbol: str, add: Transaction | None = None, remove: Transaction | None = None
+        self, symbol: str, adds: Sequence[Transaction] = (), remove: Transaction | None = None
     ) -> None:
         txs = [
             t
             for t in self.db.scalars(select(Transaction).where(Transaction.symbol == symbol))
             if remove is None or t.id != remove.id
         ]
-        if add is not None and add.symbol == symbol:
-            txs.append(add)
+        txs += [t for t in adds if t.symbol == symbol]
         build_positions(txs)  # raises OversellError

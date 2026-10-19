@@ -82,6 +82,11 @@ class Position:
             self.cost_basis -= released_cost
 
 
+def trade_fx(tx: Transaction, fx_on: FxLookup) -> Decimal:
+    """The rate actually paid if recorded on the trade, else the market rate that day."""
+    return tx.fx_rate if tx.fx_rate is not None else fx_on(tx.trade_date)
+
+
 def ordered(transactions: Iterable[Transaction]) -> list[Transaction]:
     """Chronological order; same-day trades keep insertion order, with buys before sells."""
     return sorted(
@@ -100,5 +105,5 @@ def build_positions(
         if as_of is not None and tx.trade_date > as_of:
             break
         pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
-        pos.apply(tx, fx_on(tx.trade_date) if fx_on else None)
+        pos.apply(tx, trade_fx(tx, fx_on) if fx_on else None)
     return positions

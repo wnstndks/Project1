@@ -27,6 +27,7 @@ export function Layout() {
           <nav className="flex gap-1">
             <NavLink to="/" end className={navClass}>대시보드</NavLink>
             <NavLink to="/transactions" className={navClass}>거래 내역</NavLink>
+            <NavLink to="/import" className={navClass}>자산 업로드</NavLink>
             <NavLink to="/projection" className={navClass}>미래 자산</NavLink>
           </nav>
           <div className="ml-auto">

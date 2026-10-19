@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type ProjectionInput, type TransactionInput } from './client'
+import { api, type ImportCommit, type ProjectionInput, type TransactionInput } from './client'
 
 export const keys = {
   summary: ['portfolio', 'summary'] as const,
@@ -52,7 +52,7 @@ export const useHistory = (symbol: string, start?: string) =>
   })
 
 /** Any ledger change invalidates every portfolio view derived from it. */
-function useLedgerMutation<TArgs>(fn: (args: TArgs) => Promise<unknown>) {
+function useLedgerMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: fn,
@@ -72,6 +72,14 @@ export const useUpdateTransaction = () =>
   )
 
 export const useDeleteTransaction = () => useLedgerMutation((id: number) => api.deleteTransaction(id))
+
+export const useImportStatus = () =>
+  useQuery({ queryKey: ['imports', 'status'], queryFn: api.importStatus, staleTime: 0 })
+
+export const usePreviewScreenshots = () =>
+  useMutation({ mutationFn: (files: File[]) => api.previewScreenshots(files) })
+
+export const useCommitImport = () => useLedgerMutation((data: ImportCommit) => api.commitImport(data))
 
 export const useForecast = (symbol: string) =>
   useQuery({ queryKey: keys.forecast(symbol), queryFn: () => api.forecast(symbol), retry: false })

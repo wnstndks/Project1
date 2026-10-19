@@ -791,6 +791,109 @@
           }
         }
       }
+    },
+    "/api/imports/status": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Status",
+        "operationId": "status_api_imports_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/screenshot": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Preview Screenshot",
+        "operationId": "preview_screenshot_api_imports_screenshot_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_preview_screenshot_api_imports_screenshot_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/imports/commit": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Commit",
+        "operationId": "commit_api_imports_commit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -964,6 +1067,23 @@
         ],
         "title": "BarOut"
       },
+      "Body_preview_screenshot_api_imports_screenshot_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "contentMediaType": "application/octet-stream"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_preview_screenshot_api_imports_screenshot_post"
+      },
       "ClassStatsOut": {
         "properties": {
           "value_krw": {
@@ -1027,6 +1147,103 @@
           "close"
         ],
         "title": "ClosePoint"
+      },
+      "CommitIn": {
+        "properties": {
+          "trade_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Trade Date"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CommitRowIn"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trade_date",
+          "rows"
+        ],
+        "title": "CommitIn"
+      },
+      "CommitOut": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created"
+        ],
+        "title": "CommitOut"
+      },
+      "CommitRowIn": {
+        "properties": {
+          "asset_type": {
+            "$ref": "#/components/schemas/AssetType"
+          },
+          "symbol": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Symbol"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "avg_price_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Avg Price Usd"
+          },
+          "fx_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_type",
+          "symbol",
+          "quantity",
+          "avg_price_usd"
+        ],
+        "title": "CommitRowIn"
       },
       "ErrorMetrics": {
         "properties": {
@@ -1325,6 +1542,24 @@
         ],
         "title": "HorizonMetrics"
       },
+      "ImportStatusOut": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "model"
+        ],
+        "title": "ImportStatusOut"
+      },
       "Metrics": {
         "properties": {
           "samples": {
@@ -1355,6 +1590,162 @@
           "train_seconds"
         ],
         "title": "Metrics"
+      },
+      "PreviewOut": {
+        "properties": {
+          "broker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broker"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewRowOut"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "broker",
+          "rows"
+        ],
+        "title": "PreviewOut"
+      },
+      "PreviewRowOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "asset_type": {
+            "$ref": "#/components/schemas/AssetType"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "avg_price_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Price Usd"
+          },
+          "cost_krw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Krw"
+          },
+          "implied_fx": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implied Fx"
+          },
+          "price_estimated": {
+            "type": "boolean",
+            "title": "Price Estimated"
+          },
+          "confidence": {
+            "type": "string",
+            "title": "Confidence"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "current_quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Quantity"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "symbol",
+          "asset_type",
+          "quantity",
+          "avg_price_usd",
+          "cost_krw",
+          "implied_fx",
+          "price_estimated",
+          "confidence",
+          "status",
+          "message",
+          "current_quantity",
+          "diff"
+        ],
+        "title": "PreviewRowOut"
       },
       "ProjectionIn": {
         "properties": {
@@ -1808,6 +2199,22 @@
             "title": "Fee",
             "default": "0"
           },
+          "fx_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate",
+            "description": "USD/KRW actually paid; defaults to the market rate on trade_date"
+          },
           "note": {
             "anyOf": [
               {
@@ -1865,6 +2272,17 @@
             "type": "number",
             "title": "Fee"
           },
+          "fx_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Rate"
+          },
           "note": {
             "anyOf": [
               {
@@ -1904,6 +2322,7 @@
           "quantity",
           "price",
           "fee",
+          "fx_rate",
           "note",
           "created_at"
         ],

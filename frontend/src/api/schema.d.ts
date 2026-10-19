@@ -296,6 +296,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_imports_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/screenshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Screenshot */
+        post: operations["preview_screenshot_api_imports_screenshot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit */
+        post: operations["commit_api_imports_commit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -372,6 +423,11 @@ export interface components {
             /** Volume */
             volume: number;
         };
+        /** Body_preview_screenshot_api_imports_screenshot_post */
+        Body_preview_screenshot_api_imports_screenshot_post: {
+            /** Files */
+            files: string[];
+        };
         /** ClassStatsOut */
         ClassStatsOut: {
             /** Value Krw */
@@ -396,6 +452,33 @@ export interface components {
             date: string;
             /** Close */
             close: number;
+        };
+        /** CommitIn */
+        CommitIn: {
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Rows */
+            rows: components["schemas"]["CommitRowIn"][];
+        };
+        /** CommitOut */
+        CommitOut: {
+            /** Created */
+            created: number;
+        };
+        /** CommitRowIn */
+        CommitRowIn: {
+            asset_type: components["schemas"]["AssetType"];
+            /** Symbol */
+            symbol: string;
+            /** Quantity */
+            quantity: number | string;
+            /** Avg Price Usd */
+            avg_price_usd: number | string;
+            /** Fx Rate */
+            fx_rate?: number | string | null;
         };
         /** ErrorMetrics */
         ErrorMetrics: {
@@ -522,6 +605,13 @@ export interface components {
             model: components["schemas"]["ErrorMetrics"];
             baseline: components["schemas"]["ErrorMetrics"];
         };
+        /** ImportStatusOut */
+        ImportStatusOut: {
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
+        };
         /** Metrics */
         Metrics: {
             /** Samples */
@@ -532,6 +622,41 @@ export interface components {
             best_epoch: number;
             /** Train Seconds */
             train_seconds: number;
+        };
+        /** PreviewOut */
+        PreviewOut: {
+            /** Broker */
+            broker: string | null;
+            /** Rows */
+            rows: components["schemas"]["PreviewRowOut"][];
+        };
+        /** PreviewRowOut */
+        PreviewRowOut: {
+            /** Name */
+            name: string;
+            /** Symbol */
+            symbol: string | null;
+            asset_type: components["schemas"]["AssetType"];
+            /** Quantity */
+            quantity: number | null;
+            /** Avg Price Usd */
+            avg_price_usd: number | null;
+            /** Cost Krw */
+            cost_krw: number | null;
+            /** Implied Fx */
+            implied_fx: number | null;
+            /** Price Estimated */
+            price_estimated: boolean;
+            /** Confidence */
+            confidence: string;
+            /** Status */
+            status: string;
+            /** Message */
+            message: string | null;
+            /** Current Quantity */
+            current_quantity: number | null;
+            /** Diff */
+            diff: string | null;
         };
         /** ProjectionIn */
         ProjectionIn: {
@@ -708,6 +833,11 @@ export interface components {
              * @default 0
              */
             fee: number | string;
+            /**
+             * Fx Rate
+             * @description USD/KRW actually paid; defaults to the market rate on trade_date
+             */
+            fx_rate?: number | string | null;
             /** Note */
             note?: string | null;
         };
@@ -730,6 +860,8 @@ export interface components {
             price: number;
             /** Fee */
             fee: number;
+            /** Fx Rate */
+            fx_rate: number | null;
             /** Note */
             note: string | null;
             /**
@@ -1327,6 +1459,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status_api_imports_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportStatusOut"];
+                };
+            };
+        };
+    };
+    preview_screenshot_api_imports_screenshot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_preview_screenshot_api_imports_screenshot_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_api_imports_commit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommitOut"];
                 };
             };
             /** @description Validation Error */
