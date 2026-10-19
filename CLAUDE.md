@@ -31,7 +31,8 @@ Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 o
 - 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다(`services/ledger.py`, 순수 함수). 거래를 생성·수정·삭제할 때는 해당 종목의 장부 전체를 다시 계산해, 어느 시점이든 보유량보다 많이 파는 거래가 생기면 거부한다.
 - 서비스 계층은 HTTP를 모른다. 규칙 위반은 `services/errors.py`의 `DomainError`(422)·`NotFoundError`(404)로 던지고, `main.py`의 예외 핸들러가 HTTP 응답으로 바꾼다.
 - API 응답의 `Decimal` 필드는 `schemas/common.py`의 `Num` 타입으로 선언해 JSON 숫자로 직렬화한다.
-- LSTM 학습은 CLI로만 하고 결과는 `backend/artifacts/{symbol}/`에 저장한다(git 제외). API는 추론만 한다.
+- LSTM(`app/ml/`): `features.py`(행 t의 피처는 t까지의 데이터만 사용, 타깃은 t→t+1..5 누적 로그수익률) → `dataset.py`(시간순 train/val/test 분할, 분할 사이에 horizon만큼 퍼지, 스케일러는 train 구간에만 fit) → `train.py`(조기 종료, 테스트 구간 평가) → `artifacts/{symbol}/`에 `model.pt` + JSON(meta, metrics, backtest) 저장(git 제외). 학습은 CLI 또는 `POST /api/predictions/{symbol}/train`(프로세스 내 스레드, 한 번에 하나)으로 실행하고, `GET /api/predictions/{symbol}`은 저장된 모델로 추론만 한다. 로드한 모델은 파일 mtime 기준으로 캐시한다.
+- 원화 표시: 장부(`ledger.py`)는 거래마다 해당 거래일의 USD/KRW(`MarketDataService.usd_krw_lookup`, 주말·휴일은 직전 영업일 환율)로 원화 원금과 원화 실현손익을 따로 계산한다. 그래서 `*_krw` 필드는 USD 값 × 오늘 환율과 다르고 환차손익(`fx_pnl_krw`)을 포함한다. 프론트엔드는 `useMoney().pick(usd, krw)`로 두 값 중 하나를 고르며, 원화 값을 직접 다시 계산하지 않는다. 종목 시세처럼 USD만 있는 값은 오늘 환율로 환산한다.
 - 장기 전망은 LSTM이 아니라 `services/projection.py`의 몬테카를로 시뮬레이션이 담당한다.
 - 프론트엔드는 백엔드 `/api`만 호출한다. API 호출은 `src/api/client.ts`(타입은 생성된 `schema.d.ts`에서 가져옴), React Query 훅은 `src/api/hooks.ts`에 모은다. 거래를 바꾸는 mutation은 `['portfolio']`와 `['transactions']` 쿼리를 모두 무효화한다.
 - 거래 입력값(수량·단가·수수료)은 문자열로 보내 백엔드가 정확한 Decimal로 파싱하게 한다.

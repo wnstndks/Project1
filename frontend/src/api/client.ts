@@ -11,6 +11,9 @@ export type Summary = Schemas['SummaryOut']
 export type HistoryPoint = Schemas['HistoryPointOut']
 export type Transaction = Schemas['TransactionOut']
 export type TransactionInput = Schemas['TransactionIn']
+export type Forecast = Schemas['ForecastOut']
+export type BacktestPoint = Schemas['BacktestPoint']
+export type TrainingJob = Schemas['TrainingJobOut']
 
 export class ApiError extends Error {
   readonly status: number
@@ -65,6 +68,13 @@ export const api = {
 
   supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),
   assetInfo: (symbol: string) => request<AssetInfo>(`/market/${encodeURIComponent(symbol)}/info`),
+  forecast: (symbol: string) => request<Forecast>(`/predictions/${encodeURIComponent(symbol)}`),
+  backtest: (symbol: string) =>
+    request<BacktestPoint[]>(`/predictions/${encodeURIComponent(symbol)}/backtest`),
+  startTraining: (symbol: string) =>
+    request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`, { method: 'POST' }),
+  trainingStatus: (symbol: string) =>
+    request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`),
   usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>

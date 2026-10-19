@@ -12,6 +12,9 @@ export const keys = {
   assetInfo: (symbol: string) => ['market', symbol, 'info'] as const,
   quote: (symbol: string) => ['market', symbol, 'quote'] as const,
   history: (symbol: string, start?: string) => ['market', symbol, 'history', start] as const,
+  forecast: (symbol: string) => ['predictions', symbol] as const,
+  backtest: (symbol: string) => ['predictions', symbol, 'backtest'] as const,
+  training: (symbol: string) => ['predictions', symbol, 'training'] as const,
 }
 
 export const useSummary = () => useQuery({ queryKey: keys.summary, queryFn: api.summary })
@@ -67,3 +70,32 @@ export const useUpdateTransaction = () =>
   )
 
 export const useDeleteTransaction = () => useLedgerMutation((id: number) => api.deleteTransaction(id))
+
+export const useForecast = (symbol: string) =>
+  useQuery({ queryKey: keys.forecast(symbol), queryFn: () => api.forecast(symbol), retry: false })
+
+export const useBacktest = (symbol: string, enabled: boolean) =>
+  useQuery({ queryKey: keys.backtest(symbol), queryFn: () => api.backtest(symbol), enabled })
+
+/** Polls every 2s while a job runs; refreshes the forecast once it finishes. */
+export function useTraining(symbol: string) {
+  const client = useQueryClient()
+  const status = useQuery({
+    queryKey: keys.training(symbol),
+    queryFn: async () => {
+      const job = await api.trainingStatus(symbol).catch(() => null)
+      if (job?.state === 'done') {
+        void client.invalidateQueries({ queryKey: keys.forecast(symbol) })
+        void client.invalidateQueries({ queryKey: keys.backtest(symbol) })
+      }
+      return job
+    },
+    refetchInterval: (q) => (q.state.data?.state === 'running' ? 2000 : false),
+    staleTime: 0,
+  })
+  const start = useMutation({
+    mutationFn: () => api.startTraining(symbol),
+    onSuccess: (job) => client.setQueryData(keys.training(symbol), job),
+  })
+  return { job: status.data, start }
+}

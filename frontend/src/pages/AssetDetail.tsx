@@ -3,9 +3,10 @@ import { Link, useParams } from 'react-router-dom'
 
 import { useAssetInfo, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart } from '../components/CandleChart'
+import { PredictionPanel } from '../components/PredictionPanel'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { useMoney } from '../lib/currency'
-import { displaySymbol, formatQty, formatUsd } from '../lib/format'
+import { displaySymbol, formatPct, formatQty, formatUsd } from '../lib/format'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
 
 const CHART_RANGES = RANGE_OPTIONS.filter((o) => o.value !== 'ALL')
@@ -86,13 +87,10 @@ export function AssetDetail() {
           />
           <StatTile
             label="평가손익"
-            value={
-              <PnL
-                value={pick(position.unrealized_pnl, position.unrealized_pnl_krw)}
-                pct={pick(position.unrealized_pct, position.unrealized_pct_krw)}
-              />
-            }
-            sub={`실현손익 ${format(pick(position.realized_pnl, position.realized_pnl_krw))}`}
+            value={<PnL value={pick(position.unrealized_pnl, position.unrealized_pnl_krw)} />}
+            sub={`${formatPct(pick(position.unrealized_pct, position.unrealized_pct_krw))} · 실현손익 ${format(
+              pick(position.realized_pnl, position.realized_pnl_krw),
+            )}`}
           />
         </div>
       ) : (
@@ -102,7 +100,7 @@ export function AssetDetail() {
       )}
 
       <Card title="주가 예측">
-        <Muted>LSTM 예측 기능은 준비 중입니다.</Muted>
+        <PredictionPanel symbol={resolved} fx={fx} />
       </Card>
     </div>
   )

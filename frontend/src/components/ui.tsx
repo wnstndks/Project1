@@ -31,7 +31,7 @@ export function PnL({ value, pct, className = '' }: { value: number; pct?: numbe
   const tone = value > 0 ? 'text-gain' : value < 0 ? 'text-loss' : 'text-ink-2'
   const arrow = value > 0 ? '▲' : value < 0 ? '▼' : ''
   return (
-    <span className={`${tone} ${className}`}>
+    <span className={`whitespace-nowrap ${tone} ${className}`}>
       {arrow && <span aria-hidden="true" className="mr-0.5 text-[0.75em]">{arrow}</span>}
       {signed(value, format)}
       {pct !== undefined && <span className="ml-1">({formatPct(pct)})</span>}
