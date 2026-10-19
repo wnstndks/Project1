@@ -9,6 +9,7 @@ PNG = ("holdings.png", b"\x89PNG fake bytes", "image/png")
 def holding(name, ticker, qty, avg=None, cost_krw=None, asset_type="stock", confidence="high"):
     return ExtractedHolding(
         name=name,
+        ticker_shown=ticker is not None and ticker.isascii() and name == ticker,
         ticker=ticker,
         asset_type=asset_type,
         quantity=qty,
@@ -50,6 +51,7 @@ def test_preview_classifies_rows(client, extractor):
 
     apple = rows["애플"]
     assert apple["status"] == "ok" and apple["symbol"] == "AAPL"
+    assert apple["ticker_guessed"] is True  # "애플" on screen, ticker inferred
     assert apple["implied_fx"] == pytest.approx(1400)
     assert apple["diff"] == "new"
 
@@ -147,4 +149,79 @@ def test_commit_is_all_or_nothing(client, extractor):
 
 def test_status_endpoint(client):
     body = client.get("/api/imports/status").json()
-    assert set(body) == {"configured", "model"}
+    assert set(body) == {"configured", "engine", "model", "problem"}
+
+
+def test_ollama_extractor_parses_structured_reply():
+    import json
+
+    import httpx2 as httpx
+
+    from app.services.screenshot_extractor import Image, OllamaExtractor
+
+    sent = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(req.content))
+        content = json.dumps(
+            {
+                "broker": "우리은행",
+                "holdings": [
+                    {
+                        "name": "애플",
+                        "ticker": "AAPL",
+                        "ticker_shown": False,
+                        "asset_type": "stock",
+                        "quantity": "3",
+                        "avg_price_usd": None,
+                        "cost_krw": "1,200,000",
+                        "confidence": "medium",
+                    }
+                ],
+            }
+        )
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": content}})
+
+    ex = OllamaExtractor("qwen2.5vl:7b")
+    ex.http = httpx.Client(transport=httpx.MockTransport(handler))
+    statement = ex.extract([Image(b"png-bytes", "image/png")])
+    assert statement.broker == "우리은행"
+    assert statement.holdings[0].cost_krw == "1,200,000"
+    # The image goes inline as base64 and the reply is constrained by our JSON schema.
+    assert sent[0]["messages"][1]["images"]
+    assert sent[0]["format"]["properties"]["holdings"]
+
+
+def test_ollama_status_reports_missing_model():
+    import httpx2 as httpx
+
+    from app.services.screenshot_extractor import OllamaExtractor
+
+    ex = OllamaExtractor("qwen2.5vl:7b")
+    ex.http = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"models": [{"name": "llama3:latest"}]})
+        )
+    )
+    ready, problem = ex.status()
+    assert not ready and "ollama pull qwen2.5vl:7b" in problem
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("12주", "12"),
+        ("$231.40", "231.40"),
+        ("3,840,000원", "3840000"),
+        ("0.031 BTC", "0.031"),
+        ("abc", None),
+        ("0", None),
+        (None, None),
+    ],
+)
+def test_decimal_parsing_strips_units(raw, expected):
+    from decimal import Decimal
+
+    from app.services.statement_import import _decimal
+
+    assert _decimal(raw) == (Decimal(expected) if expected else None)

@@ -5,21 +5,32 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import get_settings
-from app.deps import get_import_service
+from app.deps import get_extractor, get_import_service
 from app.schemas.imports import CommitIn, CommitOut, ImportStatusOut, PreviewOut
-from app.services.screenshot_extractor import Image
+from app.services.screenshot_extractor import HoldingsExtractor, Image, OllamaExtractor
 from app.services.statement_import import MAX_IMAGE_BYTES, CommitRow, StatementImportService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 
 @router.get("/status", response_model=ImportStatusOut)
-def status() -> ImportStatusOut:
+def status(extractor: HoldingsExtractor = Depends(get_extractor)) -> ImportStatusOut:
     settings = get_settings()
-    if settings.import_extractor == "fake":
-        return ImportStatusOut(configured=True, model="demo (fake extractor)")
-    configured = settings.anthropic_api_key is not None or bool(os.environ.get("ANTHROPIC_API_KEY"))
-    return ImportStatusOut(configured=configured, model=settings.import_model)
+    engine = settings.import_extractor
+    if isinstance(extractor, OllamaExtractor):
+        ready, problem = extractor.status()
+        return ImportStatusOut(
+            configured=ready, engine=engine, model=settings.ollama_model, problem=problem
+        )
+    if engine == "claude":
+        configured = settings.anthropic_api_key is not None or bool(
+            os.environ.get("ANTHROPIC_API_KEY")
+        )
+        problem = None if configured else "AM_ANTHROPIC_API_KEY가 설정되지 않았습니다."
+        return ImportStatusOut(
+            configured=configured, engine=engine, model=settings.import_model, problem=problem
+        )
+    return ImportStatusOut(configured=True, engine=engine, model="demo", problem=None)
 
 
 @router.post("/screenshot", response_model=PreviewOut)

@@ -9,7 +9,9 @@ from app.schemas.common import Num
 
 class ImportStatusOut(BaseModel):
     configured: bool
+    engine: str  # "ollama" | "claude" | "fake"
     model: str
+    problem: str | None
 
 
 class PreviewRowOut(BaseModel):
@@ -21,6 +23,7 @@ class PreviewRowOut(BaseModel):
     cost_krw: Num | None
     implied_fx: Num | None
     price_estimated: bool
+    ticker_guessed: bool
     confidence: str
     status: str
     message: str | None

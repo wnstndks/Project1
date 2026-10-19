@@ -1,5 +1,6 @@
 """Turn extracted screenshot holdings into reviewable rows, then into buy transactions."""
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -35,6 +36,8 @@ class PreviewRow:
     implied_fx: Decimal | None
     # True when avg_price_usd was not shown and was derived from cost_krw at today's rate.
     price_estimated: bool
+    # True when the ticker was inferred from the name rather than printed on screen.
+    ticker_guessed: bool
     confidence: str
     status: RowStatus
     message: str | None
@@ -58,10 +61,12 @@ class CommitRow:
 
 
 def _decimal(raw: str | None) -> Decimal | None:
+    """Parse a positive number from model output like "12주", "$231.40" or "3,840,000원"."""
     if raw is None:
         return None
+    cleaned = re.sub(r"[^\d.]", "", raw)
     try:
-        value = Decimal(raw.replace(",", "").strip())
+        value = Decimal(cleaned)
     except InvalidOperation:
         return None
     return value if value > 0 else None
@@ -153,6 +158,7 @@ class StatementImportService:
             cost_krw=cost_krw,
             implied_fx=implied_fx,
             price_estimated=estimated,
+            ticker_guessed=not h.ticker_shown,
             confidence=h.confidence,
             status=status,
             message=message,

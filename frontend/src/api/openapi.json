@@ -1646,15 +1646,32 @@
             "type": "boolean",
             "title": "Configured"
           },
+          "engine": {
+            "type": "string",
+            "title": "Engine"
+          },
           "model": {
             "type": "string",
             "title": "Model"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
           }
         },
         "type": "object",
         "required": [
           "configured",
-          "model"
+          "engine",
+          "model",
+          "problem"
         ],
         "title": "ImportStatusOut"
       },

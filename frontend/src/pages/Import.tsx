@@ -109,21 +109,30 @@ export function Import() {
     )
 
   if (status.data && !status.data.configured) {
+    const ollama = status.data.engine === 'ollama'
     return (
-      <Card title="자산 업로드 설정 필요">
+      <Card title="자산 업로드 준비 필요">
         <div className="space-y-2 text-sm text-ink-2">
-          <p>잔고 스크린샷을 읽으려면 Anthropic API 키가 필요합니다.</p>
-          <ol className="list-decimal space-y-1 pl-5">
-            <li>
-              <code className="rounded bg-hover px-1">backend/.env.example</code>을{' '}
-              <code className="rounded bg-hover px-1">backend/.env</code>로 복사합니다.
-            </li>
-            <li>
-              <code className="rounded bg-hover px-1">AM_ANTHROPIC_API_KEY=</code> 뒤에 키를 붙여넣습니다.
-            </li>
-            <li>백엔드 서버를 다시 시작합니다.</li>
-          </ol>
-          <p className="text-xs text-muted">키는 내 컴퓨터의 .env에만 저장되고 git에는 올라가지 않습니다.</p>
+          <p>{status.data.problem}</p>
+          {ollama ? (
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>시작 메뉴에서 Ollama 앱을 실행합니다(무료, 내 PC에서 동작).</li>
+              <li>
+                처음 한 번은 터미널에서{' '}
+                <code className="rounded bg-hover px-1">ollama pull {status.data.model}</code>을 실행해 모델을
+                받습니다(약 6GB).
+              </li>
+              <li>이 페이지를 새로고침합니다.</li>
+            </ol>
+          ) : (
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>
+                <code className="rounded bg-hover px-1">backend/.env</code>의{' '}
+                <code className="rounded bg-hover px-1">AM_ANTHROPIC_API_KEY=</code> 뒤에 키를 붙여넣습니다.
+              </li>
+              <li>백엔드 서버를 다시 시작합니다.</li>
+            </ol>
+          )}
         </div>
       </Card>
     )
@@ -182,10 +191,14 @@ export function Import() {
             onClick={recognize}
             className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
           >
-            {preview.isPending ? '읽는 중… (10~30초)' : '보유 종목 읽기'}
+            {preview.isPending ? '읽는 중… (처음엔 30초 정도)' : '보유 종목 읽기'}
           </button>
           <span className="text-xs text-muted">
-            이미지는 인식을 위해 Anthropic API로 전송되며 이 앱에 저장되지 않습니다.
+            {status.data?.engine === 'claude'
+              ? '이미지는 인식을 위해 Anthropic API로 전송되며 이 앱에 저장되지 않습니다.'
+              : status.data?.engine === 'ollama'
+                ? `내 PC의 AI(${status.data.model})가 읽습니다. 이미지는 컴퓨터 밖으로 나가지 않습니다.`
+                : '데모 모드: 실제 이미지를 읽지 않고 예시 결과를 보여줍니다.'}
           </span>
         </div>
         {preview.error && (
@@ -235,6 +248,9 @@ export function Import() {
                     </td>
                     <td className="px-3 py-2">
                       <CellInput value={r.symbol} onChange={(v) => update(i, { symbol: v.toUpperCase() })} width="w-24" />
+                      {r.source.ticker_guessed && r.source.symbol && (
+                        <div className="mt-1 text-[11px] text-muted">이름으로 추정 · 확인 필요</div>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <CellInput value={r.quantity} onChange={(v) => update(i, { quantity: v })} />

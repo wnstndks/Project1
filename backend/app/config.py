@@ -24,8 +24,11 @@ class Settings(BaseSettings):
     # `ant auth login` profile.
     anthropic_api_key: SecretStr | None = None
     import_model: str = "claude-opus-5-5"
-    # "fake" returns a fixed sample statement: for demos and UI work without an API key.
-    import_extractor: Literal["claude", "fake"] = "claude"
+    # Who reads screenshots: "ollama" (free local vision model, default), "claude" (paid API),
+    # or "fake" (a fixed sample statement for demos and UI work).
+    import_extractor: Literal["ollama", "claude", "fake"] = "ollama"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5vl:7b"
     finnhub_api_key: SecretStr | None = None
 
     @field_validator("anthropic_api_key", "finnhub_api_key", mode="before")

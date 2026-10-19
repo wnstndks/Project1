@@ -646,8 +646,12 @@ export interface components {
         ImportStatusOut: {
             /** Configured */
             configured: boolean;
+            /** Engine */
+            engine: string;
             /** Model */
             model: string;
+            /** Problem */
+            problem: string | null;
         };
         /** Metrics */
         Metrics: {

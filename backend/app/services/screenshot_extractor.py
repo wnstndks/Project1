@@ -1,6 +1,9 @@
-"""Read holdings from broker app screenshots with Claude's vision + structured output.
+"""Read holdings from broker app screenshots with a vision model + structured output.
 
-This is the only module that imports the Anthropic SDK. Tests use FakeExtractor.
+Two interchangeable extractors share one prompt and output schema:
+- OllamaExtractor: a local open-source vision model (free, the screenshot never leaves the PC).
+- ClaudeExtractor: the Claude API (paid, most accurate). The only module importing the SDK.
+Tests use FakeExtractor.
 """
 
 import base64
@@ -8,7 +11,8 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 
 import anthropic
-from pydantic import BaseModel, Field
+import httpx2 as httpx
+from pydantic import BaseModel, Field, ValidationError
 
 from app.services.errors import DomainError, UpstreamError
 
@@ -17,6 +21,9 @@ class ExtractedHolding(BaseModel):
     name: str = Field(description="Name exactly as shown in the screenshot, e.g. '애플' or 'Apple'")
     ticker: str | None = Field(
         description="US ticker (e.g. AAPL) or coin symbol (BTC, ETH, XRP, SOL); null if unsure"
+    )
+    ticker_shown: bool = Field(
+        description="true only if the ticker symbol itself is printed in the screenshot"
     )
     asset_type: Literal["stock", "crypto"]
     quantity: str = Field(description="Quantity held as a plain decimal string, e.g. '12.5'")
@@ -56,7 +63,9 @@ that is not visible: use null instead.
 - Korean apps often show prices in both USD and KRW. Put the per-unit average purchase price \
 in USD into avg_price_usd, and the total purchase amount in KRW (매입금액) into cost_krw.
 - Infer the US ticker from Korean or English company names (애플 -> AAPL, 엔비디아 -> NVDA). \
-Coins are only BTC, ETH, XRP or SOL; use those symbols. Mark guesses as low confidence.
+For ETFs use the exchange-traded ticker, never a mutual fund share class \
+(Vanguard S&P 500 ETF -> VOO, not VFINX). Set ticker_shown to false whenever you inferred the \
+ticker rather than read it. Coins are only BTC, ETH, XRP or SOL; use those symbols.
 - If the image does not show holdings, return an empty list.\
 """
 
@@ -115,10 +124,64 @@ class ClaudeExtractor:
         return response.parsed_output
 
 
+class OllamaExtractor:
+    """Local vision model served by Ollama (https://ollama.com), using its JSON-schema output."""
+
+    def __init__(self, model: str, base_url: str = "http://localhost:11434") -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        # The first call loads the model into GPU memory, which can take a while.
+        self.http = httpx.Client(timeout=300)
+
+    def status(self) -> tuple[bool, str | None]:
+        """(ready, problem). Ready means the server answers and the model is downloaded."""
+        try:
+            res = self.http.get(f"{self.base_url}/api/tags", timeout=3)
+        except httpx.HTTPError:
+            return False, "Ollama가 실행 중이 아닙니다. Ollama 앱을 실행하세요."
+        names = {m.get("name") for m in res.json().get("models", [])}
+        if self.model not in names and f"{self.model}:latest" not in names:
+            return False, f"모델이 없습니다. 터미널에서 `ollama pull {self.model}`을 실행하세요."
+        return True, None
+
+    def extract(self, images: list[Image]) -> ExtractedStatement:
+        body = {
+            "model": self.model,
+            "stream": False,
+            "format": ExtractedStatement.model_json_schema(),
+            "options": {"temperature": 0},
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": "Extract the holdings from these screenshots. Reply with JSON only.",
+                    "images": [base64.standard_b64encode(i.data).decode("ascii") for i in images],
+                },
+            ],
+        }
+        try:
+            res = self.http.post(f"{self.base_url}/api/chat", json=body)
+        except httpx.ConnectError as exc:
+            raise UpstreamError("Ollama가 실행 중이 아닙니다. Ollama 앱을 실행하세요.") from exc
+        except httpx.HTTPError as exc:
+            raise UpstreamError(f"Ollama request failed: {exc}") from exc
+        if res.status_code == 404:
+            raise DomainError(f"Ollama 모델이 없습니다. `ollama pull {self.model}`을 실행하세요.")
+        if res.status_code != 200:
+            raise UpstreamError(f"Ollama error {res.status_code}: {res.text[:200]}")
+        try:
+            return ExtractedStatement.model_validate_json(res.json()["message"]["content"])
+        except (KeyError, ValidationError) as exc:
+            raise UpstreamError(
+                "The local model returned an unreadable result. Try again."
+            ) from exc
+
+
 DEMO_STATEMENT = ExtractedStatement(
     broker="데모 증권",
     holdings=[
         ExtractedHolding(
+            ticker_shown=False,
             name="애플",
             ticker="AAPL",
             asset_type="stock",
@@ -128,6 +191,7 @@ DEMO_STATEMENT = ExtractedStatement(
             confidence="high",
         ),
         ExtractedHolding(
+            ticker_shown=False,
             name="엔비디아",
             ticker="NVDA",
             asset_type="stock",
@@ -137,6 +201,7 @@ DEMO_STATEMENT = ExtractedStatement(
             confidence="high",
         ),
         ExtractedHolding(
+            ticker_shown=False,
             name="비트코인",
             ticker="BTC",
             asset_type="crypto",
@@ -146,6 +211,7 @@ DEMO_STATEMENT = ExtractedStatement(
             confidence="medium",
         ),
         ExtractedHolding(
+            ticker_shown=False,
             name="팔란티어",
             ticker="PLTR",
             asset_type="stock",

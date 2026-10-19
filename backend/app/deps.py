@@ -15,7 +15,12 @@ from app.services.news import NewsService
 from app.services.portfolio import PortfolioService
 from app.services.predictions import PredictionService, TrainingJobs
 from app.services.projection import ProjectionService
-from app.services.screenshot_extractor import ClaudeExtractor, FakeExtractor, HoldingsExtractor
+from app.services.screenshot_extractor import (
+    ClaudeExtractor,
+    FakeExtractor,
+    HoldingsExtractor,
+    OllamaExtractor,
+)
 from app.services.statement_import import StatementImportService
 from app.services.transactions import TransactionService
 
@@ -82,6 +87,8 @@ def get_extractor() -> HoldingsExtractor:
     settings = get_settings()
     if settings.import_extractor == "fake":
         return FakeExtractor()
+    if settings.import_extractor == "ollama":
+        return OllamaExtractor(settings.ollama_model, settings.ollama_url)
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
     return ClaudeExtractor(settings.import_model, api_key=key)
 
