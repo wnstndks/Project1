@@ -2,9 +2,10 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import health, market
+from app.api import health, market, portfolio, transactions
 from app.config import get_settings
 from app.data.provider import MarketDataError
+from app.services.errors import DomainError
 from app.services.market_data import SymbolNotFoundError
 
 
@@ -18,6 +19,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.exception_handler(DomainError)
+    async def _domain_error(_: Request, exc: DomainError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
     @app.exception_handler(SymbolNotFoundError)
     async def _symbol_not_found(_: Request, exc: SymbolNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": f"Unknown symbol '{exc}'"})
@@ -27,8 +32,8 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     api = APIRouter(prefix="/api")
-    api.include_router(health.router)
-    api.include_router(market.router)
+    for module in (health, market, transactions, portfolio):
+        api.include_router(module.router)
     app.include_router(api)
     return app
 

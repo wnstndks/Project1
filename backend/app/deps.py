@@ -8,6 +8,8 @@ from app.data.fake_provider import FakeProvider
 from app.data.provider import MarketDataProvider
 from app.db.session import get_db
 from app.services.market_data import MarketDataService, QuoteCache
+from app.services.portfolio import PortfolioService
+from app.services.transactions import TransactionService
 
 
 @lru_cache
@@ -30,3 +32,15 @@ def get_market_service(
     quote_cache: QuoteCache = Depends(get_quote_cache),
 ) -> MarketDataService:
     return MarketDataService(db, provider, quote_cache)
+
+
+def get_transaction_service(
+    db: Session = Depends(get_db), market: MarketDataService = Depends(get_market_service)
+) -> TransactionService:
+    return TransactionService(db, market)
+
+
+def get_portfolio_service(
+    db: Session = Depends(get_db), market: MarketDataService = Depends(get_market_service)
+) -> PortfolioService:
+    return PortfolioService(db, market)

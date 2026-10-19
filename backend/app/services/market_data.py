@@ -3,6 +3,7 @@
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
@@ -82,6 +83,11 @@ class MarketDataService:
             raise SymbolNotFoundError(symbol)
         self.quote_cache.put(quote)
         return quote
+
+    def get_quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        """Fetch several quotes concurrently; each provider call is a slow HTTP round trip."""
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            return dict(zip(symbols, pool.map(self.get_quote, symbols), strict=True))
 
     def usd_krw(self) -> Quote:
         return self.get_quote(FX_USDKRW)

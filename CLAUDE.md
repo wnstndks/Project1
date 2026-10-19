@@ -14,7 +14,7 @@ Backend (`backend/`):
 - 린트 `py -m uv run ruff check .` / 포맷 `py -m uv run ruff format .`
 - 마이그레이션 `py -m uv run alembic revision --autogenerate -m "msg"` → `py -m uv run alembic upgrade head`
 - 모델 학습 `py -m uv run python -m app.ml.train --symbol AAPL`
-- 데모 데이터 `py -m uv run python -m seed.load`
+- 데모 데이터: 실제 DB를 건드리지 않도록 별도 파일을 지정한다. `$env:AM_DATABASE_URL="sqlite:///demo.db"; py -m uv run python -m seed.load` (`--reset`은 모든 거래를 삭제한다)
 
 Frontend (`frontend/`):
 - `npm install` / `npm run dev` / `npm run build` / `npm run lint`
@@ -28,7 +28,9 @@ Frontend (`frontend/`):
 - 시세 캐시는 `app/services/market_data.py`가 담당한다. 일봉은 `price_bars`에 저장하고, `symbol_syncs`에 받아온 범위를 기록해 없는 날짜만 받는다. 15분이 지나면 마지막 봉부터 다시 받아 진행 중인 봉을 덮어쓴다. 현재가는 메모리 캐시(60초)를 쓴다.
 - USD/KRW 환율도 별도 테이블 없이 `price_bars`에 심볼 `KRW=X`로 저장한다.
 - `AM_MARKET_PROVIDER=fake`로 실행하면 네트워크 없이 `FakeProvider`의 합성 시세를 쓴다.
-- 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다.
+- 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다(`services/ledger.py`, 순수 함수). 거래를 생성·수정·삭제할 때는 해당 종목의 장부 전체를 다시 계산해, 어느 시점이든 보유량보다 많이 파는 거래가 생기면 거부한다.
+- 서비스 계층은 HTTP를 모른다. 규칙 위반은 `services/errors.py`의 `DomainError`(422)·`NotFoundError`(404)로 던지고, `main.py`의 예외 핸들러가 HTTP 응답으로 바꾼다.
+- API 응답의 `Decimal` 필드는 `schemas/common.py`의 `Num` 타입으로 선언해 JSON 숫자로 직렬화한다.
 - LSTM 학습은 CLI로만 하고 결과는 `backend/artifacts/{symbol}/`에 저장한다(git 제외). API는 추론만 한다.
 - 장기 전망은 LSTM이 아니라 `services/projection.py`의 몬테카를로 시뮬레이션이 담당한다.
 - 프론트엔드는 백엔드 `/api`만 호출하고, OpenAPI에서 생성한 타입 파일은 직접 수정하지 않는다.
