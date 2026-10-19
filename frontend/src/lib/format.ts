@@ -11,9 +11,21 @@ export const formatKrw = (v: number) => krw.format(v)
 /** Sub-dollar prices (e.g. XRP) keep 4 decimals so they don't round to $0.60. */
 export const formatUsd = (v: number) => (Math.abs(v) > 0 && Math.abs(v) < 1 ? usdSmall : usd).format(v)
 
-export function formatSignedUsd(v: number): string {
+/** Prefix a sign with a real minus (−) and format the absolute value. */
+export function signed(v: number, format: (abs: number) => string): string {
   const sign = v > 0 ? '+' : v < 0 ? '−' : ''
-  return `${sign}${formatUsd(Math.abs(v))}`
+  return `${sign}${format(Math.abs(v))}`
+}
+
+export const formatSignedUsd = (v: number) => signed(v, formatUsd)
+
+export function formatUsdCompact(v: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(v)
 }
 
 export function formatPct(v: number, signed = true): string {

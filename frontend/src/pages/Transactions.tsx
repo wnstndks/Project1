@@ -10,7 +10,8 @@ import {
 } from '../api/hooks'
 import { TransactionForm } from '../components/TransactionForm'
 import { Card, ErrorBox, Muted, SegmentedControl } from '../components/ui'
-import { displaySymbol, formatQty, formatUsd } from '../lib/format'
+import { useMoney } from '../lib/currency'
+import { displaySymbol, formatQty } from '../lib/format'
 
 type Filter = 'all' | AssetType
 
@@ -22,6 +23,10 @@ export function Transactions() {
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [confirmId, setConfirmId] = useState<number | null>(null)
+  const { currency, format } = useMoney()
+  // KRW amounts use the rate on each trade's own date, not today's.
+  const money = (t: Transaction, usd: number) =>
+    format(currency === 'KRW' && t.usd_krw ? usd * t.usd_krw : usd)
 
   const save = async (data: TransactionInput) => {
     if (editing) {
@@ -102,9 +107,9 @@ export function Transactions() {
                       {t.side === 'buy' ? '매수' : '매도'}
                     </td>
                     <td className="px-3 py-2.5 text-right">{formatQty(t.quantity)}</td>
-                    <td className="px-3 py-2.5 text-right">{formatUsd(t.price)}</td>
-                    <td className="px-3 py-2.5 text-right font-medium">{formatUsd(t.quantity * t.price)}</td>
-                    <td className="px-3 py-2.5 text-right text-ink-2">{formatUsd(t.fee)}</td>
+                    <td className="px-3 py-2.5 text-right">{money(t, t.price)}</td>
+                    <td className="px-3 py-2.5 text-right font-medium">{money(t, t.quantity * t.price)}</td>
+                    <td className="px-3 py-2.5 text-right text-ink-2">{money(t, t.fee)}</td>
                     <td className="px-5 py-2.5 text-right whitespace-nowrap">
                       {confirmId === t.id ? (
                         <>

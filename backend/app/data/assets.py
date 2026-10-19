@@ -40,6 +40,13 @@ def normalize_symbol(asset_type: AssetType, symbol: str) -> str:
     return s
 
 
+def resolve_symbol(raw: str) -> str:
+    """Guess the asset type from user input ("AAPL", "btc", "SOL-USD") and normalize it."""
+    s = raw.strip().upper()
+    is_crypto = s.endswith("-USD") or f"{s}-USD" in CRYPTO_ASSETS
+    return normalize_symbol(AssetType.CRYPTO if is_crypto else AssetType.STOCK, s)
+
+
 def asset_type_of(symbol: str) -> AssetType:
     return AssetType.CRYPTO if symbol in CRYPTO_ASSETS else AssetType.STOCK
 

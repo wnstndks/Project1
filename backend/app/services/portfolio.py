@@ -8,9 +8,9 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.data.assets import CRYPTO_ASSETS, FX_USDKRW
+from app.data.assets import CRYPTO_ASSETS
 from app.data.provider import Quote
-from app.db.models import AssetType, Side, Transaction
+from app.db.models import AssetType, Transaction
 from app.services.ledger import ZERO, Position, build_positions, ordered
 from app.services.market_data import MarketDataService
 
@@ -39,6 +39,14 @@ class Holding:
     unrealized_pnl: Decimal
     unrealized_pct: Decimal
     realized_pnl: Decimal
+    # KRW: cost at each trade date's rate, value at today's rate (includes FX gain/loss).
+    avg_cost_krw: Decimal
+    cost_basis_krw: Decimal
+    price_krw: Decimal
+    market_value_krw: Decimal
+    unrealized_pnl_krw: Decimal
+    unrealized_pct_krw: Decimal
+    realized_pnl_krw: Decimal
     weight: Decimal = ZERO
 
 
@@ -46,6 +54,7 @@ class Holding:
 class Allocation:
     asset_type: AssetType
     market_value: Decimal
+    market_value_krw: Decimal
     weight: Decimal
 
 
@@ -58,6 +67,13 @@ class Summary:
     unrealized_pct: Decimal
     realized_pnl: Decimal
     total_pnl: Decimal
+    cost_basis_krw: Decimal
+    unrealized_pnl_krw: Decimal
+    unrealized_pct_krw: Decimal
+    realized_pnl_krw: Decimal
+    total_pnl_krw: Decimal
+    # Part of the KRW unrealized P&L caused by USD/KRW moving since purchase.
+    fx_pnl_krw: Decimal
     usd_krw: Decimal
     allocation: list[Allocation]
     holdings_count: int
@@ -81,41 +97,64 @@ class PortfolioService:
         self.today = today
 
     def holdings(self) -> list[Holding]:
-        return self._holdings(build_positions(self._transactions()))
+        return self._holdings(self._positions())
+
+    def _positions(self) -> dict[str, Position]:
+        txs = self._transactions()
+        if not txs:
+            return {}
+        fx_on = self.market.usd_krw_lookup(min(t.trade_date for t in txs))
+        return build_positions(txs, fx_on=fx_on)
 
     def _holdings(self, positions: dict[str, Position]) -> list[Holding]:
         open_positions = [p for p in positions.values() if p.quantity > ZERO]
+        if not open_positions:
+            return []
         quotes = self.market.get_quotes([p.symbol for p in open_positions])
-        holdings = [self._value(p, quotes[p.symbol]) for p in open_positions]
+        fx = _dec(self.market.usd_krw().price)
+        holdings = [self._value(p, quotes[p.symbol], fx) for p in open_positions]
         total = sum((h.market_value for h in holdings), ZERO)
         for h in holdings:
             h.weight = _pct(h.market_value, total)
         return sorted(holdings, key=lambda h: h.market_value, reverse=True)
 
     def summary(self) -> Summary:
-        positions = build_positions(self._transactions())
+        positions = self._positions()
         holdings = self._holdings(positions)
         fx = _dec(self.market.usd_krw().price)
 
-        market_value = sum((h.market_value for h in holdings), ZERO)
-        cost_basis = sum((h.cost_basis for h in holdings), ZERO)
+        def total(attr: str) -> Decimal:
+            return sum((getattr(h, attr) for h in holdings), ZERO)
+
+        market_value, cost_basis = total("market_value"), total("cost_basis")
+        value_krw, cost_krw = total("market_value_krw"), total("cost_basis_krw")
         unrealized = market_value - cost_basis
+        unrealized_krw = value_krw - cost_krw
         # Realized P&L also counts positions that have been fully sold.
         realized = sum((p.realized_pnl for p in positions.values()), ZERO)
+        realized_krw = sum((p.realized_pnl_krw for p in positions.values()), ZERO)
 
         allocation = []
         for asset_type in AssetType:
-            value = sum((h.market_value for h in holdings if h.asset_type == asset_type), ZERO)
-            allocation.append(Allocation(asset_type, value, _pct(value, market_value)))
+            mine = [h for h in holdings if h.asset_type == asset_type]
+            value = sum((h.market_value for h in mine), ZERO)
+            value_krw_t = sum((h.market_value_krw for h in mine), ZERO)
+            allocation.append(Allocation(asset_type, value, value_krw_t, _pct(value, market_value)))
 
         return Summary(
             market_value=market_value,
-            market_value_krw=market_value * fx,
+            market_value_krw=value_krw,
             cost_basis=cost_basis,
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, cost_basis),
             realized_pnl=realized,
             total_pnl=unrealized + realized,
+            cost_basis_krw=cost_krw,
+            unrealized_pnl_krw=unrealized_krw,
+            unrealized_pct_krw=_pct(unrealized_krw, cost_krw),
+            realized_pnl_krw=realized_krw,
+            total_pnl_krw=unrealized_krw + realized_krw,
+            fx_pnl_krw=unrealized_krw - unrealized * fx,
             usd_krw=fx,
             allocation=allocation,
             holdings_count=len(holdings),
@@ -136,14 +175,10 @@ class PortfolioService:
             sym: {b.date: b.close for b in self.market.get_history(sym, fetch_from, today)}
             for sym in {t.symbol for t in txs}
         }
-        fx_closes = {b.date: b.close for b in self.market.get_history(FX_USDKRW, fetch_from, today)}
+        fx_on = self.market.usd_krw_lookup(fetch_from)
 
         positions: dict[str, Position] = {}
-        # KRW actually spent, converted at each buy date's rate (not today's), so the KRW
-        # cost line stays flat between trades and FX gains show up as portfolio return.
-        cost_krw: dict[str, float] = {}
         last_price: dict[str, float] = {}
-        last_fx = next(iter(fx_closes.values()), None) or self.market.usd_krw().price
         points: list[HistoryPoint] = []
         i = 0
         d = fetch_from
@@ -151,46 +186,40 @@ class PortfolioService:
             for sym, series in closes.items():
                 if d in series:
                     last_price[sym] = series[d]
-            last_fx = fx_closes.get(d, last_fx)
-
             while i < len(txs) and txs[i].trade_date <= d:
                 tx = txs[i]
                 pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
-                held_before = pos.quantity
-                pos.apply(tx)
-                if tx.side == Side.BUY:
-                    spent = float(tx.quantity * tx.price + tx.fee) * last_fx
-                    cost_krw[tx.symbol] = cost_krw.get(tx.symbol, 0.0) + spent
-                else:
-                    cost_krw[tx.symbol] *= float(pos.quantity / held_before)
+                pos.apply(tx, fx_on(tx.trade_date))
                 i += 1
 
             if d >= start:
+                fx = float(fx_on(d))
                 value = 0.0
-                cost = 0.0
                 for sym, pos in positions.items():
                     if pos.quantity == ZERO:
                         continue
                     # Before the first bar arrives, value the position at its cost.
                     price = last_price.get(sym, float(pos.avg_cost))
                     value += float(pos.quantity) * price
-                    cost += float(pos.cost_basis)
+                held = positions.values()
                 points.append(
                     HistoryPoint(
                         date=d,
                         market_value=round(value, 2),
-                        market_value_krw=round(value * last_fx),
-                        cost_basis=round(cost, 2),
-                        cost_basis_krw=round(sum(cost_krw.values())),
+                        market_value_krw=round(value * fx),
+                        cost_basis=round(float(sum(p.cost_basis for p in held)), 2),
+                        # Fixed at each buy date's rate, so it only moves on trade days.
+                        cost_basis_krw=round(float(sum(p.cost_basis_krw for p in held))),
                     )
                 )
             d += timedelta(days=1)
         return points
 
-    def _value(self, p: Position, quote: Quote) -> Holding:
+    def _value(self, p: Position, quote: Quote, fx: Decimal) -> Holding:
         price = _dec(quote.price)
         market_value = p.quantity * price
         unrealized = market_value - p.cost_basis
+        unrealized_krw = market_value * fx - p.cost_basis_krw
         return Holding(
             symbol=p.symbol,
             name=CRYPTO_ASSETS.get(p.symbol, p.symbol),
@@ -204,6 +233,13 @@ class PortfolioService:
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, p.cost_basis),
             realized_pnl=p.realized_pnl,
+            avg_cost_krw=p.avg_cost_krw,
+            cost_basis_krw=p.cost_basis_krw,
+            price_krw=price * fx,
+            market_value_krw=market_value * fx,
+            unrealized_pnl_krw=unrealized_krw,
+            unrealized_pct_krw=_pct(unrealized_krw, p.cost_basis_krw),
+            realized_pnl_krw=p.realized_pnl_krw,
         )
 
     def _transactions(self) -> list[Transaction]:

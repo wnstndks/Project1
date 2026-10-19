@@ -6,7 +6,8 @@ import { AllocationBar } from '../components/AllocationBar'
 import { HoldingsTable } from '../components/HoldingsTable'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { ValueHistoryChart } from '../components/ValueHistoryChart'
-import { formatKrw, formatPct, formatUsd } from '../lib/format'
+import { useMoney } from '../lib/currency'
+import { formatKrw, formatPct, signed } from '../lib/format'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
 
 export function Dashboard() {
@@ -14,6 +15,7 @@ export function Dashboard() {
   const holdings = useHoldings()
   const [range, setRange] = useState<RangeKey>('1Y')
   const history = usePortfolioHistory(rangeStart(range))
+  const { currency, pick, format, formatOther } = useMoney()
 
   if (summary.error) return <ErrorBox error={summary.error} />
   if (!summary.data) return <Muted>불러오는 중…</Muted>
@@ -33,21 +35,45 @@ export function Dashboard() {
     )
   }
 
+  const unrealizedPct = pick(s.unrealized_pct, s.unrealized_pct_krw)
+
   return (
     <div className="space-y-6">
       <section>
         <div className="text-sm text-muted">총 자산</div>
-        <div className="mt-1 text-5xl font-semibold tracking-tight">{formatKrw(s.market_value_krw)}</div>
+        <div className="mt-1 text-5xl font-semibold tracking-tight">
+          {format(pick(s.market_value, s.market_value_krw))}
+        </div>
         <div className="mt-2 text-sm text-ink-2">
-          {formatUsd(s.market_value)} · 원/달러 {s.usd_krw.toFixed(2)}
+          {formatOther(s.market_value, s.market_value_krw)} · 원/달러 {s.usd_krw.toFixed(2)}
         </div>
       </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="평가손익" value={<PnL value={s.unrealized_pnl} />} sub={formatPct(s.unrealized_pct)} />
-        <StatTile label="실현손익" value={<PnL value={s.realized_pnl} />} />
-        <StatTile label="총 손익" value={<PnL value={s.total_pnl} />} sub="평가손익 + 실현손익" />
-        <StatTile label="투자원금" value={formatUsd(s.cost_basis)} sub={`${s.holdings_count}개 종목 보유`} />
+        <StatTile
+          label="평가손익"
+          value={<PnL value={pick(s.unrealized_pnl, s.unrealized_pnl_krw)} />}
+          sub={
+            currency === 'KRW'
+              ? `${formatPct(unrealizedPct)} · 환차손익 ${signed(s.fx_pnl_krw, formatKrw)}`
+              : formatPct(unrealizedPct)
+          }
+        />
+        <StatTile label="실현손익" value={<PnL value={pick(s.realized_pnl, s.realized_pnl_krw)} />} />
+        <StatTile
+          label="총 손익"
+          value={<PnL value={pick(s.total_pnl, s.total_pnl_krw)} />}
+          sub="평가손익 + 실현손익"
+        />
+        <StatTile
+          label="투자원금"
+          value={format(pick(s.cost_basis, s.cost_basis_krw))}
+          sub={
+            currency === 'KRW'
+              ? `매수일 환율 기준 · ${s.holdings_count}개 종목`
+              : `${s.holdings_count}개 종목 보유`
+          }
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

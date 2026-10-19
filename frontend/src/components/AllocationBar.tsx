@@ -1,11 +1,12 @@
 import type { Summary } from '../api/client'
-import { formatUsd } from '../lib/format'
+import { useMoney } from '../lib/currency'
 
 const LABEL = { stock: '주식', crypto: '코인' } as const
 const COLOR = { stock: 'var(--series-1)', crypto: 'var(--series-2)' } as const
 
 /** Two asset classes: a single 100% bar reads better than a two-slice pie. */
 export function AllocationBar({ allocation }: { allocation: Summary['allocation'] }) {
+  const { pick, format } = useMoney()
   const parts = allocation.filter((a) => a.market_value > 0)
   return (
     <div>
@@ -27,7 +28,7 @@ export function AllocationBar({ allocation }: { allocation: Summary['allocation'
             </span>
             <span className="num">
               <span className="font-semibold">{a.weight.toFixed(1)}%</span>
-              <span className="ml-2 text-muted">{formatUsd(a.market_value)}</span>
+              <span className="ml-2 text-muted">{format(pick(a.market_value, a.market_value_krw))}</span>
             </span>
           </li>
         ))}

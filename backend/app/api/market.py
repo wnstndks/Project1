@@ -1,25 +1,14 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.data.assets import CRYPTO_ASSETS, UnsupportedSymbolError, asset_type_of, normalize_symbol
+from app.data.assets import CRYPTO_ASSETS, asset_type_of, resolve_symbol
 from app.db.models import AssetType
 from app.deps import get_market_service
 from app.schemas.market import AssetInfo, BarOut, QuoteOut
 from app.services.market_data import MarketDataService
 
 router = APIRouter(prefix="/market", tags=["market"])
-
-
-def _resolve(symbol: str) -> str:
-    """Accept "AAPL", "btc" or "BTC-USD" and return the provider symbol."""
-    s = symbol.strip().upper()
-    is_crypto = s.endswith("-USD") or f"{s}-USD" in CRYPTO_ASSETS
-    asset_type = AssetType.CRYPTO if is_crypto else AssetType.STOCK
-    try:
-        return normalize_symbol(asset_type, s)
-    except UnsupportedSymbolError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/crypto", response_model=list[AssetInfo])
@@ -42,20 +31,20 @@ def history(
     end: date | None = None,
     market: MarketDataService = Depends(get_market_service),
 ):
-    resolved = _resolve(symbol)
+    resolved = resolve_symbol(symbol)
     start = start or date.today() - timedelta(days=365)
     return market.get_history(resolved, start, end)
 
 
 @router.get("/{symbol}/quote", response_model=QuoteOut)
 def quote(symbol: str, market: MarketDataService = Depends(get_market_service)) -> QuoteOut:
-    q = market.get_quote(_resolve(symbol))
+    q = market.get_quote(resolve_symbol(symbol))
     return QuoteOut(symbol=q.symbol, price=q.price, as_of=q.as_of)
 
 
 @router.get("/{symbol}/info", response_model=AssetInfo)
 def info(symbol: str, market: MarketDataService = Depends(get_market_service)) -> AssetInfo:
-    resolved = _resolve(symbol)
+    resolved = resolve_symbol(symbol)
     market.get_quote(resolved)  # 404 for unknown tickers
     name = CRYPTO_ASSETS.get(resolved, resolved)
     return AssetInfo(symbol=resolved, name=name, asset_type=asset_type_of(resolved))

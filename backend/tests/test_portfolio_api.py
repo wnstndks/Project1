@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 
@@ -99,6 +101,22 @@ def test_holdings_and_summary(client):
     )
     alloc = {a["asset_type"]: a["weight"] for a in summary["allocation"]}
     assert alloc["stock"] + alloc["crypto"] == pytest.approx(100)
+
+    # KRW P&L = USD P&L at today's rate + the FX effect on the cost basis
+    assert summary["unrealized_pnl_krw"] == pytest.approx(
+        summary["unrealized_pnl"] * summary["usd_krw"] + summary["fx_pnl_krw"]
+    )
+    assert summary["market_value_krw"] == pytest.approx(
+        sum(h["market_value_krw"] for h in holdings)
+    )
+    assert aapl["avg_cost_krw"] > 0
+
+
+def test_transaction_list_includes_trade_date_fx(client, provider):
+    buy(client, "AAPL", 1, 100, day="2026-10-02")
+    tx = client.get("/api/transactions").json()[0]
+    expected = provider.get_history("KRW=X", date(2026, 10, 2), date(2026, 10, 2))[0].close
+    assert tx["usd_krw"] == pytest.approx(expected)
 
 
 def test_empty_portfolio(client):

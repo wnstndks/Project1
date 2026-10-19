@@ -534,6 +534,201 @@
           }
         }
       }
+    },
+    "/api/predictions": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Trained Models",
+        "operationId": "trained_models_api_predictions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrainedModelOut"
+                  },
+                  "type": "array",
+                  "title": "Response Trained Models Api Predictions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/predictions/{symbol}": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Forecast",
+        "operationId": "forecast_api_predictions__symbol__get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/predictions/{symbol}/backtest": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Backtest",
+        "operationId": "backtest_api_predictions__symbol__backtest_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BacktestPoint"
+                  },
+                  "title": "Response Backtest Api Predictions  Symbol  Backtest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/predictions/{symbol}/train": {
+      "post": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Start Training",
+        "operationId": "start_training_api_predictions__symbol__train_post",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Training Status",
+        "operationId": "training_status_api_predictions__symbol__train_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -547,6 +742,10 @@
             "type": "number",
             "title": "Market Value"
           },
+          "market_value_krw": {
+            "type": "number",
+            "title": "Market Value Krw"
+          },
           "weight": {
             "type": "number",
             "title": "Weight"
@@ -556,6 +755,7 @@
         "required": [
           "asset_type",
           "market_value",
+          "market_value_krw",
           "weight"
         ],
         "title": "AllocationOut"
@@ -589,6 +789,35 @@
           "crypto"
         ],
         "title": "AssetType"
+      },
+      "BacktestPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "actual": {
+            "type": "number",
+            "title": "Actual"
+          },
+          "predicted": {
+            "type": "number",
+            "title": "Predicted"
+          },
+          "naive": {
+            "type": "number",
+            "title": "Naive"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "actual",
+          "predicted",
+          "naive"
+        ],
+        "title": "BacktestPoint"
       },
       "BarOut": {
         "properties": {
@@ -633,6 +862,145 @@
           "volume"
         ],
         "title": "BarOut"
+      },
+      "ClosePoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "close"
+        ],
+        "title": "ClosePoint"
+      },
+      "ErrorMetrics": {
+        "properties": {
+          "mae": {
+            "type": "number",
+            "title": "Mae"
+          },
+          "rmse": {
+            "type": "number",
+            "title": "Rmse"
+          },
+          "mape": {
+            "type": "number",
+            "title": "Mape"
+          },
+          "direction_acc": {
+            "type": "number",
+            "title": "Direction Acc"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mae",
+          "rmse",
+          "mape",
+          "direction_acc"
+        ],
+        "title": "ErrorMetrics"
+      },
+      "ForecastOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "forecast": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastPoint"
+            },
+            "type": "array",
+            "title": "Forecast"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/Metrics"
+          },
+          "trained_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trained At"
+          },
+          "train_range": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Train Range"
+          },
+          "test_range": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Test Range"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/ClosePoint"
+            },
+            "type": "array",
+            "title": "Recent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "as_of",
+          "base_price",
+          "forecast",
+          "metrics",
+          "trained_at",
+          "train_range",
+          "test_range",
+          "recent"
+        ],
+        "title": "ForecastOut"
+      },
+      "ForecastPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "return_pct": {
+            "type": "number",
+            "title": "Return Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "price",
+          "return_pct"
+        ],
+        "title": "ForecastPoint"
       },
       "HTTPValidationError": {
         "properties": {
@@ -731,6 +1099,34 @@
             "type": "number",
             "title": "Realized Pnl"
           },
+          "avg_cost_krw": {
+            "type": "number",
+            "title": "Avg Cost Krw"
+          },
+          "cost_basis_krw": {
+            "type": "number",
+            "title": "Cost Basis Krw"
+          },
+          "price_krw": {
+            "type": "number",
+            "title": "Price Krw"
+          },
+          "market_value_krw": {
+            "type": "number",
+            "title": "Market Value Krw"
+          },
+          "unrealized_pnl_krw": {
+            "type": "number",
+            "title": "Unrealized Pnl Krw"
+          },
+          "unrealized_pct_krw": {
+            "type": "number",
+            "title": "Unrealized Pct Krw"
+          },
+          "realized_pnl_krw": {
+            "type": "number",
+            "title": "Realized Pnl Krw"
+          },
           "weight": {
             "type": "number",
             "title": "Weight"
@@ -750,9 +1146,69 @@
           "unrealized_pnl",
           "unrealized_pct",
           "realized_pnl",
+          "avg_cost_krw",
+          "cost_basis_krw",
+          "price_krw",
+          "market_value_krw",
+          "unrealized_pnl_krw",
+          "unrealized_pct_krw",
+          "realized_pnl_krw",
           "weight"
         ],
-        "title": "HoldingOut"
+        "title": "HoldingOut",
+        "description": "USD fields plus *_krw fields: KRW cost uses each trade date's FX rate, KRW value today's."
+      },
+      "HorizonMetrics": {
+        "properties": {
+          "day": {
+            "type": "integer",
+            "title": "Day"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ErrorMetrics"
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/ErrorMetrics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "model",
+          "baseline"
+        ],
+        "title": "HorizonMetrics"
+      },
+      "Metrics": {
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "title": "Samples"
+          },
+          "by_horizon": {
+            "items": {
+              "$ref": "#/components/schemas/HorizonMetrics"
+            },
+            "type": "array",
+            "title": "By Horizon"
+          },
+          "best_epoch": {
+            "type": "integer",
+            "title": "Best Epoch"
+          },
+          "train_seconds": {
+            "type": "number",
+            "title": "Train Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "samples",
+          "by_horizon",
+          "best_epoch",
+          "train_seconds"
+        ],
+        "title": "Metrics"
       },
       "QuoteOut": {
         "properties": {
@@ -816,6 +1272,30 @@
             "type": "number",
             "title": "Total Pnl"
           },
+          "cost_basis_krw": {
+            "type": "number",
+            "title": "Cost Basis Krw"
+          },
+          "unrealized_pnl_krw": {
+            "type": "number",
+            "title": "Unrealized Pnl Krw"
+          },
+          "unrealized_pct_krw": {
+            "type": "number",
+            "title": "Unrealized Pct Krw"
+          },
+          "realized_pnl_krw": {
+            "type": "number",
+            "title": "Realized Pnl Krw"
+          },
+          "total_pnl_krw": {
+            "type": "number",
+            "title": "Total Pnl Krw"
+          },
+          "fx_pnl_krw": {
+            "type": "number",
+            "title": "Fx Pnl Krw"
+          },
           "usd_krw": {
             "type": "number",
             "title": "Usd Krw"
@@ -841,12 +1321,104 @@
           "unrealized_pct",
           "realized_pnl",
           "total_pnl",
+          "cost_basis_krw",
+          "unrealized_pnl_krw",
+          "unrealized_pct_krw",
+          "realized_pnl_krw",
+          "total_pnl_krw",
+          "fx_pnl_krw",
           "usd_krw",
           "allocation",
           "holdings_count"
         ],
         "title": "SummaryOut",
-        "description": "All amounts in USD unless suffixed with _krw."
+        "description": "Amounts in USD unless suffixed with _krw."
+      },
+      "TrainedModelOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "trained_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trained At"
+          },
+          "mape_model": {
+            "type": "number",
+            "title": "Mape Model"
+          },
+          "mape_baseline": {
+            "type": "number",
+            "title": "Mape Baseline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "trained_at",
+          "mape_model",
+          "mape_baseline"
+        ],
+        "title": "TrainedModelOut"
+      },
+      "TrainingJobOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Log"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "state",
+          "started_at",
+          "finished_at",
+          "error",
+          "log"
+        ],
+        "title": "TrainingJobOut"
       },
       "TransactionIn": {
         "properties": {
@@ -981,6 +1553,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "usd_krw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Krw",
+            "description": "USD/KRW rate on the trade date"
           }
         },
         "type": "object",

@@ -14,7 +14,9 @@ def list_transactions(
     asset_type: AssetType | None = None,
     service: TransactionService = Depends(get_transaction_service),
 ):
-    return service.list_all(symbol, asset_type)
+    txs = service.list_all(symbol, asset_type)
+    fx = service.trade_date_fx(txs)
+    return [TransactionOut.model_validate(t).model_copy(update={"usd_krw": fx[t.id]}) for t in txs]
 
 
 @router.post("", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)

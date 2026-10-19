@@ -31,3 +31,4 @@ class TransactionOut(BaseModel):
     fee: Num
     note: str | None
     created_at: datetime
+    usd_krw: Num | None = Field(None, description="USD/KRW rate on the trade date")

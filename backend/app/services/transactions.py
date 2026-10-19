@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,6 +30,13 @@ class TransactionService:
         if asset_type:
             stmt = stmt.where(Transaction.asset_type == asset_type)
         return list(self.db.scalars(stmt))
+
+    def trade_date_fx(self, txs: list[Transaction]) -> dict[int, Decimal]:
+        """USD/KRW on each transaction's trade date, keyed by transaction id."""
+        if not txs:
+            return {}
+        fx_on = self.market.usd_krw_lookup(min(t.trade_date for t in txs))
+        return {t.id: fx_on(t.trade_date) for t in txs}
 
     def create(self, data: TransactionIn) -> Transaction:
         tx = Transaction(**self._clean(data))

@@ -7,6 +7,8 @@ from app.schemas.common import Num
 
 
 class HoldingOut(BaseModel):
+    """USD fields plus *_krw fields: KRW cost uses each trade date's FX rate, KRW value today's."""
+
     symbol: str
     name: str
     asset_type: AssetType
@@ -19,17 +21,25 @@ class HoldingOut(BaseModel):
     unrealized_pnl: Num
     unrealized_pct: Num
     realized_pnl: Num
+    avg_cost_krw: Num
+    cost_basis_krw: Num
+    price_krw: Num
+    market_value_krw: Num
+    unrealized_pnl_krw: Num
+    unrealized_pct_krw: Num
+    realized_pnl_krw: Num
     weight: Num
 
 
 class AllocationOut(BaseModel):
     asset_type: AssetType
     market_value: Num
+    market_value_krw: Num
     weight: Num
 
 
 class SummaryOut(BaseModel):
-    """All amounts in USD unless suffixed with _krw."""
+    """Amounts in USD unless suffixed with _krw."""
 
     market_value: Num
     market_value_krw: Num
@@ -38,6 +48,12 @@ class SummaryOut(BaseModel):
     unrealized_pct: Num
     realized_pnl: Num
     total_pnl: Num
+    cost_basis_krw: Num
+    unrealized_pnl_krw: Num
+    unrealized_pct_krw: Num
+    realized_pnl_krw: Num
+    total_pnl_krw: Num
+    fx_pnl_krw: Num
     usd_krw: Num
     allocation: list[AllocationOut]
     holdings_count: int

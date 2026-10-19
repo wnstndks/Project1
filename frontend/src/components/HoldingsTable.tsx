@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom'
 
 import type { Holding } from '../api/client'
-import { displaySymbol, formatQty, formatUsd } from '../lib/format'
+import { useMoney } from '../lib/currency'
+import { displaySymbol, formatQty } from '../lib/format'
 import { PnL } from './ui'
 
 export function HoldingsTable({ holdings }: { holdings: Holding[] }) {
+  const { pick, format } = useMoney()
   return (
     <div className="-mx-5 overflow-x-auto">
       <table className="w-full min-w-[720px] text-sm">
@@ -31,11 +33,16 @@ export function HoldingsTable({ holdings }: { holdings: Holding[] }) {
                 </span>
               </td>
               <td className="px-3 py-2.5 text-right">{formatQty(h.quantity)}</td>
-              <td className="px-3 py-2.5 text-right">{formatUsd(h.avg_cost)}</td>
-              <td className="px-3 py-2.5 text-right">{formatUsd(h.price)}</td>
-              <td className="px-3 py-2.5 text-right font-medium">{formatUsd(h.market_value)}</td>
+              <td className="px-3 py-2.5 text-right">{format(pick(h.avg_cost, h.avg_cost_krw))}</td>
+              <td className="px-3 py-2.5 text-right">{format(pick(h.price, h.price_krw))}</td>
+              <td className="px-3 py-2.5 text-right font-medium">
+                {format(pick(h.market_value, h.market_value_krw))}
+              </td>
               <td className="px-3 py-2.5 text-right">
-                <PnL value={h.unrealized_pnl} pct={h.unrealized_pct} />
+                <PnL
+                  value={pick(h.unrealized_pnl, h.unrealized_pnl_krw)}
+                  pct={pick(h.unrealized_pct, h.unrealized_pct_krw)}
+                />
               </td>
               <td className="px-5 py-2.5 text-right text-ink-2">{h.weight.toFixed(1)}%</td>
             </tr>

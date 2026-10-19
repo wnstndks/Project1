@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
+import { SegmentedControl } from './components/ui'
+import { useCurrency } from './lib/currency'
+
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm ${isActive ? 'bg-hover font-semibold text-ink' : 'text-ink-2 hover:text-ink'}`
 
 export function Layout() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const { currency, setCurrency } = useCurrency()
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault()
@@ -24,7 +28,18 @@ export function Layout() {
             <NavLink to="/" end className={navClass}>대시보드</NavLink>
             <NavLink to="/transactions" className={navClass}>거래 내역</NavLink>
           </nav>
-          <form onSubmit={onSearch} className="ml-auto">
+          <div className="ml-auto">
+            <SegmentedControl
+              label="표시 통화"
+              value={currency}
+              onChange={setCurrency}
+              options={[
+                { value: 'KRW', label: '₩ 원화' },
+                { value: 'USD', label: '$ 달러' },
+              ]}
+            />
+          </div>
+          <form onSubmit={onSearch}>
             <input
               aria-label="종목 검색"
               placeholder="종목 검색 (AAPL, BTC)"

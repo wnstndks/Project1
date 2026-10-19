@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-import { useAssetInfo, useHistory, useHoldings } from '../api/hooks'
+import { useAssetInfo, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart } from '../components/CandleChart'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
+import { useMoney } from '../lib/currency'
 import { displaySymbol, formatQty, formatUsd } from '../lib/format'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
 
@@ -15,9 +16,15 @@ export function AssetDetail() {
   const [range, setRange] = useState<RangeKey>('6M')
   const history = useHistory(info.data?.symbol ?? symbol, rangeStart(range))
   const holdings = useHoldings()
+  const fx = useUsdKrw().data?.price
+  const { currency, pick, format, formatOther } = useMoney()
 
   if (info.error) return <ErrorBox error={info.error} />
   if (!info.data) return <Muted>불러오는 중…</Muted>
+
+  // Market prices are quoted in USD; KRW figures use today's rate.
+  const krw = currency === 'KRW' && fx !== undefined
+  const toDisplay = (usd: number) => format(krw ? usd * fx : usd)
 
   const resolved = info.data.symbol
   const position = holdings.data?.find((h) => h.symbol === resolved)
@@ -39,9 +46,10 @@ export function AssetDetail() {
         </div>
         {last && (
           <div className="mt-2 flex flex-wrap items-baseline gap-3">
-            <span className="text-3xl font-semibold">{formatUsd(last.close)}</span>
+            <span className="text-3xl font-semibold">{toDisplay(last.close)}</span>
+            {krw && <span className="text-sm text-ink-2">{formatUsd(last.close)}</span>}
             <span className="text-sm">
-              <PnL value={change} pct={changePct} />
+              <PnL value={krw ? change * fx : change} pct={changePct} />
               <span className="ml-1 text-muted">
                 ({CHART_RANGES.find((r) => r.value === range)?.label})
               </span>
@@ -51,7 +59,7 @@ export function AssetDetail() {
       </div>
 
       <Card
-        title="가격"
+        title="가격 (USD)"
         actions={<SegmentedControl label="기간" options={CHART_RANGES} value={range} onChange={setRange} />}
       >
         {history.error ? (
@@ -66,12 +74,25 @@ export function AssetDetail() {
       {position ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile label="보유 수량" value={formatQty(position.quantity)} sub={`비중 ${position.weight.toFixed(1)}%`} />
-          <StatTile label="평균 단가" value={formatUsd(position.avg_cost)} />
-          <StatTile label="평가금액" value={formatUsd(position.market_value)} />
+          <StatTile
+            label="평균 단가"
+            value={format(pick(position.avg_cost, position.avg_cost_krw))}
+            sub={formatOther(position.avg_cost, position.avg_cost_krw)}
+          />
+          <StatTile
+            label="평가금액"
+            value={format(pick(position.market_value, position.market_value_krw))}
+            sub={formatOther(position.market_value, position.market_value_krw)}
+          />
           <StatTile
             label="평가손익"
-            value={<PnL value={position.unrealized_pnl} />}
-            sub={`실현손익 ${formatUsd(position.realized_pnl)}`}
+            value={
+              <PnL
+                value={pick(position.unrealized_pnl, position.unrealized_pnl_krw)}
+                pct={pick(position.unrealized_pct, position.unrealized_pct_krw)}
+              />
+            }
+            sub={`실현손익 ${format(pick(position.realized_pnl, position.realized_pnl_krw))}`}
           />
         </div>
       ) : (

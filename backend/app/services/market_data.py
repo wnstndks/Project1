@@ -2,9 +2,11 @@
 
 import threading
 import time
+from bisect import bisect_right
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -91,6 +93,21 @@ class MarketDataService:
 
     def usd_krw(self) -> Quote:
         return self.get_quote(FX_USDKRW)
+
+    def usd_krw_lookup(self, start: date) -> Callable[[date], Decimal]:
+        """USD/KRW on any date since `start`, using the last known rate for weekends/holidays."""
+        bars = self.get_history(FX_USDKRW, start - timedelta(days=10))
+        dates = [b.date for b in bars]
+        rates = [Decimal(str(b.close)) for b in bars]
+        fallback = Decimal(str(self.usd_krw().price))
+
+        def lookup(d: date) -> Decimal:
+            i = bisect_right(dates, d)
+            if i == 0:
+                return rates[0] if rates else fallback
+            return rates[i - 1]
+
+        return lookup
 
     def _sync(self, symbol: str, start: date, today: date) -> None:
         sync = self.db.get(SymbolSync, symbol)

@@ -193,6 +193,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trained Models */
+        get: operations["trained_models_api_predictions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/predictions/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Forecast */
+        get: operations["forecast_api_predictions__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/predictions/{symbol}/backtest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backtest */
+        get: operations["backtest_api_predictions__symbol__backtest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/predictions/{symbol}/train": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Training Status */
+        get: operations["training_status_api_predictions__symbol__train_get"];
+        put?: never;
+        /** Start Training */
+        post: operations["start_training_api_predictions__symbol__train_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -202,6 +271,8 @@ export interface components {
             asset_type: components["schemas"]["AssetType"];
             /** Market Value */
             market_value: number;
+            /** Market Value Krw */
+            market_value_krw: number;
             /** Weight */
             weight: number;
         };
@@ -218,6 +289,20 @@ export interface components {
          * @enum {string}
          */
         AssetType: "stock" | "crypto";
+        /** BacktestPoint */
+        BacktestPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Actual */
+            actual: number;
+            /** Predicted */
+            predicted: number;
+            /** Naive */
+            naive: number;
+        };
         /** BarOut */
         BarOut: {
             /**
@@ -237,6 +322,65 @@ export interface components {
             adj_close: number;
             /** Volume */
             volume: number;
+        };
+        /** ClosePoint */
+        ClosePoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Close */
+            close: number;
+        };
+        /** ErrorMetrics */
+        ErrorMetrics: {
+            /** Mae */
+            mae: number;
+            /** Rmse */
+            rmse: number;
+            /** Mape */
+            mape: number;
+            /** Direction Acc */
+            direction_acc: number;
+        };
+        /** ForecastOut */
+        ForecastOut: {
+            /** Symbol */
+            symbol: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Base Price */
+            base_price: number;
+            /** Forecast */
+            forecast: components["schemas"]["ForecastPoint"][];
+            metrics: components["schemas"]["Metrics"];
+            /**
+             * Trained At
+             * Format: date-time
+             */
+            trained_at: string;
+            /** Train Range */
+            train_range: string[];
+            /** Test Range */
+            test_range: string[];
+            /** Recent */
+            recent: components["schemas"]["ClosePoint"][];
+        };
+        /** ForecastPoint */
+        ForecastPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Price */
+            price: number;
+            /** Return Pct */
+            return_pct: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -259,7 +403,10 @@ export interface components {
             /** Cost Basis Krw */
             cost_basis_krw: number;
         };
-        /** HoldingOut */
+        /**
+         * HoldingOut
+         * @description USD fields plus *_krw fields: KRW cost uses each trade date's FX rate, KRW value today's.
+         */
         HoldingOut: {
             /** Symbol */
             symbol: string;
@@ -287,8 +434,40 @@ export interface components {
             unrealized_pct: number;
             /** Realized Pnl */
             realized_pnl: number;
+            /** Avg Cost Krw */
+            avg_cost_krw: number;
+            /** Cost Basis Krw */
+            cost_basis_krw: number;
+            /** Price Krw */
+            price_krw: number;
+            /** Market Value Krw */
+            market_value_krw: number;
+            /** Unrealized Pnl Krw */
+            unrealized_pnl_krw: number;
+            /** Unrealized Pct Krw */
+            unrealized_pct_krw: number;
+            /** Realized Pnl Krw */
+            realized_pnl_krw: number;
             /** Weight */
             weight: number;
+        };
+        /** HorizonMetrics */
+        HorizonMetrics: {
+            /** Day */
+            day: number;
+            model: components["schemas"]["ErrorMetrics"];
+            baseline: components["schemas"]["ErrorMetrics"];
+        };
+        /** Metrics */
+        Metrics: {
+            /** Samples */
+            samples: number;
+            /** By Horizon */
+            by_horizon: components["schemas"]["HorizonMetrics"][];
+            /** Best Epoch */
+            best_epoch: number;
+            /** Train Seconds */
+            train_seconds: number;
         };
         /** QuoteOut */
         QuoteOut: {
@@ -309,7 +488,7 @@ export interface components {
         Side: "buy" | "sell";
         /**
          * SummaryOut
-         * @description All amounts in USD unless suffixed with _krw.
+         * @description Amounts in USD unless suffixed with _krw.
          */
         SummaryOut: {
             /** Market Value */
@@ -326,12 +505,56 @@ export interface components {
             realized_pnl: number;
             /** Total Pnl */
             total_pnl: number;
+            /** Cost Basis Krw */
+            cost_basis_krw: number;
+            /** Unrealized Pnl Krw */
+            unrealized_pnl_krw: number;
+            /** Unrealized Pct Krw */
+            unrealized_pct_krw: number;
+            /** Realized Pnl Krw */
+            realized_pnl_krw: number;
+            /** Total Pnl Krw */
+            total_pnl_krw: number;
+            /** Fx Pnl Krw */
+            fx_pnl_krw: number;
             /** Usd Krw */
             usd_krw: number;
             /** Allocation */
             allocation: components["schemas"]["AllocationOut"][];
             /** Holdings Count */
             holdings_count: number;
+        };
+        /** TrainedModelOut */
+        TrainedModelOut: {
+            /** Symbol */
+            symbol: string;
+            /**
+             * Trained At
+             * Format: date-time
+             */
+            trained_at: string;
+            /** Mape Model */
+            mape_model: number;
+            /** Mape Baseline */
+            mape_baseline: number;
+        };
+        /** TrainingJobOut */
+        TrainingJobOut: {
+            /** Symbol */
+            symbol: string;
+            /** State */
+            state: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Log */
+            log: string[];
         };
         /** TransactionIn */
         TransactionIn: {
@@ -389,6 +612,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Usd Krw
+             * @description USD/KRW rate on the trade date
+             */
+            usd_krw?: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -758,6 +986,150 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryPointOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trained_models_api_predictions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainedModelOut"][];
+                };
+            };
+        };
+    };
+    forecast_api_predictions__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backtest_api_predictions__symbol__backtest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacktestPoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    training_status_api_predictions__symbol__train_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_training_api_predictions__symbol__train_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingJobOut"];
                 };
             };
             /** @description Validation Error */

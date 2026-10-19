@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 
 import type { HistoryPoint } from '../api/client'
-import { formatKrw, formatKrwCompact } from '../lib/format'
+import { useMoney } from '../lib/currency'
 
 const SERIES = [
   { key: 'value', label: '평가금액', color: 'var(--series-1)' },
@@ -20,12 +20,13 @@ const SERIES = [
 
 type Row = { date: string; value: number; cost: number }
 
-/** Portfolio value vs. invested cost, both in KRW on one axis. */
+/** Portfolio value vs. invested cost in the selected currency, on one axis. */
 export function ValueHistoryChart({ points }: { points: HistoryPoint[] }) {
+  const { pick, compact } = useMoney()
   const rows: Row[] = points.map((p) => ({
     date: p.date,
-    value: p.market_value_krw,
-    cost: p.cost_basis_krw,
+    value: pick(p.market_value, p.market_value_krw),
+    cost: pick(p.cost_basis, p.cost_basis_krw),
   }))
 
   return (
@@ -55,11 +56,11 @@ export function ValueHistoryChart({ points }: { points: HistoryPoint[] }) {
               tickLine={false}
               axisLine={false}
               tick={{ fill: 'var(--muted)', fontSize: 11 }}
-              tickFormatter={formatKrwCompact}
+              tickFormatter={compact}
               domain={['auto', 'auto']}
             />
             <Tooltip
-              content={HistoryTooltip}
+              content={(props) => <HistoryTooltip {...props} />}
               cursor={{ stroke: 'var(--axis)', strokeWidth: 1 }}
             />
             <Area
@@ -89,6 +90,7 @@ export function ValueHistoryChart({ points }: { points: HistoryPoint[] }) {
 }
 
 function HistoryTooltip({ active, payload, label }: TooltipContentProps) {
+  const { format } = useMoney()
   if (!active || !payload?.length) return null
   const row = payload[0].payload as Row
   return (
@@ -100,7 +102,7 @@ function HistoryTooltip({ active, payload, label }: TooltipContentProps) {
             <span className="inline-block h-0.5 w-3 rounded" style={{ background: s.color }} />
             {s.label}
           </span>
-          <span className="num font-semibold text-ink">{formatKrw(row[s.key])}</span>
+          <span className="num font-semibold text-ink">{format(row[s.key])}</span>
         </div>
       ))}
     </div>

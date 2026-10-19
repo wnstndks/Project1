@@ -8,6 +8,7 @@ export const keys = {
   portfolioHistory: (start?: string) => ['portfolio', 'history', start] as const,
   transactions: ['transactions'] as const,
   crypto: ['market', 'crypto'] as const,
+  usdKrw: ['market', 'fx', 'usdkrw'] as const,
   assetInfo: (symbol: string) => ['market', symbol, 'info'] as const,
   quote: (symbol: string) => ['market', symbol, 'quote'] as const,
   history: (symbol: string, start?: string) => ['market', symbol, 'history', start] as const,
@@ -29,6 +30,8 @@ export const useTransactions = () =>
 
 export const useSupportedCrypto = () =>
   useQuery({ queryKey: keys.crypto, queryFn: api.supportedCrypto, staleTime: Infinity })
+
+export const useUsdKrw = () => useQuery({ queryKey: keys.usdKrw, queryFn: api.usdKrw })
 
 export const useAssetInfo = (symbol: string) =>
   useQuery({ queryKey: keys.assetInfo(symbol), queryFn: () => api.assetInfo(symbol), retry: false })

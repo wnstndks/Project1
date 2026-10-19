@@ -79,6 +79,20 @@ def test_same_day_buy_is_applied_before_sell():
     assert pos.realized_pnl == D("2")
 
 
+def test_krw_cost_uses_trade_date_rates():
+    rates = {1: D("1300"), 2: D("1400"), 3: D("1500")}
+    pos = build_positions(
+        [tx("buy", "10", "100", 1), tx("buy", "10", "100", 2), tx("sell", "10", "110", 3)],
+        fx_on=lambda d: rates[d.day],
+    )["AAPL"]
+    # bought 1000 USD at 1300 and 1000 USD at 1400 -> 2,700,000 KRW; sold half the shares
+    assert pos.cost_basis_krw == D("1350000")
+    assert pos.avg_cost_krw == D("135000")
+    # proceeds 1100 USD at 1500 = 1,650,000 KRW minus released cost 1,350,000
+    assert pos.realized_pnl_krw == D("300000")
+    assert pos.realized_pnl == D("100")
+
+
 def test_as_of_ignores_later_trades():
     positions = build_positions(
         [tx("buy", "1", "10", 1), tx("buy", "1", "10", 5)], as_of=date(2026, 1, 3)

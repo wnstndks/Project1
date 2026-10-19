@@ -65,6 +65,7 @@ export const api = {
 
   supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),
   assetInfo: (symbol: string) => request<AssetInfo>(`/market/${encodeURIComponent(symbol)}/info`),
+  usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>
     request<Bar[]>(`/market/${encodeURIComponent(symbol)}/history${query({ start, end })}`),

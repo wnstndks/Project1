@@ -6,6 +6,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Layout } from './App'
 import { Muted } from './components/ui'
 import './index.css'
+import { CurrencyProvider } from './lib/currency'
 
 // Pages are split so each chart library (recharts, lightweight-charts) loads only where used.
 const page = (load: () => Promise<{ Component: ComponentType }>) => ({ lazy: load })
@@ -39,7 +40,9 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <CurrencyProvider>
+        <RouterProvider router={router} />
+      </CurrencyProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

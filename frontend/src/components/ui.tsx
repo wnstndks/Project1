@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
-import { formatPct, formatSignedUsd } from '../lib/format'
+import { useMoney } from '../lib/currency'
+import { formatPct, signed } from '../lib/format'
 
 export function Card({ title, actions, children, className = '' }: {
   title?: string
@@ -21,14 +22,18 @@ export function Card({ title, actions, children, className = '' }: {
   )
 }
 
-/** Gains red, losses blue (Korean convention). Sign and arrow carry the direction too. */
+/**
+ * Gains red, losses blue (Korean convention). Sign and arrow carry the direction too.
+ * `value` must already be in the selected currency (see useMoney().pick).
+ */
 export function PnL({ value, pct, className = '' }: { value: number; pct?: number; className?: string }) {
+  const { format } = useMoney()
   const tone = value > 0 ? 'text-gain' : value < 0 ? 'text-loss' : 'text-ink-2'
   const arrow = value > 0 ? '▲' : value < 0 ? '▼' : ''
   return (
     <span className={`${tone} ${className}`}>
       {arrow && <span aria-hidden="true" className="mr-0.5 text-[0.75em]">{arrow}</span>}
-      {formatSignedUsd(value)}
+      {signed(value, format)}
       {pct !== undefined && <span className="ml-1">({formatPct(pct)})</span>}
     </span>
   )
