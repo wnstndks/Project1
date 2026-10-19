@@ -11,6 +11,7 @@ from app.data.provider import MarketDataProvider
 from app.data.upbit_provider import RoutingProvider, UpbitProvider
 from app.db.session import get_db
 from app.ml.sentiment import FinBertScorer, SentimentScorer
+from app.services.corporate_actions import CorporateActionService
 from app.services.market_data import MarketDataService, QuoteCache
 from app.services.news import NewsService
 from app.services.portfolio import PortfolioService
@@ -93,6 +94,12 @@ def get_extractor() -> HoldingsExtractor:
         return OllamaExtractor(settings.ollama_model, settings.ollama_url)
     key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
     return ClaudeExtractor(settings.import_model, api_key=key)
+
+
+def get_corporate_action_service(
+    db: Session = Depends(get_db), provider: MarketDataProvider = Depends(get_provider)
+) -> CorporateActionService:
+    return CorporateActionService(db, provider)
 
 
 def get_import_service(

@@ -76,7 +76,8 @@ def test_stale_cache_refreshes_from_last_bar(service, provider, clock):
     clock.t += timedelta(hours=1)
     service.get_history("AAPL", date(2026, 9, 1))
 
-    assert provider.history_calls[-1] == ("AAPL", TODAY, TODAY)
+    # Re-downloads a short overlap before the newest bar to detect re-adjusted history.
+    assert provider.history_calls[-1] == ("AAPL", TODAY - timedelta(days=10), TODAY)
 
 
 def test_unknown_symbol_raises(service):
@@ -135,3 +136,67 @@ def test_upbit_market_symbols_resolve(client):
 def test_supported_crypto_list(client):
     symbols = [a["symbol"] for a in client.get("/api/market/crypto").json()]
     assert symbols == ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD"]
+
+
+def test_final_only_drops_bars_whose_session_is_still_open(db, provider):
+    from datetime import UTC
+
+    # Friday 2026-10-16 at 15:00 ET: the stock session is still open.
+    during = datetime(2026, 10, 16, 19, 0, tzinfo=UTC)
+    after = datetime(2026, 10, 16, 21, 0, tzinfo=UTC)
+    now = lambda: datetime(2026, 10, 16, 22, 0)  # noqa: E731
+    for utc_now, last in ((during, date(2026, 10, 15)), (after, date(2026, 10, 16))):
+        svc = MarketDataService(db, provider, QuoteCache(), now=now, utc_now=lambda u=utc_now: u)
+        bars = svc.get_history("AAPL", date(2026, 10, 1), final_only=True)
+        assert bars[-1].date == last
+    # The current UTC day of a coin is never final until 00:00 UTC.
+    svc = MarketDataService(db, provider, QuoteCache(), now=now, utc_now=lambda: after)
+    assert svc.get_history("BTC-USD", date(2026, 10, 1), final_only=True)[-1].date == date(
+        2026, 10, 15
+    )
+
+
+def test_provider_readjustment_triggers_full_refetch(db, clock):
+    from dataclasses import replace
+
+    from app.data.fake_provider import FakeProvider
+
+    class SplittingProvider(FakeProvider):
+        """Simulates Yahoo after a 10:1 split: every past price is divided by 10."""
+
+        factor = 1.0
+
+        def get_history(self, symbol, start, end):
+            return [
+                replace(
+                    b,
+                    open=b.open * self.factor,
+                    high=b.high * self.factor,
+                    low=b.low * self.factor,
+                    close=b.close * self.factor,
+                    adj_close=b.adj_close * self.factor,
+                )
+                for b in super().get_history(symbol, start, end)
+            ]
+
+    provider = SplittingProvider(today=TODAY)
+    service = MarketDataService(db, provider, QuoteCache(), now=clock)
+    before = {b.date: b.close for b in service.get_history("NVDA", date(2026, 6, 1))}
+
+    provider.factor = 0.1
+    clock.t += timedelta(hours=1)  # cache is stale: the next read refreshes
+    after = {b.date: b.close for b in service.get_history("NVDA", date(2026, 6, 1))}
+
+    # Old dates far before the overlap window were rescaled too: no fake -90% seam.
+    first = min(before)
+    assert after[first] == pytest.approx(before[first] * 0.1)
+    assert set(after) == set(before)
+
+
+def test_unchanged_history_is_not_refetched(service, provider, clock):
+    service.get_history("AAPL", date(2026, 6, 1))
+    clock.t += timedelta(hours=1)
+    service.get_history("AAPL", date(2026, 6, 1))
+    # Second call only re-downloads the short overlap window, not the whole series.
+    _, start, _ = provider.history_calls[-1]
+    assert start >= TODAY - timedelta(days=15)

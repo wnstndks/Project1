@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx2 as httpx
 
-from app.data.provider import Bar, MarketDataError, Quote
+from app.data.provider import Bar, CorporateEvent, MarketDataError, Quote
 
 UPBIT_URL = "https://api.upbit.com/v1"
 PAGE = 200  # Upbit's maximum candles per request
@@ -63,6 +63,9 @@ class UpbitProvider:
     def get_name(self, symbol: str) -> str | None:
         return None
 
+    def get_actions(self, symbol: str) -> list[CorporateEvent]:
+        return []
+
     def _get(self, path: str, params: dict, missing_ok: bool = False) -> list[dict]:
         try:
             res = self.http.get(UPBIT_URL + path, params=params)
@@ -95,3 +98,6 @@ class RoutingProvider:
 
     def get_name(self, symbol: str) -> str | None:
         return self._for(symbol).get_name(symbol)
+
+    def get_actions(self, symbol: str) -> list[CorporateEvent]:
+        return self._for(symbol).get_actions(symbol)

@@ -25,13 +25,15 @@ Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 o
 - 라우터(`app/api`) → 서비스(`app/services`) → DB(`app/db`)·시세 공급자(`app/data`). 계산 로직은 서비스에만 둔다.
 - yfinance는 `app/data/yfinance_provider.py`에서만 import한다. 주식과 코인(`BTC-USD` 형식) 모두 `MarketDataProvider`를 거친다. 테스트는 `FakeProvider`로 네트워크 없이 돈다.
 - 코인은 `app/data/assets.py`의 허용 목록 4종만 받는다. 코인은 365일 거래되므로 거래일을 가정하지 않는다.
-- 시세 캐시는 `app/services/market_data.py`가 담당한다. 일봉은 `price_bars`에 저장하고, `symbol_syncs`에 받아온 범위를 기록해 없는 날짜만 받는다. 15분이 지나면 마지막 봉부터 다시 받아 진행 중인 봉을 덮어쓴다. 현재가는 메모리 캐시(60초)를 쓴다.
+- 시세 캐시는 `app/services/market_data.py`가 담당한다. 일봉은 `price_bars`에 저장하고, `symbol_syncs`에 받아온 범위를 기록해 없는 날짜만 받는다. 15분이 지나면 마지막 봉 10일 전부터 다시 받아 진행 중인 봉을 덮어쓴다. 이때 겹치는 과거 봉의 종가가 달라졌으면(분할·배당으로 Yahoo가 과거 가격을 재조정한 경우) 그 종목의 저장 봉을 지우고 전체 기간을 다시 받는다(`_rescaled`). 네트워크 요청은 DB 쓰기 전에 끝낸다. 현재가는 메모리 캐시(60초)를 쓴다.
+- 시장 달력은 `app/data/calendar.py`(exchange_calendars XNYS)에만 둔다. 아직 마감되지 않은 봉(장 마감 전 주식, 당일 UTC 코인)은 `get_history(..., final_only=True)`로 빼고 학습·추론·시뮬레이션에 쓴다. 예측 날짜는 `next_trading_dates`(휴장일 제외), 뉴스 마감 시각은 `us_close_utc`(조기 폐장 반영)를 쓴다.
+- 배당·액면분할(`corporate_actions` 테이블, `services/corporate_actions.py`): `GET /api/corporate-actions`가 공급자의 `get_actions`로 보유 기간 중 이벤트를 감지해 `detected`로 저장하고(종목당 6시간 TTL), 사용자가 `confirmed`/`ignored`로 정한다. 장부는 `confirmed` 이벤트만 거래와 같은 타임라인에 넣는다(`ledger.timeline`, 같은 날이면 이벤트가 거래보다 먼저). 분할은 수량 × 비율(원금 그대로), 배당은 수량 × 주당 금액 × (1 − 원천징수 15%)를 `dividends`로 더하고 `total_pnl`에 포함한다. 상태를 바꿀 때 장부가 깨지면(분할 후 매도가 있는데 분할을 무시) 거부한다. Yahoo 일봉은 분할 수정 가격이라, 자산 추이(`portfolio.history`)는 기준일 이전 종가에 분할 비율을 곱해(상태 무관) 실제 가격으로 되돌린다.
 - USD/KRW 환율도 별도 테이블 없이 `price_bars`에 심볼 `KRW=X`로 저장한다.
 - `AM_MARKET_PROVIDER=fake`로 실행하면 네트워크 없이 `FakeProvider`의 합성 시세를 쓴다.
 - 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다(`services/ledger.py`, 순수 함수). 거래를 생성·수정·삭제할 때는 해당 종목의 장부 전체를 다시 계산해, 어느 시점이든 보유량보다 많이 파는 거래가 생기면 거부한다.
 - 서비스 계층은 HTTP를 모른다. 규칙 위반은 `services/errors.py`의 `DomainError`(422)·`NotFoundError`(404)로 던지고, `main.py`의 예외 핸들러가 HTTP 응답으로 바꾼다.
 - API 응답의 `Decimal` 필드는 `schemas/common.py`의 `Num` 타입으로 선언해 JSON 숫자로 직렬화한다.
-- LSTM(`app/ml/`): `features.py`(행 t의 피처는 t까지의 데이터만 사용, 타깃은 t→t+1..5 누적 로그수익률) → `dataset.py`(시간순 train/val/test 분할, 분할 사이에 horizon만큼 퍼지, 스케일러는 train 구간에만 fit) → `train.py`(조기 종료, 테스트 구간 평가) → `artifacts/{symbol}/`에 `model.pt` + JSON(meta, metrics, backtest) 저장(git 제외). 학습은 CLI 또는 `POST /api/predictions/{symbol}/train`(프로세스 내 스레드, 한 번에 하나)으로 실행하고, `GET /api/predictions/{symbol}`은 저장된 모델로 추론만 한다. 로드한 모델은 파일 mtime 기준으로 캐시한다.
+- LSTM(`app/ml/`): `features.py`(행 t의 피처는 t까지의 데이터만 사용, 타깃은 t→t+1..5 누적 로그수익률) → `dataset.py`(시간순 train/val/test 분할, 분할 사이에 horizon만큼 퍼지, 스케일러는 train 구간에만 fit) → `train.py`(조기 종료, 테스트 구간 평가) → `ml/artifacts.py`가 `artifacts/{symbol}/{run}/`에 `model.pt` + JSON(meta, metrics, backtest)을 새 폴더로 쓰고 `current.json` 포인터를 원자적으로 바꾼다(git 제외). 학습은 CLI 또는 `POST /api/predictions/{symbol}/train`(프로세스 내 스레드, 한 번에 하나)으로 실행하고, `GET /api/predictions/{symbol}`은 저장된 모델로 추론만 한다. 로드한 모델은 `current.json`이 가리키는 run이 바뀔 때만 다시 읽는다.
 - 스크린샷 업로드: Anthropic SDK는 `services/screenshot_extractor.py`에서만 import한다(`ClaudeExtractor`, 기본 모델 `claude-opus-5-5`, `beta.messages.parse` 구조화 출력 + `fallbacks="default"`). 흐름은 미리보기(`POST /api/imports/screenshot`, DB에 쓰지 않음) → 사용자가 확인·수정 → 확정(`POST /api/imports/commit`, `TransactionService.create_many`로 전부 성공 또는 전부 실패)이다. 화면에 원화 매입금액이 보이면 실제 매입 환율을 `transactions.fx_rate`에 저장하고, 장부는 이 값을 시장 환율보다 우선한다(`ledger.trade_fx`). 키는 `backend/.env`의 `AM_ANTHROPIC_API_KEY`(`.env.example` 참고)에 둔다. 업로드 이미지 형식은 확장자가 아니라 파일 내용(`sniff_image_type`)으로 판단한다(.png 이름의 JPEG가 흔함). `AM_IMPORT_EXTRACTOR=fake`로 실행하면 API 키 없이 고정된 데모 인식 결과를 쓴다. 테스트는 `get_extractor`를 `FakeExtractor`로 교체한다.
 - 거래 통화: `transactions.currency`(USD|KRW). 주식은 USD만 허용하고, 업비트·빗썸에서 산 코인은 KRW로 기록한다. 한 종목(포지션) 안에서 통화를 섞을 수 없다(`MixedCurrencyError`). KRW 코인은 원화 원금이 정확한 값이고 USD는 거래일 환율로 파생한다. 평가는 업비트 원화 시세(`portfolio.quote_symbol` → `KRW-BTC` 등)로 하고, `RoutingProvider`가 `KRW-*` 심볼을 `UpbitProvider`로 보낸다. 환차손익(`fx_pnl_krw`)은 USD 포지션만으로 계산한다. 김치 프리미엄은 `GET /api/market/kimchi`(주말에는 환율이 오래되어 `fx_stale`). 보유량이 0이 되면 다른 통화로 다시 시작할 수 있고, 기존 USD 코인 기록은 `POST /api/transactions/convert-currency`로 거래일 환율에 맞춰 KRW로 일괄 변환한다. 시뮬레이션의 KRW 코인 변동성은 업비트 원화 시계열로 추정한다.
 - 원화 표시: 장부(`ledger.py`)는 거래마다 해당 거래일의 USD/KRW(`MarketDataService.usd_krw_lookup`, 주말·휴일은 직전 영업일 환율)로 원화 원금과 원화 실현손익을 따로 계산한다. 그래서 `*_krw` 필드는 USD 값 × 오늘 환율과 다르고 환차손익(`fx_pnl_krw`)을 포함한다. 프론트엔드는 `useMoney().pick(usd, krw)`로 두 값 중 하나를 고르며, 원화 값을 직접 다시 계산하지 않는다. 종목 시세처럼 USD만 있는 값은 오늘 환율로 환산한다.
@@ -44,7 +46,7 @@ Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 o
 
 ## 도메인 규칙
 - 거래 장부의 금액·수량은 `Decimal`이고, DB에는 `DecimalText` 타입(TEXT 저장)으로 넣는다. SQLite의 Numeric은 float로 변환되어 정확도가 깨지기 때문이다. 시세 데이터(`price_bars`)는 float로 둔다.
-- 레코드는 원래 통화로 저장(주식·코인 USD)하고 합계는 KRW로 환산한다.
+- 레코드는 거래 통화로 저장(주식 USD, 업비트·빗썸 코인 KRW)하고 합계는 KRW로 환산한다.
 - 모델을 바꾼 뒤 마이그레이션을 생성하면 `alembic check`로 누락이 없는지 확인한다. SQLite라서 `render_as_batch=True`로 설정되어 있다.
 - 시계열 누수 금지: 시간순 분할, 셔플 금지, 스케일러는 train에만 fit한다.
 - 예측 성능은 항상 기준선(전일 종가 유지)과 함께 보고한다. 예측·시뮬레이션 화면에 투자 조언 아님 고지.

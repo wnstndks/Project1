@@ -6,7 +6,7 @@ import random
 from datetime import date, datetime, timedelta
 
 from app.data.assets import CRYPTO_ASSETS, FX_USDKRW, trades_every_day
-from app.data.provider import Bar, Quote
+from app.data.provider import Bar, CorporateEvent, Quote
 
 _BASE_PRICES = {
     "BTC-USD": 60000.0,
@@ -29,9 +29,15 @@ class FakeProvider:
     Symbols listed in `unknown` behave like tickers the provider has never heard of.
     """
 
-    def __init__(self, today: date | None = None, unknown: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        today: date | None = None,
+        unknown: set[str] | None = None,
+        actions: dict[str, list[CorporateEvent]] | None = None,
+    ) -> None:
         self.today = today or date.today()
         self.unknown = unknown or set()
+        self.actions = actions or {}
         self.history_calls: list[tuple[str, date, date]] = []
 
     def get_history(self, symbol: str, start: date, end: date) -> list[Bar]:
@@ -51,6 +57,9 @@ class FakeProvider:
 
     def get_name(self, symbol: str) -> str | None:
         return None if symbol in self.unknown else f"{symbol} Inc."
+
+    def get_actions(self, symbol: str) -> list[CorporateEvent]:
+        return list(self.actions.get(symbol, []))
 
     def _series(self, symbol: str, end: date) -> list[Bar]:
         seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)

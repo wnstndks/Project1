@@ -12,10 +12,19 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from app.db.models import AssetType, Currency, Side, Transaction
+from app.db.models import (
+    ActionKind,
+    AssetType,
+    CorporateAction,
+    Currency,
+    Side,
+    Transaction,
+)
 from app.services.errors import DomainError
 
 ZERO = Decimal("0")
+# US tax withheld from dividends paid to Korean residents (Korea-US tax treaty rate).
+WITHHOLDING_TAX = Decimal("0.15")
 
 # USD/KRW rate for a trade date.
 FxLookup = Callable[[date], Decimal]
@@ -47,6 +56,9 @@ class Position:
     # rate. The derived currency is only tracked when an FX lookup is given.
     cost_basis_krw: Decimal = ZERO
     realized_pnl_krw: Decimal = ZERO
+    # Cash dividends after US withholding (confirmed events only).
+    dividends: Decimal = ZERO
+    dividends_krw: Decimal = ZERO
     fees_paid: Decimal = ZERO
     first_trade: date | None = None
     trades: int = field(default=0)
@@ -108,6 +120,19 @@ class Position:
             self.cost_basis -= released_usd
             self.cost_basis_krw -= released_krw
 
+    def apply_action(self, action: CorporateAction, fx: Decimal | None = None) -> None:
+        """Apply a confirmed split or dividend at the start of its ex-date."""
+        if self.quantity == ZERO:
+            return
+        if action.kind == ActionKind.SPLIT:
+            # Same money invested, more shares: the average cost falls by the ratio.
+            self.quantity *= action.value
+            return
+        net = self.quantity * action.value * (1 - WITHHOLDING_TAX)
+        self.dividends += net
+        if fx is not None:
+            self.dividends_krw += net * fx
+
 
 def trade_fx(tx: Transaction, fx_on: FxLookup) -> Decimal:
     """The rate actually paid if recorded on the trade, else the market rate that day."""
@@ -126,16 +151,39 @@ def ordered(transactions: Iterable[Transaction]) -> list[Transaction]:
     )
 
 
+def timeline(
+    transactions: Iterable[Transaction], events: Iterable[CorporateAction] = ()
+) -> list[Transaction | CorporateAction]:
+    """Trades and confirmed corporate actions in replay order.
+
+    An action takes effect at the start of its ex-date, before that day's trades.
+    """
+    trades = ordered(transactions)
+    items: list[tuple[tuple, Transaction | CorporateAction]] = [
+        ((e.ex_date, 0, i), e) for i, e in enumerate(events)
+    ]
+    items += [((t.trade_date, 1, i), t) for i, t in enumerate(trades)]
+    return [item for _, item in sorted(items, key=lambda p: p[0])]
+
+
 def build_positions(
     transactions: Iterable[Transaction],
     as_of: date | None = None,
     fx_on: FxLookup | None = None,
+    events: Iterable[CorporateAction] = (),
 ) -> dict[str, Position]:
     """Replay the ledger. Raises OversellError if any sell exceeds the quantity held."""
     positions: dict[str, Position] = {}
-    for tx in ordered(transactions):
-        if as_of is not None and tx.trade_date > as_of:
+    for item in timeline(transactions, events):
+        if isinstance(item, CorporateAction):
+            if as_of is not None and item.ex_date > as_of:
+                break
+            pos = positions.get(item.symbol)
+            if pos is not None:
+                pos.apply_action(item, fx_on(item.ex_date) if fx_on else None)
+            continue
+        if as_of is not None and item.trade_date > as_of:
             break
-        pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
-        pos.apply(tx, trade_fx(tx, fx_on) if fx_on else None)
+        pos = positions.setdefault(item.symbol, Position(item.symbol, item.asset_type))
+        pos.apply(item, trade_fx(item, fx_on) if fx_on else None)
     return positions

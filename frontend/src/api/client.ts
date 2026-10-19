@@ -5,6 +5,8 @@ export type AssetType = Schemas['AssetType']
 export type Side = Schemas['Side']
 export type Currency = Schemas['Currency']
 export type KimchiPremium = Schemas['KimchiPremiumOut']
+export type CorporateAction = Schemas['CorporateActionOut']
+export type ActionStatus = Schemas['ActionStatus']
 export type Bar = Schemas['BarOut']
 export type Quote = Schemas['QuoteOut']
 export type AssetInfo = Schemas['AssetInfo']
@@ -104,6 +106,14 @@ export const api = {
   commitImport: (data: ImportCommit) =>
     request<{ created: number }>('/imports/commit', { method: 'POST', body: JSON.stringify(data) }),
   news: (symbol: string) => request<News>(`/news/${encodeURIComponent(symbol)}`),
+  corporateActions: () => request<CorporateAction[]>('/corporate-actions'),
+  setActionStatus: (id: number, status: ActionStatus) =>
+    request<CorporateAction[]>(
+      `/corporate-actions/${id}/${status === 'confirmed' ? 'confirm' : 'ignore'}`,
+      { method: 'POST' },
+    ),
+  confirmAllDividends: () =>
+    request<CorporateAction[]>('/corporate-actions/dividends/confirm-all', { method: 'POST' }),
   kimchi: () => request<KimchiPremium[]>('/market/kimchi'),
   usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),

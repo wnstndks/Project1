@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.data.assets import CRYPTO_ASSETS, UPBIT_MARKETS
 from app.data.provider import Quote
-from app.db.models import AssetType, Currency, Transaction
-from app.services.ledger import ZERO, Position, build_positions, ordered, trade_fx
+from app.db.models import AssetType, CorporateAction, Currency, Transaction
+from app.services.corporate_actions import confirmed_events, split_events
+from app.services.ledger import ZERO, Position, build_positions, ordered, timeline, trade_fx
 from app.services.market_data import MarketDataService
 
 HUNDRED = Decimal("100")
@@ -47,6 +48,7 @@ class Holding:
     unrealized_pnl: Decimal
     unrealized_pct: Decimal
     realized_pnl: Decimal
+    dividends: Decimal
     # KRW: cost at each trade date's rate, value at today's rate (includes FX gain/loss).
     avg_cost_krw: Decimal
     cost_basis_krw: Decimal
@@ -74,6 +76,9 @@ class Summary:
     unrealized_pnl: Decimal
     unrealized_pct: Decimal
     realized_pnl: Decimal
+    # Dividends after withholding; included in total_pnl.
+    dividends: Decimal
+    dividends_krw: Decimal
     total_pnl: Decimal
     cost_basis_krw: Decimal
     unrealized_pnl_krw: Decimal
@@ -112,7 +117,7 @@ class PortfolioService:
         if not txs:
             return {}
         fx_on = self.market.usd_krw_lookup(min(t.trade_date for t in txs))
-        return build_positions(txs, fx_on=fx_on)
+        return build_positions(txs, fx_on=fx_on, events=confirmed_events(self.db))
 
     def _holdings(self, positions: dict[str, Position]) -> list[Holding]:
         open_positions = [p for p in positions.values() if p.quantity > ZERO]
@@ -142,6 +147,8 @@ class PortfolioService:
         # Realized P&L also counts positions that have been fully sold.
         realized = sum((p.realized_pnl for p in positions.values()), ZERO)
         realized_krw = sum((p.realized_pnl_krw for p in positions.values()), ZERO)
+        dividends = sum((p.dividends for p in positions.values()), ZERO)
+        dividends_krw = sum((p.dividends_krw for p in positions.values()), ZERO)
 
         allocation = []
         for asset_type in AssetType:
@@ -157,12 +164,14 @@ class PortfolioService:
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, cost_basis),
             realized_pnl=realized,
-            total_pnl=unrealized + realized,
+            dividends=dividends,
+            dividends_krw=dividends_krw,
+            total_pnl=unrealized + realized + dividends,
             cost_basis_krw=cost_krw,
             unrealized_pnl_krw=unrealized_krw,
             unrealized_pct_krw=_pct(unrealized_krw, cost_krw),
             realized_pnl_krw=realized_krw,
-            total_pnl_krw=unrealized_krw + realized_krw,
+            total_pnl_krw=unrealized_krw + realized_krw + dividends_krw,
             fx_pnl_krw=self._fx_pnl_krw(holdings, fx),
             usd_krw=fx,
             allocation=allocation,
@@ -193,6 +202,20 @@ class PortfolioService:
         }
         fx_on = self.market.usd_krw_lookup(fetch_from)
 
+        events = timeline(txs, confirmed_events(self.db))
+        # The provider's closes are split-adjusted back in time; restore the price actually
+        # traded on each day so pre-split quantities are valued correctly.
+        splits: dict[str, list[tuple[date, Decimal]]] = {}
+        for e in split_events(self.db, list(currency)):
+            splits.setdefault(e.symbol, []).append((e.ex_date, e.value))
+
+        def unadjust(sym: str, d: date) -> float:
+            factor = Decimal("1")
+            for ex_date, ratio in splits.get(sym, ()):
+                if ex_date > d:
+                    factor *= ratio
+            return float(factor)
+
         positions: dict[str, Position] = {}
         last_price: dict[str, float] = {}
         points: list[HistoryPoint] = []
@@ -201,11 +224,18 @@ class PortfolioService:
         while d <= today:
             for sym, series in closes.items():
                 if d in series:
-                    last_price[sym] = series[d]
-            while i < len(txs) and txs[i].trade_date <= d:
-                tx = txs[i]
-                pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
-                pos.apply(tx, trade_fx(tx, fx_on))
+                    last_price[sym] = series[d] * unadjust(sym, d)
+            while i < len(events):
+                item = events[i]
+                when = item.ex_date if isinstance(item, CorporateAction) else item.trade_date
+                if when > d:
+                    break
+                if isinstance(item, CorporateAction):
+                    if item.symbol in positions:
+                        positions[item.symbol].apply_action(item, fx_on(item.ex_date))
+                else:
+                    pos = positions.setdefault(item.symbol, Position(item.symbol, item.asset_type))
+                    pos.apply(item, trade_fx(item, fx_on))
                 i += 1
 
             if d >= start:
@@ -259,6 +289,7 @@ class PortfolioService:
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, p.cost_basis),
             realized_pnl=p.realized_pnl,
+            dividends=p.dividends,
             avg_cost_krw=p.avg_cost_krw,
             cost_basis_krw=p.cost_basis_krw,
             price_krw=price_krw,

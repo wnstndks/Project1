@@ -5,11 +5,12 @@ so every failure is converted to MarketDataError at this boundary.
 """
 
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pandas as pd
 import yfinance as yf
 
-from app.data.provider import Bar, MarketDataError, Quote
+from app.data.provider import Bar, CorporateEvent, MarketDataError, Quote
 
 
 class YFinanceProvider:
@@ -45,6 +46,22 @@ class YFinanceProvider:
         except Exception as exc:  # yfinance raises many unrelated exception types
             raise MarketDataError(f"yfinance info failed for {symbol}: {exc}") from exc
         return info.get("shortName") or info.get("longName")
+
+    def get_actions(self, symbol: str) -> list[CorporateEvent]:
+        try:
+            df = yf.Ticker(symbol).actions
+        except Exception as exc:  # yfinance raises many unrelated exception types
+            raise MarketDataError(f"yfinance actions failed for {symbol}: {exc}") from exc
+        out: list[CorporateEvent] = []
+        if df is None or df.empty:
+            return out
+        for ts, row in df.iterrows():
+            d = ts.date()
+            if row.get("Stock Splits", 0) and row["Stock Splits"] > 0:
+                out.append(CorporateEvent(d, "split", Decimal(str(row["Stock Splits"]))))
+            if row.get("Dividends", 0) and row["Dividends"] > 0:
+                out.append(CorporateEvent(d, "dividend", Decimal(str(row["Dividends"]))))
+        return out
 
     @staticmethod
     def _download(symbol: str, **kwargs) -> pd.DataFrame:

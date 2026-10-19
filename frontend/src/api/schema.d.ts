@@ -401,10 +401,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corporate-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Actions */
+        get: operations["list_actions_api_corporate_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corporate-actions/dividends/confirm-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm All Dividends */
+        post: operations["confirm_all_dividends_api_corporate_actions_dividends_confirm_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corporate-actions/{action_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm */
+        post: operations["confirm_api_corporate_actions__action_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/corporate-actions/{action_id}/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ignore */
+        post: operations["ignore_api_corporate_actions__action_id__ignore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActionKind
+         * @enum {string}
+         */
+        ActionKind: "split" | "dividend";
+        /**
+         * ActionStatus
+         * @enum {string}
+         */
+        ActionStatus: "detected" | "confirmed" | "ignored";
         /** AllocationOut */
         AllocationOut: {
             asset_type: components["schemas"]["AssetType"];
@@ -565,6 +643,26 @@ export interface components {
             symbol: string;
             currency: components["schemas"]["Currency"];
         };
+        /** CorporateActionOut */
+        CorporateActionOut: {
+            /** Id */
+            id: number;
+            /** Symbol */
+            symbol: string;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            kind: components["schemas"]["ActionKind"];
+            /** Value */
+            value: number;
+            status: components["schemas"]["ActionStatus"];
+            /** Shares Before */
+            shares_before: number;
+            /** Effect */
+            effect: number;
+        };
         /**
          * Currency
          * @enum {string}
@@ -672,6 +770,8 @@ export interface components {
             unrealized_pct: number;
             /** Realized Pnl */
             realized_pnl: number;
+            /** Dividends */
+            dividends: number;
             /** Avg Cost Krw */
             avg_cost_krw: number;
             /** Cost Basis Krw */
@@ -912,6 +1012,10 @@ export interface components {
             unrealized_pct: number;
             /** Realized Pnl */
             realized_pnl: number;
+            /** Dividends */
+            dividends: number;
+            /** Dividends Krw */
+            dividends_krw: number;
             /** Total Pnl */
             total_pnl: number;
             /** Cost Basis Krw */
@@ -1804,6 +1908,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NewsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_actions_api_corporate_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateActionOut"][];
+                };
+            };
+        };
+    };
+    confirm_all_dividends_api_corporate_actions_dividends_confirm_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateActionOut"][];
+                };
+            };
+        };
+    };
+    confirm_api_corporate_actions__action_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ignore_api_corporate_actions__action_id__ignore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateActionOut"][];
                 };
             };
             /** @description Validation Error */

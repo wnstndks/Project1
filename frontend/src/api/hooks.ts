@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import {
   api,
+  type ActionStatus,
   type Currency,
   type ImportCommit,
   type ProjectionInput,
@@ -144,3 +145,30 @@ export const useNews = (symbol: string) =>
 
 export const useKimchi = () =>
   useQuery({ queryKey: ['market', 'kimchi'], queryFn: api.kimchi, staleTime: 5 * 60_000 })
+
+export const useCorporateActions = () =>
+  useQuery({ queryKey: ['corporate-actions'], queryFn: api.corporateActions, staleTime: 10 * 60_000 })
+
+/** Confirming or ignoring an action changes the ledger, so every portfolio view refreshes. */
+export function useSetActionStatus() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: ActionStatus }) =>
+      api.setActionStatus(id, status),
+    onSuccess: (data) => {
+      client.setQueryData(['corporate-actions'], data)
+      void client.invalidateQueries({ queryKey: ['portfolio'] })
+    },
+  })
+}
+
+export function useConfirmAllDividends() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: api.confirmAllDividends,
+    onSuccess: (data) => {
+      client.setQueryData(['corporate-actions'], data)
+      void client.invalidateQueries({ queryKey: ['portfolio'] })
+    },
+  })
+}

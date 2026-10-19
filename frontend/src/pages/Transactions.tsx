@@ -8,6 +8,7 @@ import {
   useTransactions,
   useUpdateTransaction,
 } from '../api/hooks'
+import { CorporateActions } from '../components/CorporateActions'
 import { TransactionForm } from '../components/TransactionForm'
 import { Card, ErrorBox, Muted, SegmentedControl } from '../components/ui'
 import { useMoney } from '../lib/currency'
@@ -58,6 +59,10 @@ export function Transactions() {
           pending={active.isPending}
           error={active.error}
         />
+      </Card>
+
+      <Card title="배당·액면분할">
+        <CorporateActions />
       </Card>
 
       <Card

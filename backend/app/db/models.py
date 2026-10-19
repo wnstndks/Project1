@@ -18,6 +18,17 @@ class Currency(enum.StrEnum):
     KRW = "KRW"
 
 
+class ActionKind(enum.StrEnum):
+    SPLIT = "split"
+    DIVIDEND = "dividend"
+
+
+class ActionStatus(enum.StrEnum):
+    DETECTED = "detected"
+    CONFIRMED = "confirmed"
+    IGNORED = "ignored"
+
+
 class Side(enum.StrEnum):
     BUY = "buy"
     SELL = "sell"
@@ -80,6 +91,24 @@ class PriceBar(Base):
     # Split- and dividend-adjusted close; use for return calculations and ML.
     adj_close: Mapped[float] = mapped_column(Float)
     volume: Mapped[float] = mapped_column(Float)
+
+
+class CorporateAction(Base):
+    """A split or cash dividend on a held stock. Only confirmed ones change the ledger."""
+
+    __tablename__ = "corporate_actions"
+    __table_args__ = (
+        Index("ix_corporate_actions_symbol_date_kind", "symbol", "ex_date", "kind", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    ex_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[ActionKind] = mapped_column(_str_enum(ActionKind, 10))
+    # Split: new shares per old share (10 for a 10:1 split). Dividend: USD per share.
+    value: Mapped[Decimal] = mapped_column(DecimalText)
+    status: Mapped[ActionStatus] = mapped_column(_str_enum(ActionStatus, 10))
+    detected_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class NewsArticle(Base):

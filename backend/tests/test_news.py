@@ -66,6 +66,12 @@ def test_gdelt_query(symbol, name, expected):
     assert gdelt_query(symbol, name) == expected
 
 
+def test_article_feature_date_respects_early_close():
+    # 2026-11-27 (day after Thanksgiving) closes at 13:00 ET; 14:00 ET news is after the close.
+    after_early_close = datetime(2026, 11, 27, 19, 0, tzinfo=UTC)  # 14:00 EST
+    assert article_feature_date(after_early_close, every_day=False) == date(2026, 11, 28)
+
+
 def test_article_feature_date_respects_us_close():
     assert article_feature_date(et(2026, 10, 15, 15, 59), every_day=False) == date(2026, 10, 15)
     assert article_feature_date(et(2026, 10, 15, 16, 0), every_day=False) == date(2026, 10, 16)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.data.assets import normalize_symbol
 from app.db.models import AssetType, Currency, Transaction
 from app.schemas.transactions import TransactionIn
+from app.services.corporate_actions import confirmed_events
 from app.services.errors import DomainError, NotFoundError
 from app.services.ledger import build_positions, trade_fx
 from app.services.market_data import MarketDataService, SymbolNotFoundError
@@ -95,7 +96,7 @@ class TransactionService:
                 t.fee = (t.fee / rate).quantize(Decimal("0.00000001"))
                 t.fx_rate = rate
             t.currency = to
-        build_positions(txs)  # still a valid ledger
+        build_positions(txs, events=confirmed_events(self.db, [symbol]))  # still valid
         self.db.commit()
         return txs
 
@@ -135,4 +136,5 @@ class TransactionService:
             if remove is None or t.id != remove.id
         ]
         txs += [t for t in adds if t.symbol == symbol]
-        build_positions(txs)  # raises OversellError
+        # Confirmed splits count: a post-split sell of 100 shares bought as 10 is valid.
+        build_positions(txs, events=confirmed_events(self.db, [symbol]))  # raises OversellError

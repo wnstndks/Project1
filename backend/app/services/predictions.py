@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from app.data.assets import trades_every_day
+from app.data.calendar import next_trading_dates
 from app.ml import artifacts
 from app.ml.artifacts import LoadedModel, TrainConfig
 from app.ml.dataset import latest_window
@@ -38,17 +38,6 @@ def _load(artifacts_dir: Path, symbol: str) -> LoadedModel:
     return cached[1]
 
 
-def future_dates(last: date, n: int, every_day: bool) -> list[date]:
-    """Next n trading dates. Stocks skip weekends (exchange holidays are not modeled)."""
-    out: list[date] = []
-    d = last
-    while len(out) < n:
-        d += timedelta(days=1)
-        if every_day or d.weekday() < 5:
-            out.append(d)
-    return out
-
-
 def _history_start(config: TrainConfig) -> date:
     # Enough calendar days for warm-up + lookback trading days, with room for holidays.
     return date.today() - timedelta(days=int((config.lookback + 40) * 1.6))
@@ -62,14 +51,14 @@ class PredictionService:
     def forecast(self, symbol: str) -> dict:
         loaded = _load(self.artifacts_dir, symbol)
         config = loaded.config
-        bars = self.market.get_history(symbol, _history_start(config))
+        bars = self.market.get_history(symbol, _history_start(config), final_only=True)
         df = bars_to_frame(bars)
         x = latest_window(df, config.lookback, config.horizon, loaded.x_scaler)
         with torch.no_grad():
             y = loaded.y_scaler.inverse(loaded.model(torch.from_numpy(x)).numpy())[0]
 
         last_date, base = df.index[-1], float(df["close"].iloc[-1])
-        dates = future_dates(last_date, config.horizon, trades_every_day(symbol))
+        dates = next_trading_dates(symbol, last_date, config.horizon)
         return {
             "symbol": symbol,
             "as_of": last_date,
@@ -144,7 +133,8 @@ class TrainingJobs:
 
         try:
             # Fetch on the request thread: the DB session is not shared with the worker.
-            bars = market.get_history(symbol, date.today() - timedelta(days=365 * config.years))
+            start = date.today() - timedelta(days=365 * config.years)
+            bars = market.get_history(symbol, start, final_only=True)
         except Exception:
             self._jobs.pop(symbol, None)
             raise

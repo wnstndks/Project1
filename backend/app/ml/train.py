@@ -169,7 +169,7 @@ def main() -> None:
     with SessionLocal() as db:
         market = MarketDataService(db, get_provider(), get_quote_cache())
         start = date.today() - timedelta(days=365 * config.years)
-        bars = market.get_history(symbol, start)
+        bars = market.get_history(symbol, start, final_only=True)
 
     metrics = train_model(symbol, bars, config, get_settings().artifacts_dir)
     _print_metrics(metrics)

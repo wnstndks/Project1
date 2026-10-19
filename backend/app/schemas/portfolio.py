@@ -22,6 +22,7 @@ class HoldingOut(BaseModel):
     unrealized_pnl: Num
     unrealized_pct: Num
     realized_pnl: Num
+    dividends: Num
     avg_cost_krw: Num
     cost_basis_krw: Num
     price_krw: Num
@@ -48,6 +49,8 @@ class SummaryOut(BaseModel):
     unrealized_pnl: Num
     unrealized_pct: Num
     realized_pnl: Num
+    dividends: Num
+    dividends_krw: Num
     total_pnl: Num
     cost_basis_krw: Num
     unrealized_pnl_krw: Num

@@ -1019,10 +1019,169 @@
           }
         }
       }
+    },
+    "/api/corporate-actions": {
+      "get": {
+        "tags": [
+          "corporate-actions"
+        ],
+        "summary": "List Actions",
+        "operationId": "list_actions_api_corporate_actions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CorporateActionOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Actions Api Corporate Actions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corporate-actions/dividends/confirm-all": {
+      "post": {
+        "tags": [
+          "corporate-actions"
+        ],
+        "summary": "Confirm All Dividends",
+        "operationId": "confirm_all_dividends_api_corporate_actions_dividends_confirm_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CorporateActionOut"
+                  },
+                  "type": "array",
+                  "title": "Response Confirm All Dividends Api Corporate Actions Dividends Confirm All Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corporate-actions/{action_id}/confirm": {
+      "post": {
+        "tags": [
+          "corporate-actions"
+        ],
+        "summary": "Confirm",
+        "operationId": "confirm_api_corporate_actions__action_id__confirm_post",
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorporateActionOut"
+                  },
+                  "title": "Response Confirm Api Corporate Actions  Action Id  Confirm Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/corporate-actions/{action_id}/ignore": {
+      "post": {
+        "tags": [
+          "corporate-actions"
+        ],
+        "summary": "Ignore",
+        "operationId": "ignore_api_corporate_actions__action_id__ignore_post",
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorporateActionOut"
+                  },
+                  "title": "Response Ignore Api Corporate Actions  Action Id  Ignore Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ActionKind": {
+        "type": "string",
+        "enum": [
+          "split",
+          "dividend"
+        ],
+        "title": "ActionKind"
+      },
+      "ActionStatus": {
+        "type": "string",
+        "enum": [
+          "detected",
+          "confirmed",
+          "ignored"
+        ],
+        "title": "ActionStatus"
+      },
       "AllocationOut": {
         "properties": {
           "asset_type": {
@@ -1438,6 +1597,53 @@
         ],
         "title": "ConvertCurrencyIn"
       },
+      "CorporateActionOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "ex_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Ex Date"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ActionKind"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "shares_before": {
+            "type": "number",
+            "title": "Shares Before"
+          },
+          "effect": {
+            "type": "number",
+            "title": "Effect"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "symbol",
+          "ex_date",
+          "kind",
+          "value",
+          "status",
+          "shares_before",
+          "effect"
+        ],
+        "title": "CorporateActionOut"
+      },
       "Currency": {
         "type": "string",
         "enum": [
@@ -1666,6 +1872,10 @@
             "type": "number",
             "title": "Realized Pnl"
           },
+          "dividends": {
+            "type": "number",
+            "title": "Dividends"
+          },
           "avg_cost_krw": {
             "type": "number",
             "title": "Avg Cost Krw"
@@ -1714,6 +1924,7 @@
           "unrealized_pnl",
           "unrealized_pct",
           "realized_pnl",
+          "dividends",
           "avg_cost_krw",
           "cost_basis_krw",
           "price_krw",
@@ -2384,6 +2595,14 @@
             "type": "number",
             "title": "Realized Pnl"
           },
+          "dividends": {
+            "type": "number",
+            "title": "Dividends"
+          },
+          "dividends_krw": {
+            "type": "number",
+            "title": "Dividends Krw"
+          },
           "total_pnl": {
             "type": "number",
             "title": "Total Pnl"
@@ -2436,6 +2655,8 @@
           "unrealized_pnl",
           "unrealized_pct",
           "realized_pnl",
+          "dividends",
+          "dividends_krw",
           "total_pnl",
           "cost_basis_krw",
           "unrealized_pnl_krw",

@@ -21,6 +21,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.assets import CRYPTO_ASSETS, trades_every_day
+from app.data.calendar import us_close_utc
 from app.data.news_sources import Article, FinnhubClient, GdeltClient, NewsDataError
 from app.data.provider import MarketDataProvider
 from app.db.models import GdeltDaily, NewsArticle, NewsCoverage, NewsSync
@@ -95,7 +96,9 @@ def article_feature_date(published_at: datetime, every_day: bool) -> date:
     if every_day:
         return utc.astimezone(UTC).date()
     local = utc.astimezone(NEW_YORK)
-    return local.date() + timedelta(days=1) if local.time() >= US_CLOSE else local.date()
+    # Early-close days (13:00 ET) are honored: later articles belong to the next session.
+    close = us_close_utc(local.date())
+    return local.date() + timedelta(days=1) if utc >= close else local.date()
 
 
 def _to_index(dates: Sequence[date], index: pd.DatetimeIndex) -> np.ndarray:

@@ -3,6 +3,7 @@ from datetime import date
 import numpy as np
 import pytest
 
+from app.data.calendar import next_trading_dates
 from app.data.fake_provider import FakeProvider
 from app.deps import get_artifacts_dir
 from app.ml.artifacts import TrainConfig
@@ -10,7 +11,6 @@ from app.ml.dataset import feature_frame, prepare, split_bounds
 from app.ml.evaluate import evaluate
 from app.ml.features import FEATURES, add_features, bars_to_frame
 from app.ml.train import train_model
-from app.services.predictions import future_dates
 from tests.conftest import TODAY
 
 LOOKBACK, HORIZON = 30, 5
@@ -69,10 +69,15 @@ def test_evaluate_baseline_has_zero_error_when_prices_do_not_move():
     assert day1["model"]["mae"] == pytest.approx(100 * (np.exp(0.01) - 1))
 
 
-def test_future_dates_skip_weekends_for_stocks_only():
+def test_next_trading_dates_follow_the_nyse_calendar():
     friday = date(2026, 10, 16)
-    assert future_dates(friday, 2, every_day=False) == [date(2026, 10, 19), date(2026, 10, 20)]
-    assert future_dates(friday, 2, every_day=True) == [date(2026, 10, 17), date(2026, 10, 18)]
+    assert next_trading_dates("AAPL", friday, 2) == [date(2026, 10, 19), date(2026, 10, 20)]
+    assert next_trading_dates("BTC-USD", friday, 2) == [date(2026, 10, 17), date(2026, 10, 18)]
+    # Thanksgiving 2026-11-26 is skipped.
+    assert next_trading_dates("AAPL", date(2026, 11, 25), 2) == [
+        date(2026, 11, 27),
+        date(2026, 11, 30),
+    ]
 
 
 def test_train_smoke_and_prediction_api(tmp_path, client, provider):

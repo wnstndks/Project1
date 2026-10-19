@@ -213,7 +213,7 @@ class ProjectionService:
         """Value-weighted monthly simple returns of a basket, renormalized over available data."""
         closes = {}
         for symbol in weights:
-            bars = self.market.get_history(symbol, start)
+            bars = self.market.get_history(symbol, start, final_only=True)
             s = pd.Series([b.adj_close for b in bars], index=pd.to_datetime([b.date for b in bars]))
             closes[symbol] = s.resample("ME").last()
         returns = pd.DataFrame(closes).pct_change(fill_method=None).iloc[1:]

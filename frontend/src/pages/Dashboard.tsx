@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { useHoldings, usePortfolioHistory, useSummary } from '../api/hooks'
+import { useCorporateActions, useHoldings, usePortfolioHistory, useSummary } from '../api/hooks'
 import { AllocationBar } from '../components/AllocationBar'
 import { KimchiPremium } from '../components/KimchiPremium'
 import { HoldingsTable } from '../components/HoldingsTable'
@@ -17,6 +17,8 @@ export function Dashboard() {
   const [range, setRange] = useState<RangeKey>('1Y')
   const history = usePortfolioHistory(rangeStart(range))
   const { currency, pick, format, formatOther } = useMoney()
+  const actions = useCorporateActions()
+  const pendingActions = actions.data?.filter((a) => a.status === 'detected').length ?? 0
 
   if (summary.error) return <ErrorBox error={summary.error} />
   if (!summary.data) return <Muted>불러오는 중…</Muted>
@@ -40,6 +42,15 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {pendingActions > 0 && (
+        <Link
+          to="/transactions"
+          className="block rounded-lg border border-line bg-surface px-4 py-3 text-sm hover:bg-hover"
+        >
+          <span className="font-medium">확인이 필요한 배당·액면분할 {pendingActions}건</span>
+          <span className="ml-2 text-ink-2">반영하기 전까지 보유 수량이나 손익이 실제와 다를 수 있습니다 →</span>
+        </Link>
+      )}
       <section>
         <div className="text-sm text-muted">총 자산</div>
         <div className="mt-1 text-5xl font-semibold tracking-tight">
@@ -60,11 +71,17 @@ export function Dashboard() {
               : formatPct(unrealizedPct)
           }
         />
-        <StatTile label="실현손익" value={<PnL value={pick(s.realized_pnl, s.realized_pnl_krw)} />} />
+        <StatTile
+          label="실현손익"
+          value={<PnL value={pick(s.realized_pnl, s.realized_pnl_krw)} />}
+          sub={
+            s.dividends > 0 ? `배당(세후) ${format(pick(s.dividends, s.dividends_krw))} 별도` : undefined
+          }
+        />
         <StatTile
           label="총 손익"
           value={<PnL value={pick(s.total_pnl, s.total_pnl_krw)} />}
-          sub="평가손익 + 실현손익"
+          sub="평가 + 실현 + 배당"
         />
         <StatTile
           label="투자원금"
