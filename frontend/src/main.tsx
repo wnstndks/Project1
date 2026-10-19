@@ -14,6 +14,9 @@ const dashboard = page(() => import('./pages/Dashboard').then((m) => ({ Componen
 const transactions = page(() =>
   import('./pages/Transactions').then((m) => ({ Component: m.Transactions })),
 )
+const projection = page(() =>
+  import('./pages/Projection').then((m) => ({ Component: m.Projection })),
+)
 const assetDetail = page(() =>
   import('./pages/AssetDetail').then((m) => ({ Component: m.AssetDetail })),
 )
@@ -31,6 +34,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', ...dashboard },
       { path: '/transactions', ...transactions },
+      { path: '/projection', ...projection },
       { path: '/assets/:symbol', ...assetDetail },
       { path: '*', element: <Muted>페이지를 찾을 수 없습니다.</Muted> },
     ],

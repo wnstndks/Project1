@@ -262,6 +262,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projection/assumptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assumptions */
+        get: operations["assumptions_api_projection_assumptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projection/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate */
+        post: operations["simulate_api_projection_simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -289,6 +323,21 @@ export interface components {
          * @enum {string}
          */
         AssetType: "stock" | "crypto";
+        /** AssumptionsOut */
+        AssumptionsOut: {
+            /** Start Value Krw */
+            start_value_krw: number;
+            /** Usd Krw */
+            usd_krw: number;
+            /** Classes */
+            classes: {
+                [key: string]: components["schemas"]["ClassStatsOut"];
+            };
+            /** Correlation */
+            correlation: number;
+            /** Lookback Years */
+            lookback_years: number;
+        };
         /** BacktestPoint */
         BacktestPoint: {
             /**
@@ -322,6 +371,21 @@ export interface components {
             adj_close: number;
             /** Volume */
             volume: number;
+        };
+        /** ClassStatsOut */
+        ClassStatsOut: {
+            /** Value Krw */
+            value_krw: number;
+            /** Weight Pct */
+            weight_pct: number;
+            /** Hist Return Pct */
+            hist_return_pct: number;
+            /** Vol Pct */
+            vol_pct: number;
+            /** Default Return Pct */
+            default_return_pct: number;
+            /** Proxy */
+            proxy: string | null;
         };
         /** ClosePoint */
         ClosePoint: {
@@ -468,6 +532,67 @@ export interface components {
             best_epoch: number;
             /** Train Seconds */
             train_seconds: number;
+        };
+        /** ProjectionIn */
+        ProjectionIn: {
+            /**
+             * Years
+             * @default 10
+             */
+            years: number;
+            /**
+             * Monthly Contribution Krw
+             * @default 0
+             */
+            monthly_contribution_krw: number;
+            /**
+             * Inflation Pct
+             * @default 2.5
+             */
+            inflation_pct: number;
+            /**
+             * Simulations
+             * @default 5000
+             */
+            simulations: number;
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
+            /** Stock Return Pct */
+            stock_return_pct?: number | null;
+            /** Crypto Return Pct */
+            crypto_return_pct?: number | null;
+            /** Stock Vol Pct */
+            stock_vol_pct?: number | null;
+            /** Crypto Vol Pct */
+            crypto_vol_pct?: number | null;
+            /** Contribution Stock Pct */
+            contribution_stock_pct?: number | null;
+            /** Target Krw */
+            target_krw?: number | null;
+        };
+        /** ProjectionOut */
+        ProjectionOut: {
+            /** Years */
+            years: components["schemas"]["YearPointOut"][];
+            /** Final Mean */
+            final_mean: number;
+            /** Prob Target */
+            prob_target: number | null;
+            /** Prob Loss */
+            prob_loss: number;
+            /** Used Return Pct */
+            used_return_pct: {
+                [key: string]: number;
+            };
+            /** Used Vol Pct */
+            used_vol_pct: {
+                [key: string]: number;
+            };
+            /** Correlation */
+            correlation: number;
         };
         /** QuoteOut */
         QuoteOut: {
@@ -630,6 +755,25 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** YearPointOut */
+        YearPointOut: {
+            /** Year */
+            year: number;
+            /** Contributed Krw */
+            contributed_krw: number;
+            /** P10 */
+            p10: number;
+            /** P50 */
+            p50: number;
+            /** P90 */
+            p90: number;
+            /** P10 Real */
+            p10_real: number;
+            /** P50 Real */
+            p50_real: number;
+            /** P90 Real */
+            p90_real: number;
         };
     };
     responses: never;
@@ -1130,6 +1274,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrainingJobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assumptions_api_projection_assumptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssumptionsOut"];
+                };
+            };
+        };
+    };
+    simulate_api_projection_simulate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectionOut"];
                 };
             };
             /** @description Validation Error */

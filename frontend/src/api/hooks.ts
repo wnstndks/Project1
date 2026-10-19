@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { api, type TransactionInput } from './client'
+import { api, type ProjectionInput, type TransactionInput } from './client'
 
 export const keys = {
   summary: ['portfolio', 'summary'] as const,
@@ -15,6 +15,8 @@ export const keys = {
   forecast: (symbol: string) => ['predictions', symbol] as const,
   backtest: (symbol: string) => ['predictions', symbol, 'backtest'] as const,
   training: (symbol: string) => ['predictions', symbol, 'training'] as const,
+  assumptions: ['portfolio', 'projection', 'assumptions'] as const,
+  projection: (input: ProjectionInput) => ['portfolio', 'projection', input] as const,
 }
 
 export const useSummary = () => useQuery({ queryKey: keys.summary, queryFn: api.summary })
@@ -99,3 +101,15 @@ export function useTraining(symbol: string) {
   })
   return { job: status.data, start }
 }
+
+export const useAssumptions = () =>
+  useQuery({ queryKey: keys.assumptions, queryFn: api.assumptions, staleTime: 5 * 60_000 })
+
+/** Identical inputs (fixed seed) give identical results, so they are served from cache. */
+export const useProjection = (input: ProjectionInput) =>
+  useQuery({
+    queryKey: keys.projection(input),
+    queryFn: () => api.simulate(input),
+    placeholderData: keepPreviousData,
+    staleTime: Infinity,
+  })

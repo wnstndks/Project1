@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.services.market_data import MarketDataService, QuoteCache
 from app.services.portfolio import PortfolioService
 from app.services.predictions import PredictionService, TrainingJobs
+from app.services.projection import ProjectionService
 from app.services.transactions import TransactionService
 
 
@@ -62,3 +63,10 @@ def get_prediction_service(
     artifacts_dir: Path = Depends(get_artifacts_dir),
 ) -> PredictionService:
     return PredictionService(market, artifacts_dir)
+
+
+def get_projection_service(
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+) -> ProjectionService:
+    return ProjectionService(market, portfolio)

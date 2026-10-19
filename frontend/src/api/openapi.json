@@ -729,6 +729,68 @@
           }
         }
       }
+    },
+    "/api/projection/assumptions": {
+      "get": {
+        "tags": [
+          "projection"
+        ],
+        "summary": "Assumptions",
+        "operationId": "assumptions_api_projection_assumptions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssumptionsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projection/simulate": {
+      "post": {
+        "tags": [
+          "projection"
+        ],
+        "summary": "Simulate",
+        "operationId": "simulate_api_projection_simulate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -789,6 +851,45 @@
           "crypto"
         ],
         "title": "AssetType"
+      },
+      "AssumptionsOut": {
+        "properties": {
+          "start_value_krw": {
+            "type": "number",
+            "title": "Start Value Krw"
+          },
+          "usd_krw": {
+            "type": "number",
+            "title": "Usd Krw"
+          },
+          "classes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ClassStatsOut"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AssetType"
+            },
+            "type": "object",
+            "title": "Classes"
+          },
+          "correlation": {
+            "type": "number",
+            "title": "Correlation"
+          },
+          "lookback_years": {
+            "type": "integer",
+            "title": "Lookback Years"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_value_krw",
+          "usd_krw",
+          "classes",
+          "correlation",
+          "lookback_years"
+        ],
+        "title": "AssumptionsOut"
       },
       "BacktestPoint": {
         "properties": {
@@ -862,6 +963,51 @@
           "volume"
         ],
         "title": "BarOut"
+      },
+      "ClassStatsOut": {
+        "properties": {
+          "value_krw": {
+            "type": "number",
+            "title": "Value Krw"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct"
+          },
+          "hist_return_pct": {
+            "type": "number",
+            "title": "Hist Return Pct"
+          },
+          "vol_pct": {
+            "type": "number",
+            "title": "Vol Pct"
+          },
+          "default_return_pct": {
+            "type": "number",
+            "title": "Default Return Pct"
+          },
+          "proxy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value_krw",
+          "weight_pct",
+          "hist_return_pct",
+          "vol_pct",
+          "default_return_pct",
+          "proxy"
+        ],
+        "title": "ClassStatsOut"
       },
       "ClosePoint": {
         "properties": {
@@ -1209,6 +1355,187 @@
           "train_seconds"
         ],
         "title": "Metrics"
+      },
+      "ProjectionIn": {
+        "properties": {
+          "years": {
+            "type": "integer",
+            "maximum": 40.0,
+            "minimum": 1.0,
+            "title": "Years",
+            "default": 10
+          },
+          "monthly_contribution_krw": {
+            "type": "number",
+            "maximum": 10000000000.0,
+            "minimum": 0.0,
+            "title": "Monthly Contribution Krw",
+            "default": 0
+          },
+          "inflation_pct": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Inflation Pct",
+            "default": 2.5
+          },
+          "simulations": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 500.0,
+            "title": "Simulations",
+            "default": 5000
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed",
+            "default": 42
+          },
+          "stock_return_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": -50.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Return Pct"
+          },
+          "crypto_return_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": -50.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crypto Return Pct"
+          },
+          "stock_vol_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 300.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Vol Pct"
+          },
+          "crypto_vol_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 300.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crypto Vol Pct"
+          },
+          "contribution_stock_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contribution Stock Pct"
+          },
+          "target_krw": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Krw"
+          }
+        },
+        "type": "object",
+        "title": "ProjectionIn"
+      },
+      "ProjectionOut": {
+        "properties": {
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/YearPointOut"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "final_mean": {
+            "type": "number",
+            "title": "Final Mean"
+          },
+          "prob_target": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prob Target"
+          },
+          "prob_loss": {
+            "type": "number",
+            "title": "Prob Loss"
+          },
+          "used_return_pct": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AssetType"
+            },
+            "type": "object",
+            "title": "Used Return Pct"
+          },
+          "used_vol_pct": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AssetType"
+            },
+            "type": "object",
+            "title": "Used Vol Pct"
+          },
+          "correlation": {
+            "type": "number",
+            "title": "Correlation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "years",
+          "final_mean",
+          "prob_target",
+          "prob_loss",
+          "used_return_pct",
+          "used_vol_pct",
+          "correlation"
+        ],
+        "title": "ProjectionOut"
       },
       "QuoteOut": {
         "properties": {
@@ -1621,6 +1948,54 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "YearPointOut": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "title": "Year"
+          },
+          "contributed_krw": {
+            "type": "number",
+            "title": "Contributed Krw"
+          },
+          "p10": {
+            "type": "number",
+            "title": "P10"
+          },
+          "p50": {
+            "type": "number",
+            "title": "P50"
+          },
+          "p90": {
+            "type": "number",
+            "title": "P90"
+          },
+          "p10_real": {
+            "type": "number",
+            "title": "P10 Real"
+          },
+          "p50_real": {
+            "type": "number",
+            "title": "P50 Real"
+          },
+          "p90_real": {
+            "type": "number",
+            "title": "P90 Real"
+          }
+        },
+        "type": "object",
+        "required": [
+          "year",
+          "contributed_krw",
+          "p10",
+          "p50",
+          "p90",
+          "p10_real",
+          "p50_real",
+          "p90_real"
+        ],
+        "title": "YearPointOut"
       }
     }
   }

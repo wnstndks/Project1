@@ -14,6 +14,9 @@ export type TransactionInput = Schemas['TransactionIn']
 export type Forecast = Schemas['ForecastOut']
 export type BacktestPoint = Schemas['BacktestPoint']
 export type TrainingJob = Schemas['TrainingJobOut']
+export type Assumptions = Schemas['AssumptionsOut']
+export type ProjectionInput = Schemas['ProjectionIn']
+export type Projection = Schemas['ProjectionOut']
 
 export class ApiError extends Error {
   readonly status: number
@@ -75,6 +78,9 @@ export const api = {
     request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`, { method: 'POST' }),
   trainingStatus: (symbol: string) =>
     request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`),
+  assumptions: () => request<Assumptions>('/projection/assumptions'),
+  simulate: (input: ProjectionInput) =>
+    request<Projection>('/projection/simulate', { method: 'POST', body: JSON.stringify(input) }),
   usdKrw: () => request<Quote>('/market/fx/usdkrw'),
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>

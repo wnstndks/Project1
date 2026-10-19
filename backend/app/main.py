@@ -2,7 +2,7 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import health, market, portfolio, predictions, transactions
+from app.api import health, market, portfolio, predictions, projection, transactions
 from app.config import get_settings
 from app.data.assets import UnsupportedSymbolError
 from app.data.provider import MarketDataError
@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=502, content={"detail": str(exc)})
 
     api = APIRouter(prefix="/api")
-    for module in (health, market, transactions, portfolio, predictions):
+    for module in (health, market, transactions, portfolio, predictions, projection):
         api.include_router(module.router)
     app.include_router(api)
     return app
