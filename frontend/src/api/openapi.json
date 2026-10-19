@@ -1882,6 +1882,10 @@
             "type": "boolean",
             "title": "Price Estimated"
           },
+          "ticker_guessed": {
+            "type": "boolean",
+            "title": "Ticker Guessed"
+          },
           "confidence": {
             "type": "string",
             "title": "Confidence"
@@ -1934,6 +1938,7 @@
           "cost_krw",
           "implied_fx",
           "price_estimated",
+          "ticker_guessed",
           "confidence",
           "status",
           "message",

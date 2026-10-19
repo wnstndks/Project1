@@ -713,6 +713,8 @@ export interface components {
             implied_fx: number | null;
             /** Price Estimated */
             price_estimated: boolean;
+            /** Ticker Guessed */
+            ticker_guessed: boolean;
             /** Confidence */
             confidence: string;
             /** Status */
