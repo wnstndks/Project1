@@ -327,9 +327,11 @@ function RowStatus({ row }: { row: ImportPreviewRow }) {
     return (
       <>
         <span className="text-ink-2">
-          {row.delta_quantity != null
+          {row.delta_quantity != null && row.delta_price_usd != null
             ? `현재 ${formatQty(row.current_quantity ?? 0)} → 화면 ${formatQty(row.quantity ?? 0)}: 차이 ${formatQty(row.delta_quantity)}만 매수로 기록`
-            : `화면 수량이 현재(${formatQty(row.current_quantity ?? 0)})보다 적습니다. 매도는 거래 내역에서 직접 기록하세요`}
+            : (row.quantity ?? 0) > (row.current_quantity ?? 0)
+              ? `현재 ${formatQty(row.current_quantity ?? 0)} 보유. 늘어난 수량의 매입가를 계산할 수 없어 자동 기록하지 않습니다. 거래 내역에서 직접 입력하세요`
+              : `화면 수량이 현재(${formatQty(row.current_quantity ?? 0)})보다 적습니다. 매도는 거래 내역에서 직접 기록하세요`}
         </span>
         {confidence}
       </>

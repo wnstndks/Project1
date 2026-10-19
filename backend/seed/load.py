@@ -63,6 +63,12 @@ def _close_on(market: MarketDataService, symbol: str, day: date) -> Decimal:
     return Decimal(str(bars[-1].close)).quantize(places, ROUND_HALF_UP)
 
 
+def _sqlite_path(url: str) -> Path | None:
+    """Resolved file behind a sqlite URL, so "./asset_manager.db" and the absolute default match."""
+    prefix = "sqlite:///"
+    return Path(url[len(prefix) :]).resolve() if url.startswith(prefix) else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--reset", action="store_true", help="delete all transactions first")
@@ -70,7 +76,9 @@ def main() -> None:
 
     url = get_settings().database_url
     print(f"Database: {url}")
-    if args.reset and url == Settings.model_fields["database_url"].default:
+    if args.reset and _sqlite_path(url) == _sqlite_path(
+        Settings.model_fields["database_url"].default
+    ):
         sys.exit(
             "Refusing --reset on the default database, which may hold real holdings.\n"
             'Point AM_DATABASE_URL at a demo file first, e.g. AM_DATABASE_URL="sqlite:///demo.db"'

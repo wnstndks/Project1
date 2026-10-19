@@ -252,9 +252,13 @@ class NewsService:
         self, state: NewsSync, start: date, today: date
     ) -> Callable[[], None] | None:
         now = self.now()
+        fresh = state.finnhub_synced_at is not None and now - state.finnhub_synced_at <= FINNHUB_TTL
+        if state.symbol in CRYPTO_ASSETS and fresh:
+            # The general crypto feed has no history to backfill: only the TTL matters.
+            return None
         if state.finnhub_from is None or start < state.finnhub_from:
             fetch_from = start
-        elif state.finnhub_synced_at is None or now - state.finnhub_synced_at > FINNHUB_TTL:
+        elif not fresh:
             last = self.db.scalar(
                 select(NewsArticle.published_at)
                 .where(NewsArticle.symbol == state.symbol)

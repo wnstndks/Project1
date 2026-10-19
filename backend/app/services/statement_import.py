@@ -170,13 +170,13 @@ class StatementImportService:
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
 
         current, current_cost = held.get(symbol, (None, None)) if symbol else (None, None)
+        # Both or neither: a delta without a valid price must not be recordable.
         delta_qty = delta_price = None
-        if current is not None and qty is not None and qty > current:
-            delta_qty = qty - current
-            if avg_usd is not None:
-                price = (qty * avg_usd - current_cost) / delta_qty
-                if price > 0:
-                    delta_price = price.quantize(Decimal("0.0001"), ROUND_HALF_UP)
+        if current is not None and qty is not None and qty > current and avg_usd is not None:
+            price = (qty * avg_usd - current_cost) / (qty - current)
+            if price > 0:
+                delta_qty = qty - current
+                delta_price = price.quantize(Decimal("0.0001"), ROUND_HALF_UP)
         diff: Diff | None = None
         if symbol and qty is not None:
             diff = "new" if current is None else ("same" if current == qty else "different")

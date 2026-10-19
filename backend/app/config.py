@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     artifacts_dir: Path = BACKEND_DIR / "artifacts"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
     # Host header allow-list: blocks DNS-rebinding pages from reading the local API.
-    allowed_hosts: list[str] = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+    allowed_hosts: list[str] = ["localhost", "127.0.0.1", "[::1]"]
     # "fake" serves deterministic synthetic prices without network access.
     market_provider: Literal["yfinance", "fake"] = "yfinance"
     # Screenshot import. Without a key the SDK falls back to ANTHROPIC_API_KEY or an

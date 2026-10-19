@@ -96,6 +96,12 @@ def test_interactive_sync_degrades_to_warning(service, gdelt):
         service.sync("AAPL", date(2026, 9, 1))  # background sync surfaces the error
 
 
+def test_crypto_news_respects_ttl(service, finnhub):
+    service.sync("BTC-USD", date(2026, 9, 1))
+    service.sync("BTC-USD", date(2026, 9, 1))
+    assert [c for c in finnhub.calls if c[0] == "crypto"] == [("crypto", date.min, date.min)]
+
+
 def test_crypto_news_filters_by_coin(service):
     service.sync("BTC-USD", date(2026, 10, 1))
     urls = [a.url for a in service.summary("BTC-USD").articles]

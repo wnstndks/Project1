@@ -89,6 +89,25 @@ def test_preview_reports_difference_from_current_holdings(client, extractor):
     assert apple["delta_price_usd"] == pytest.approx(183.3333)
 
 
+def test_no_delta_offered_when_it_cannot_be_priced(client, extractor):
+    # Held 10 @ 200 = 2000; screenshot 12 @ 150 = 1800: the extra 2 would need a negative price.
+    client.post(
+        "/api/transactions",
+        json={
+            "asset_type": "stock",
+            "symbol": "AAPL",
+            "side": "buy",
+            "trade_date": "2026-10-01",
+            "quantity": 10,
+            "price": 200,
+        },
+    )
+    extractor.statement.holdings[0] = holding("애플", "AAPL", "12", avg="150")
+    apple = next(r for r in upload(client).json()["rows"] if r["symbol"] == "AAPL")
+    assert apple["diff"] == "different"
+    assert apple["delta_quantity"] is None and apple["delta_price_usd"] is None
+
+
 @pytest.mark.parametrize(
     "files",
     [

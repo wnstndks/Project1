@@ -40,5 +40,5 @@ def client(db: Session, provider: FakeProvider) -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_provider] = lambda: provider
     app.dependency_overrides[get_quote_cache] = lambda: quote_cache
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://localhost") as c:
         yield c
