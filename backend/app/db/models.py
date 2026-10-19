@@ -101,6 +101,23 @@ class GdeltDaily(Base):
     tone: Mapped[float | None] = mapped_column(Float)
     volume: Mapped[int | None] = mapped_column()
     volume_norm: Mapped[int | None] = mapped_column()
+    # The query that produced the row; rows from an older query are purged when it changes.
+    query: Mapped[str | None] = mapped_column(String(200))
+    # When the value was first fetched. GDELT revises recent days, so a backtest can tell
+    # what was known at the time from the settled value.
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class NewsCoverage(Base):
+    """A date range a headline source was successfully collected for (inclusive)."""
+
+    __tablename__ = "news_coverage"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    source: Mapped[str] = mapped_column(String(20))
+    start: Mapped[date] = mapped_column(Date)
+    end: Mapped[date] = mapped_column(Date)
 
 
 class NewsSync(Base):
@@ -109,6 +126,7 @@ class NewsSync(Base):
     __tablename__ = "news_syncs"
 
     symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(200))
     query: Mapped[str] = mapped_column(String(200))
     gdelt_from: Mapped[date | None] = mapped_column(Date)
     gdelt_synced_at: Mapped[datetime | None] = mapped_column(DateTime)

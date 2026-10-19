@@ -17,23 +17,23 @@ from app.ml.train import train_model
 from app.services.errors import ConflictError, NotFoundError
 from app.services.market_data import MarketDataService
 
-_model_cache: dict[tuple[Path, str], tuple[float, LoadedModel]] = {}
+_model_cache: dict[tuple[Path, str], tuple[Path, LoadedModel]] = {}
 _cache_lock = threading.Lock()
 
 
 def _load(artifacts_dir: Path, symbol: str) -> LoadedModel:
-    """Load once per process and reload only when the artifact file changes."""
-    if not artifacts.exists(artifacts_dir, symbol):
+    """Load once per process and reload only when `current.json` points at a new run."""
+    run = artifacts.resolve(artifacts_dir, symbol)
+    if run is None:
         raise NotFoundError(
             f"No trained model for {symbol}. Train one with "
             f"`py -m uv run python -m app.ml.train --symbol {symbol}` or the train button."
         )
     key = (artifacts_dir, symbol)
-    mtime = artifacts.mtime(artifacts_dir, symbol)
     with _cache_lock:
         cached = _model_cache.get(key)
-        if cached is None or cached[0] != mtime:
-            cached = (mtime, artifacts.load(artifacts_dir, symbol))
+        if cached is None or cached[0] != run:
+            cached = (run, artifacts.load(run))
             _model_cache[key] = cached
     return cached[1]
 
@@ -91,14 +91,14 @@ class PredictionService:
 
     def backtest(self, symbol: str) -> list[dict]:
         _load(self.artifacts_dir, symbol)
-        return artifacts.load_backtest(self.artifacts_dir, symbol)
+        return artifacts.load_backtest(artifacts.resolve(self.artifacts_dir, symbol))
 
     def trained(self) -> list[dict]:
         if not self.artifacts_dir.exists():
             return []
         out = []
         for d in sorted(self.artifacts_dir.iterdir()):
-            if (d / "model.pt").exists():
+            if d.is_dir() and artifacts.exists(self.artifacts_dir, d.name):
                 loaded = _load(self.artifacts_dir, d.name)
                 day1 = loaded.metrics["by_horizon"][0]
                 out.append(

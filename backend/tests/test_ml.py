@@ -94,3 +94,22 @@ def test_train_smoke_and_prediction_api(tmp_path, client, provider):
     backtest = client.get("/api/predictions/AAPL/backtest").json()
     assert len(backtest) == metrics["samples"]
     assert [m["symbol"] for m in client.get("/api/predictions").json()] == ["AAPL"]
+
+
+def test_artifacts_use_atomic_pointer_and_prune_old_runs(tmp_path, provider):
+    import json
+
+    from app.ml import artifacts
+
+    bars = provider.get_history("AAPL", date(2022, 1, 1), TODAY)
+    runs = []
+    for _ in range(4):
+        train_model("AAPL", bars, SMALL, tmp_path, log=lambda _: None)
+        runs.append(artifacts.resolve(tmp_path, "AAPL"))
+    base = artifacts.symbol_dir(tmp_path, "AAPL")
+    current = json.loads((base / "current.json").read_text())["run"]
+    assert runs[-1].name == current  # pointer follows the newest run
+    assert len(list((base / "runs").iterdir())) <= 3  # older runs pruned
+    loaded = artifacts.load(runs[-1])
+    assert loaded.meta["symbol"] == "AAPL"
+    assert not list(base.glob("*.tmp"))  # no stray pointer temp files

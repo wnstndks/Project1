@@ -222,8 +222,40 @@ def test_finbert_coverage_mask_separates_no_data_from_no_articles(service):
     assert f.loc["2026-10-14", "has_finbert"] == 0
 
 
-def test_crypto_coverage_starts_at_oldest_returned_article(service, db):
+def test_crypto_coverage_spans_the_whole_feed_and_keeps_gaps(service, db, finnhub):
     from app.db.models import NewsSync
 
     service.sync("BTC-USD", date(2026, 9, 1))
+    # Oldest item in the whole feed (c2, a Dogecoin story) sets the start, not the match.
     assert db.get(NewsSync, "BTC-USD").finnhub_from == date(2026, 10, 16)
+    index = pd.DatetimeIndex(pd.date_range("2026-10-10", "2026-10-16"))
+    f = service.daily_features("BTC-USD", index)
+    assert f.loc["2026-10-15", "finbert_covered"] == 0
+    assert f.loc["2026-10-16", "finbert_covered"] == 1
+
+
+def test_gdelt_query_change_purges_old_rows(service, gdelt, db):
+    from app.db.models import GdeltDaily, NewsSync
+
+    service.sync("XRP-USD", date(2026, 10, 1))
+    state = db.get(NewsSync, "XRP-USD")
+    state.query = '"Ripple" sourcelang:english'  # simulate a row from the old query
+    db.execute(GdeltDaily.__table__.update().values(query=state.query))
+    db.commit()
+    service.sync("XRP-USD", date(2026, 10, 1))
+    queries = {r.query for r in db.query(GdeltDaily).filter_by(symbol="XRP-USD")}
+    assert queries == {db.get(NewsSync, "XRP-USD").query}
+    assert "Ripple Labs" in db.get(NewsSync, "XRP-USD").query
+
+
+def test_gdelt_first_seen_is_kept_on_refetch(service, gdelt, db):
+    from app.db.models import GdeltDaily
+
+    service.sync("AAPL", date(2026, 10, 1))
+    first = {r.date: r.first_seen_at for r in db.query(GdeltDaily).filter_by(symbol="AAPL")}
+    later = NOW + timedelta(hours=7)
+    service.now = lambda: later
+    service.sync("AAPL", date(2026, 10, 1))  # GDELT TTL expired: refetches recent days
+    db.expire_all()
+    again = {r.date: r.first_seen_at for r in db.query(GdeltDaily).filter_by(symbol="AAPL")}
+    assert all(again[d] == first[d] for d in first)

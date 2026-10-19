@@ -16,14 +16,14 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.assets import CRYPTO_ASSETS, trades_every_day
 from app.data.news_sources import Article, FinnhubClient, GdeltClient, NewsDataError
 from app.data.provider import MarketDataProvider
-from app.db.models import GdeltDaily, NewsArticle, NewsSync
+from app.db.models import GdeltDaily, NewsArticle, NewsCoverage, NewsSync
 from app.ml.sentiment import SentimentScorer
 
 NEW_YORK = ZoneInfo("America/New_York")
@@ -154,19 +154,54 @@ class NewsService:
                     raise
                 warnings.append(f"{name}: {exc}")
         # Phase 2: one short write transaction.
+        purge = getattr(self, "_purge_gdelt", None)
+        if purge is not None:
+            self.db.execute(
+                delete(GdeltDaily).where(
+                    GdeltDaily.symbol == purge[0], GdeltDaily.query != purge[1]
+                )
+            )
+            self._purge_gdelt = None
         for write in writes:
             if write is not None:
                 write()
+        self._persist_state(state)
         self.db.commit()
         return SyncReport(warnings)
 
     def _state(self, symbol: str) -> NewsSync:
+        """The sync state. A new symbol gets a transient object, persisted in the write phase."""
         state = self.db.get(NewsSync, symbol)
         if state is None:
             name = None if symbol in CRYPTO_ASSETS else self.provider.get_name(symbol)
-            state = NewsSync(symbol=symbol, query=gdelt_query(symbol, name))
-            self.db.add(state)
+            return NewsSync(symbol=symbol, name=name, query=gdelt_query(symbol, name))
+        query = gdelt_query(symbol, state.name)
+        if query != state.query:
+            # The query changed (e.g. a better phrase): old rows answer a different question.
+            self._purge_gdelt = (symbol, query)
+            state.query = query
+            state.gdelt_from = state.gdelt_synced_at = None
         return state
+
+    def _persist_state(self, state: NewsSync) -> None:
+        if state in self.db:
+            return
+        # Upsert: two first requests for the same symbol must not collide on the primary key.
+        cols = (
+            "name",
+            "query",
+            "gdelt_from",
+            "gdelt_synced_at",
+            "finnhub_from",
+            "finnhub_synced_at",
+        )
+        values = {"symbol": state.symbol} | {c: getattr(state, c) for c in cols}
+        stmt = sqlite_insert(NewsSync).values(**values)
+        self.db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["symbol"], set_={c: stmt.excluded[c] for c in cols}
+            )
+        )
 
     def _fetch_gdelt(
         self, state: NewsSync, start: date, today: date, interactive: bool = False
@@ -183,13 +218,13 @@ class NewsService:
         days = self.gdelt.daily(state.query, fetch_from, today, attempts=attempts)
 
         def write() -> None:
-            self._write_gdelt(state, days)
+            self._write_gdelt(state, days, now)
             state.gdelt_from = min(state.gdelt_from or fetch_from, fetch_from)
             state.gdelt_synced_at = now
 
         return write
 
-    def _write_gdelt(self, state: NewsSync, days: list) -> None:
+    def _write_gdelt(self, state: NewsSync, days: list, now: datetime) -> None:
         if days:
             stmt = sqlite_insert(GdeltDaily).values(
                 [
@@ -199,6 +234,8 @@ class NewsService:
                         "tone": d.tone,
                         "volume": d.volume,
                         "volume_norm": d.volume_norm,
+                        "query": state.query,
+                        "first_seen_at": now,
                     }
                     for d in days
                 ]
@@ -206,7 +243,8 @@ class NewsService:
             self.db.execute(
                 stmt.on_conflict_do_update(
                     index_elements=["symbol", "date"],
-                    set_={k: stmt.excluded[k] for k in ("tone", "volume", "volume_norm")},
+                    # first_seen_at is kept from the first insert on purpose.
+                    set_={k: stmt.excluded[k] for k in ("tone", "volume", "volume_norm", "query")},
                 )
             )
 
@@ -228,10 +266,11 @@ class NewsService:
             return None
 
         if state.symbol in CRYPTO_ASSETS:
-            articles = self._crypto_articles(state.symbol)
-            # The general crypto feed only holds recent items: coverage starts at the oldest
-            # article actually returned, not at the requested start.
-            covered_from = min((a.published_at.date() for a in articles), default=today)
+            feed = self.finnhub.crypto_news()
+            articles = self._for_coin(state.symbol, feed)
+            # The general crypto feed only holds recent items: this sync covers the span of
+            # the whole feed (before keyword filtering), not the requested start.
+            covered_from = min((a.published_at.date() for a in feed), default=None)
         else:
             articles = self.finnhub.company_news(state.symbol, fetch_from, today)
             covered_from = fetch_from
@@ -239,16 +278,23 @@ class NewsService:
 
         def write() -> None:
             self.db.add_all(rows)
-            state.finnhub_from = min(state.finnhub_from or covered_from, covered_from)
+            if covered_from is not None:
+                self.db.add(
+                    NewsCoverage(
+                        symbol=state.symbol, source="finnhub", start=covered_from, end=today
+                    )
+                )
+                state.finnhub_from = min(state.finnhub_from or covered_from, covered_from)
             state.finnhub_synced_at = now
 
         return write
 
-    def _crypto_articles(self, symbol: str) -> list[Article]:
+    @staticmethod
+    def _for_coin(symbol: str, feed: list[Article]) -> list[Article]:
         words = _CRYPTO_KEYWORDS[symbol]
         return [
             a
-            for a in self.finnhub.crypto_news()
+            for a in feed
             if any(re.search(rf"\b{re.escape(w)}\b", a.headline, re.I) for w in words)
         ]
 
@@ -331,13 +377,25 @@ class NewsService:
             out["article_count"] = np.log1p(counts)
             out["has_finbert"] = has.astype(float)
 
-        state = self.db.get(NewsSync, symbol)
-        if state is not None and state.finnhub_from is not None:
-            out["finbert_covered"] = (index >= pd.Timestamp(state.finnhub_from)).astype(float)
+        # Coverage is the union of the date ranges actually collected, so gaps (e.g. weeks
+        # the app was not opened while the crypto feed rolled over) stay uncovered.
+        covered = np.zeros(n, dtype=bool)
+        for start_d, end_d in self.db.execute(
+            select(NewsCoverage.start, NewsCoverage.end).where(
+                NewsCoverage.symbol == symbol, NewsCoverage.source == "finnhub"
+            )
+        ):
+            covered |= (index >= pd.Timestamp(start_d)) & (index <= pd.Timestamp(end_d))
+        out["finbert_covered"] = covered.astype(float)
 
         gd = self.db.execute(
             select(GdeltDaily.date, GdeltDaily.tone, GdeltDaily.volume, GdeltDaily.volume_norm)
-            .where(GdeltDaily.symbol == symbol, GdeltDaily.date >= start)
+            .where(
+                GdeltDaily.symbol == symbol,
+                GdeltDaily.date >= start,
+                GdeltDaily.query
+                == select(NewsSync.query).where(NewsSync.symbol == symbol).scalar_subquery(),
+            )
             .order_by(GdeltDaily.date)
         ).all()
         if gd:
