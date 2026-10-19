@@ -1,0 +1,76 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Light values here, dark values in the media query below.
+ * Chart series colors come from a validated categorical palette (CVD-safe in both modes).
+ * Korean market convention: gains are red, losses are blue.
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgb(11 11 11 / 0.1);
+  --hover: rgb(11 11 11 / 0.04);
+  --accent: #2a78d6;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --gain: #c62f2f;
+  --loss: #1c5cab;
+  --gain-mark: #e34948;
+  --loss-mark: #2a78d6;
+  --danger: #d03b3b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgb(255 255 255 / 0.1);
+    --hover: rgb(255 255 255 / 0.05);
+    --accent: #3987e5;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --gain: #e66767;
+    --loss: #5598e7;
+    --gain-mark: #e66767;
+    --loss-mark: #3987e5;
+    --danger: #e66767;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-grid: var(--grid);
+  --color-line: var(--border);
+  --color-hover: var(--hover);
+  --color-accent: var(--accent);
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
+  --color-danger: var(--danger);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}

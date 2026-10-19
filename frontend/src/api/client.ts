@@ -1,0 +1,71 @@
+import type { components } from './schema'
+
+type Schemas = components['schemas']
+export type AssetType = Schemas['AssetType']
+export type Side = Schemas['Side']
+export type Bar = Schemas['BarOut']
+export type Quote = Schemas['QuoteOut']
+export type AssetInfo = Schemas['AssetInfo']
+export type Holding = Schemas['HoldingOut']
+export type Summary = Schemas['SummaryOut']
+export type HistoryPoint = Schemas['HistoryPointOut']
+export type Transaction = Schemas['TransactionOut']
+export type TransactionInput = Schemas['TransactionIn']
+
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+/** FastAPI returns `detail` as a string for domain errors and as a list for validation errors. */
+function errorMessage(body: unknown, fallback: string): string {
+  if (body && typeof body === 'object' && 'detail' in body) {
+    const detail = (body as { detail: unknown }).detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail
+        .map((d: { loc?: unknown[]; msg?: string }) => `${d.loc?.slice(1).join('.') ?? ''}: ${d.msg}`)
+        .join(', ')
+    }
+  }
+  return fallback
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+  })
+  if (res.status === 204) return undefined as T
+  const body = await res.json().catch(() => null)
+  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.statusText))
+  return body as T
+}
+
+function query(params: Record<string, string | undefined>): string {
+  const entries = Object.entries(params).filter((e): e is [string, string] => e[1] !== undefined)
+  return entries.length ? `?${new URLSearchParams(entries)}` : ''
+}
+
+export const api = {
+  summary: () => request<Summary>('/portfolio/summary'),
+  holdings: () => request<Holding[]>('/portfolio/holdings'),
+  portfolioHistory: (start?: string) => request<HistoryPoint[]>(`/portfolio/history${query({ start })}`),
+
+  transactions: () => request<Transaction[]>('/transactions'),
+  createTransaction: (data: TransactionInput) =>
+    request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(data) }),
+  updateTransaction: (id: number, data: TransactionInput) =>
+    request<Transaction>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTransaction: (id: number) => request<void>(`/transactions/${id}`, { method: 'DELETE' }),
+
+  supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),
+  assetInfo: (symbol: string) => request<AssetInfo>(`/market/${encodeURIComponent(symbol)}/info`),
+  quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
+  history: (symbol: string, start?: string, end?: string) =>
+    request<Bar[]>(`/market/${encodeURIComponent(symbol)}/history${query({ start, end })}`),
+}

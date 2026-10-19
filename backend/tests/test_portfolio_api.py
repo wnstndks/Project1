@@ -119,3 +119,15 @@ def test_history_tracks_positions_over_time(client):
     assert by_date["2026-10-08"]["cost_basis"] == 2000
     # weekend days are forward-filled, not dropped
     assert by_date["2026-10-03"]["market_value"] == by_date["2026-10-02"]["market_value"]
+    # KRW cost is fixed at each buy date's FX rate, so it only moves on trade days
+    assert by_date["2026-10-02"]["cost_basis_krw"] == by_date["2026-10-07"]["cost_basis_krw"]
+    assert by_date["2026-10-08"]["cost_basis_krw"] > by_date["2026-10-07"]["cost_basis_krw"]
+
+
+def test_history_krw_cost_shrinks_proportionally_on_sell(client):
+    buy(client, "AAPL", 10, 100, day="2026-10-01")
+    buy(client, "AAPL", 4, 120, day="2026-10-05", side="sell")
+
+    by_date = {p["date"]: p for p in client.get("/api/portfolio/history").json()}
+    before, after = by_date["2026-10-04"]["cost_basis_krw"], by_date["2026-10-05"]["cost_basis_krw"]
+    assert after == pytest.approx(before * 0.6, abs=1)

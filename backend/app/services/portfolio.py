@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.data.assets import CRYPTO_ASSETS, FX_USDKRW
 from app.data.provider import Quote
-from app.db.models import AssetType, Transaction
+from app.db.models import AssetType, Side, Transaction
 from app.services.ledger import ZERO, Position, build_positions, ordered
 from app.services.market_data import MarketDataService
 
@@ -69,6 +69,7 @@ class HistoryPoint:
     market_value: float
     market_value_krw: float
     cost_basis: float
+    cost_basis_krw: float
 
 
 class PortfolioService:
@@ -138,20 +139,31 @@ class PortfolioService:
         fx_closes = {b.date: b.close for b in self.market.get_history(FX_USDKRW, fetch_from, today)}
 
         positions: dict[str, Position] = {}
+        # KRW actually spent, converted at each buy date's rate (not today's), so the KRW
+        # cost line stays flat between trades and FX gains show up as portfolio return.
+        cost_krw: dict[str, float] = {}
         last_price: dict[str, float] = {}
         last_fx = next(iter(fx_closes.values()), None) or self.market.usd_krw().price
         points: list[HistoryPoint] = []
         i = 0
         d = fetch_from
         while d <= today:
-            while i < len(txs) and txs[i].trade_date <= d:
-                tx = txs[i]
-                positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type)).apply(tx)
-                i += 1
             for sym, series in closes.items():
                 if d in series:
                     last_price[sym] = series[d]
             last_fx = fx_closes.get(d, last_fx)
+
+            while i < len(txs) and txs[i].trade_date <= d:
+                tx = txs[i]
+                pos = positions.setdefault(tx.symbol, Position(tx.symbol, tx.asset_type))
+                held_before = pos.quantity
+                pos.apply(tx)
+                if tx.side == Side.BUY:
+                    spent = float(tx.quantity * tx.price + tx.fee) * last_fx
+                    cost_krw[tx.symbol] = cost_krw.get(tx.symbol, 0.0) + spent
+                else:
+                    cost_krw[tx.symbol] *= float(pos.quantity / held_before)
+                i += 1
 
             if d >= start:
                 value = 0.0
@@ -164,7 +176,13 @@ class PortfolioService:
                     value += float(pos.quantity) * price
                     cost += float(pos.cost_basis)
                 points.append(
-                    HistoryPoint(d, round(value, 2), round(value * last_fx, 0), round(cost, 2))
+                    HistoryPoint(
+                        date=d,
+                        market_value=round(value, 2),
+                        market_value_krw=round(value * last_fx),
+                        cost_basis=round(cost, 2),
+                        cost_basis_krw=round(sum(cost_krw.values())),
+                    )
                 )
             d += timedelta(days=1)
         return points

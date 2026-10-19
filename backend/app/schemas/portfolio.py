@@ -48,3 +48,4 @@ class HistoryPointOut(BaseModel):
     market_value: float
     market_value_krw: float
     cost_basis: float
+    cost_basis_krw: float
