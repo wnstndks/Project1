@@ -19,8 +19,9 @@ MAX_IMAGES = 5
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
 IMPORT_NOTE = "스크린샷 가져오기"
-# Average cost / current price outside this range means a misread number.
-PRICE_SANITY = (Decimal("0.02"), Decimal("50"))
+# Average cost / current price outside this range cannot be a real holding. Long-held winners
+# reach 0.005 (NVDA bought in 2016) and big losers 50+, so the band is wide.
+PRICE_SANITY = (Decimal("0.001"), Decimal("1000"))
 
 RowStatus = Literal["ok", "unsupported", "unknown", "invalid"]
 Diff = Literal["new", "same", "different"]
@@ -106,6 +107,38 @@ def _decimal(raw: str | None) -> Decimal | None:
     except InvalidOperation:
         return None
     return value if value > 0 else None
+
+
+def _misread_price(
+    avg: Decimal, qty: Decimal, market_usd: Decimal, currency: Currency, fx: Decimal
+) -> str | None:
+    """Recognize the ways vision models misread the unit price: a won amount in the dollar
+    field, or the position total instead of the per-unit price."""
+    now = market_usd * (fx if currency == Currency.KRW else 1)
+    ratio = avg / now
+
+    def near(target: Decimal) -> bool:
+        # Small targets would flag ordinary losers: 3 shares of a stock that fell by two
+        # thirds look like a total of 3 units. Only 20x and beyond is clearly a misread.
+        return target >= 20 and Decimal("0.8") <= ratio / target <= Decimal("1.25")
+
+    candidates = [(qty, avg / qty, "보유 총액")]
+    if currency == Currency.USD:
+        candidates = [
+            (fx * qty, avg / fx / qty, "원화 총액"),
+            (fx, avg / fx, "원화 금액"),
+            *candidates,
+        ]
+    unit = "₩" if currency == Currency.KRW else "$"
+    for target, fixed, what in candidates:
+        if near(target):
+            return (
+                f"{what}을 단가로 읽은 것 같습니다(현재가 {unit}{now:,.2f}). "
+                f"단가는 약 {unit}{fixed:,.2f}일 수 있으니 확인하세요"
+            )
+    if not PRICE_SANITY[0] <= ratio <= PRICE_SANITY[1]:
+        return f"평균단가가 현재가({unit}{now:,.2f})와 너무 다릅니다. 단가를 확인하세요"
+    return None
 
 
 class StatementImportService:
@@ -209,18 +242,10 @@ class StatementImportService:
         symbol, status, message, market = self._resolve(h, asset_type)
         if status == "ok" and (qty is None or avg is None):
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
-        if status == "ok" and market and avg is not None:
-            # Vision models sometimes put the won amount, or the position total, in the
-            # unit-price field. No real average cost is 50x the current price either way.
-            now = Decimal(str(market)) * (fx_today if currency == Currency.KRW else 1)
-            ratio = avg / now
-            if not PRICE_SANITY[0] <= ratio <= PRICE_SANITY[1]:
-                status = "invalid"
-                unit = "₩" if currency == Currency.KRW else "$"
-                message = (
-                    f"평균단가가 현재가({unit}{now:,.2f})의 {ratio:,.1f}배입니다. 원화 금액이나 "
-                    "총액을 단가로 읽었을 수 있으니 단가를 확인하세요"
-                )
+        if status == "ok" and market and avg is not None and qty:
+            misread = _misread_price(avg, qty, Decimal(str(market)), currency, fx_today)
+            if misread:
+                status, message = "invalid", misread
 
         current, current_cost, held_currency = (
             held.get(symbol, (None, None, None)) if symbol else (None, None, None)

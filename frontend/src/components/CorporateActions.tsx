@@ -49,7 +49,8 @@ export function CorporateActions() {
           {formatQty(a.shares_before)}주 → {formatQty(a.effect)}주
           {fractional && (
             <span className="block text-xs text-muted">
-              소수점 {formatQty(a.effect - Math.floor(a.effect))}주는 증권사가 현금으로 정산할 수 있음
+              현금으로 정산받았다면 소수점 {formatQty(a.effect - Math.floor(a.effect))}주를 정산 금액으로 매도
+              거래로 입력하세요
             </span>
           )}
         </>
@@ -171,7 +172,7 @@ export function CorporateActions() {
       </div>
       <ul className="list-disc space-y-1 pl-4 text-xs text-muted">
         <li>
-          배당은 배당락일 기준 보유 수량으로 계산하고 미국 원천징수(기본 15%)만 뺀 금액입니다. 실제 입금은 지급일에,
+          배당은 배당락일 전날 장 마감 기준 보유 수량으로 계산하고 미국 원천징수(기본 15%)만 뺀 금액입니다. 실제 입금은 지급일에,
           지급일 환율로 이뤄지며 연 2천만 원을 넘으면 금융소득종합과세가 더해질 수 있습니다.
         </li>
         <li>

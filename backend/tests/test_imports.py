@@ -307,9 +307,24 @@ def test_upbit_coin_rows_are_kept_in_krw(client, extractor):
     assert tx["fx_rate"] is None  # a won trade needs no FX rate
 
 
-def test_won_amount_read_as_unit_price_is_flagged(client, extractor):
-    # A Woori screen: the model put the KRW valuation of 13 shares in the USD price field.
-    extractor.statement.holdings[:] = [holding("알파벳 C", "GOOG", "13", avg="5,879,484")]
-    row = upload(client).json()["rows"][0]
-    assert row["status"] == "invalid"
-    assert "현재가" in row["message"]
+def test_misread_unit_prices_are_flagged_with_a_suggestion(client, extractor):
+    price = client.get("/api/market/GOOG/quote").json()["price"]
+    fx = client.get("/api/market/fx/usdkrw").json()["price"]
+    extractor.statement.holdings[:] = [
+        # The KRW valuation of all 13 shares in the USD unit-price field (a Woori screen).
+        holding("총액", "GOOG", "13", avg=f"{price * fx * 13:.0f}"),
+        # The KRW unit price in the USD field.
+        holding("원화", "GOOG", "2", avg=f"{price * fx:.0f}"),
+    ]
+    rows = {r["name"]: r for r in upload(client).json()["rows"]}
+    assert rows["총액"]["status"] == "invalid" and "원화 총액" in rows["총액"]["message"]
+    assert rows["원화"]["status"] == "invalid" and "원화 금액" in rows["원화"]["message"]
+
+
+def test_plausible_prices_are_not_flagged(client, extractor):
+    quotes = {s: client.get(f"/api/market/{s}/quote").json()["price"] for s in ("NVDA", "AAPL")}
+    extractor.statement.holdings[:] = [
+        holding("장기 보유", "NVDA", "100", avg=f"{quotes['NVDA'] * 0.005:.4f}"),
+        holding("큰 손실", "AAPL", "3", avg=f"{quotes['AAPL'] * 3:.2f}"),
+    ]
+    assert {r["status"] for r in upload(client).json()["rows"]} == {"ok"}

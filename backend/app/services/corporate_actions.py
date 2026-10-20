@@ -36,6 +36,7 @@ from app.services.market_data import drop_cached_bars
 
 log = logging.getLogger(__name__)
 
+VALUE_TOLERANCE = Decimal("0.001")  # relative change in a provider amount that counts
 CHECK_TTL = 6 * 3600.0  # seconds between provider look-ups per symbol
 _last_checked: dict[str, float] = {}
 _lock = threading.Lock()
@@ -254,7 +255,9 @@ class CorporateActionService:
     def _refresh(action: CorporateAction, value: Decimal) -> None:
         """Follow a corrected provider amount. A confirmed dividend goes back to review;
         confirmed splits are left alone because changing them could break the ledger."""
-        if action.value == value:
+        # Restated amounts come back rounded ($0.11 after a 3:1 split is 0.036667, which
+        # restores to 0.110001): only a real change may unconfirm a dividend.
+        if abs(action.value - value) <= max(abs(action.value), abs(value)) * VALUE_TOLERANCE:
             return
         if action.status == ActionStatus.DETECTED:
             action.value = value

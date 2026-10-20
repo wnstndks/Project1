@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -137,7 +137,7 @@ class MarketDataService:
 
         return lookup
 
-    def _sync(self, symbol: str, start: date, today: date) -> None:
+    def _sync(self, symbol: str, start: date, today: date, retry: bool = True) -> None:
         """Fetch any missing bars, then write them in one short transaction.
 
         All network calls happen before the first write, so the SQLite write lock is never
@@ -174,6 +174,19 @@ class MarketDataService:
                     bars += fresh
             if not bars and not stale and start >= sync.fetched_from:
                 return
+            # The cache may have been dropped while we were fetching (a new split was
+            # recorded). Writing a partial window would then claim the full range, so
+            # download everything instead.
+            if (
+                not replace
+                and self.db.scalar(select(SymbolSync.symbol).where(SymbolSync.symbol == symbol))
+                is None
+            ):
+                if retry:
+                    if inspect(sync).persistent:
+                        self.db.expunge(sync)  # so the retry reads the row's absence
+                    self._sync(symbol, start, today, retry=False)
+                return
 
         if replace:
             self.db.execute(delete(PriceBar).where(PriceBar.symbol == symbol))
@@ -199,15 +212,20 @@ class MarketDataService:
         """True if the provider re-scaled its past bars (ignoring the last cached bar, which
         may have been an in-progress session).
 
-        A re-adjustment moves every overlapping bar by the same factor; a correction to a
-        single bar does not, and is simply overwritten by the refresh.
+        A re-adjustment moves every bar before the ex-date by the same factor, so the changed
+        bars are a run at the start of the overlap (all of it if the ex-date is later). Changes
+        anywhere else are corrections to single bars, simply overwritten by the refresh. A
+        one-bar run at the very start is ambiguous and is treated as a re-adjustment: a full
+        refetch is merely wasted if it was not, while a missed one leaves a permanent seam.
         """
         overlap = {b.date: b for b in fresh if b.date < before}
         if not overlap:
             return False
         cached = list(
             self.db.scalars(
-                select(PriceBar).where(PriceBar.symbol == symbol, PriceBar.date.in_(list(overlap)))
+                select(PriceBar)
+                .where(PriceBar.symbol == symbol, PriceBar.date.in_(list(overlap)))
+                .order_by(PriceBar.date)
             )
         )
         for field in ("close", "adj_close"):
@@ -216,9 +234,12 @@ class MarketDataService:
                 for row in cached
                 if getattr(row, field)
             ]
-            if not ratios or all(abs(r - 1) <= RESCALE_TOLERANCE for r in ratios):
+            changed = [abs(r - 1) > RESCALE_TOLERANCE for r in ratios]
+            run = next((i for i, c in enumerate(changed) if not c), len(changed))
+            if run == 0 or any(changed[run:]):
                 continue
-            if max(ratios) / min(ratios) - 1 <= RESCALE_TOLERANCE * 10:
+            head = ratios[:run]
+            if max(head) / min(head) - 1 <= RESCALE_TOLERANCE * 10:
                 return True
         return False
 

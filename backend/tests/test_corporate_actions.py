@@ -223,3 +223,13 @@ def test_failed_lookup_is_retried_on_the_next_request(client, provider):
     assert client.get("/api/corporate-actions").json() == []
     provider.get_actions = real
     assert ("NVDA", "split") in actions(client)
+
+
+def test_rounding_in_a_restated_amount_keeps_the_dividend_confirmed(client, provider):
+    trade(client, "NVDA", 10, 1000, date(2026, 1, 5))
+    div = actions(client)[("NVDA", "dividend")]
+    client.post(f"/api/corporate-actions/{div['id']}/confirm")
+    # $0.25 restated through a later 3:1 split and back: 0.083333 x 3.
+    provider.actions["NVDA"][2] = CorporateEvent(DIV_DAY, "dividend", Decimal("0.249999"))
+    corporate_actions._last_checked.clear()
+    assert actions(client)[("NVDA", "dividend")]["status"] == "confirmed"

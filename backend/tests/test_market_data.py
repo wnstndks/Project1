@@ -193,6 +193,60 @@ def test_provider_readjustment_triggers_full_refetch(db, clock):
     assert set(after) == set(before)
 
 
+def test_readjustment_with_ex_date_inside_the_overlap_is_detected(db, clock):
+    from dataclasses import replace
+
+    from app.data.fake_provider import FakeProvider
+
+    ex = TODAY - timedelta(days=3)
+
+    class SplitInsideWindow(FakeProvider):
+        """Yahoo after a 2:1 split on `ex`: only bars before the ex-date are halved."""
+
+        split = False
+
+        def get_history(self, symbol, start, end):
+            bars = super().get_history(symbol, start, end)
+            if not self.split:
+                return bars
+            return [replace(b, close=b.close / 2) if b.date < ex else b for b in bars]
+
+    provider = SplitInsideWindow(today=TODAY)
+    service = MarketDataService(db, provider, QuoteCache(), now=clock)
+    before = {b.date: b.close for b in service.get_history("NVDA", date(2026, 1, 1))}
+    provider.split = True
+    clock.t += timedelta(hours=1)
+    after = {b.date: b.close for b in service.get_history("NVDA", date(2026, 1, 1))}
+
+    first = min(before)
+    assert after[first] == pytest.approx(before[first] / 2)  # old bars rescaled too
+
+
+def test_cache_dropped_during_a_fetch_is_not_half_refilled(db, clock):
+    from app.data.fake_provider import FakeProvider
+    from app.services.market_data import drop_cached_bars
+
+    class DroppingProvider(FakeProvider):
+        drop = False
+
+        def get_history(self, symbol, start, end):
+            if self.drop:  # a split is recorded while this request is fetching
+                drop_cached_bars(db, symbol)
+                db.commit()
+            return super().get_history(symbol, start, end)
+
+    provider = DroppingProvider(today=TODAY)
+    service = MarketDataService(db, provider, QuoteCache(), now=clock)
+    service.get_history("NVDA", date(2026, 1, 1))
+    provider.drop = True
+    provider.history_calls.clear()
+    clock.t += timedelta(hours=1)
+    bars = service.get_history("NVDA", date(2026, 1, 1))
+    # Instead of storing only the 10-day refresh window, it downloads the whole range again.
+    assert [c[1] for c in provider.history_calls] == [TODAY - timedelta(days=10), date(2026, 1, 1)]
+    assert min(b.date for b in bars) <= date(2026, 1, 5)
+
+
 def test_single_corrected_bar_does_not_wipe_the_cache(db, clock):
     from dataclasses import replace
 
