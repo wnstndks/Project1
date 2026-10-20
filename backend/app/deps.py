@@ -9,9 +9,10 @@ from app.data.fake_provider import FakeProvider
 from app.data.news_sources import FinnhubClient, GdeltClient
 from app.data.provider import MarketDataProvider
 from app.data.upbit_provider import RoutingProvider, UpbitProvider
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.ml.sentiment import FinBertScorer, SentimentScorer
 from app.services.corporate_actions import CorporateActionService
+from app.services.forecasts import ForecastService, ForecastTraining
 from app.services.market_data import MarketDataService, QuoteCache
 from app.services.news import NewsService
 from app.services.portfolio import PortfolioService
@@ -76,6 +77,25 @@ def get_prediction_service(
     artifacts_dir: Path = Depends(get_artifacts_dir),
 ) -> PredictionService:
     return PredictionService(market, artifacts_dir)
+
+
+def get_session_factory():
+    """Sessions for background jobs, which outlive the request's session."""
+    return SessionLocal
+
+
+@lru_cache
+def get_forecast_training() -> ForecastTraining:
+    return ForecastTraining()
+
+
+def get_forecast_service(
+    db: Session = Depends(get_db),
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+    artifacts_dir: Path = Depends(get_artifacts_dir),
+) -> ForecastService:
+    return ForecastService(db, market, portfolio, artifacts_dir)
 
 
 def get_projection_service(

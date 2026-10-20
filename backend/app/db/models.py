@@ -114,6 +114,31 @@ class CorporateAction(Base):
     withholding: Mapped[Decimal] = mapped_column(DecimalText, default=Decimal("0.15"))
 
 
+class ForecastLog(Base):
+    """Every live forecast as first served, scored later against what happened.
+
+    Only the first forecast per (symbol, horizon, as_of) is kept, so a later retrain cannot
+    quietly replace a forecast that turned out wrong. Returns are log returns.
+    """
+
+    __tablename__ = "forecast_log"
+    __table_args__ = (Index("ix_forecast_log_key", "symbol", "horizon", "as_of", unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    horizon: Mapped[str] = mapped_column(String(4))
+    as_of: Mapped[date] = mapped_column(Date)
+    target_date: Mapped[date] = mapped_column(Date)
+    run_id: Mapped[str] = mapped_column(String(40))
+    base_price: Mapped[float] = mapped_column(Float)
+    q10: Mapped[float] = mapped_column(Float)
+    q50: Mapped[float] = mapped_column(Float)
+    q90: Mapped[float] = mapped_column(Float)
+    p_up: Mapped[float] = mapped_column(Float)
+    baseline_p_up: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class NewsArticle(Base):
     """A headline with its FinBERT sentiment. published_at is UTC (stored naive)."""
 

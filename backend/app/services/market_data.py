@@ -78,17 +78,26 @@ class MarketDataService:
         self.utc_now = utc_now
 
     def get_history(
-        self, symbol: str, start: date, end: date | None = None, final_only: bool = False
+        self,
+        symbol: str,
+        start: date,
+        end: date | None = None,
+        final_only: bool = False,
+        cached: bool = False,
     ) -> list[PriceBar]:
         """Daily bars from the cache, syncing missing ones first.
 
         `final_only` drops a bar whose session is still open (today's partial stock bar, the
         current UTC day for coins). Models must use it: a partial bar's volume and range look
         nothing like the completed bars they were trained on.
+
+        `cached` skips the sync when the symbol has bars already, for bulk reads (the
+        forecaster's reference universe) that can tolerate data a few hours old.
         """
         today = self.now().date()
         end = min(end or today, today)
-        self._sync(symbol, start, today)
+        if not (cached and self.db.get(SymbolSync, symbol) is not None):
+            self._sync(symbol, start, today)
 
         rows = self.db.scalars(
             select(PriceBar)

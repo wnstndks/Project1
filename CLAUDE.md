@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
-개인 자산관리 웹앱: 미국 주식 + 코인 4종(BTC, ETH, XRP, SOL) 보유 관리, LSTM 단기 가격 예측, 몬테카를로 미래 자산 시뮬레이션. 부동산 관심 매물 분석은 주식·코인 기능 이후에 추가한다. 본인 실사용과 공개 취업 포트폴리오를 겸한다.
+개인 자산관리 웹앱: 미국 주식 + 코인 4종(BTC, ETH, XRP, SOL) 보유 관리, 통합 GBDT 가격 범위 예측, 몬테카를로 미래 자산 시뮬레이션. 부동산 관심 매물 분석은 주식·코인 기능 이후에 추가한다. 본인 실사용과 공개 취업 포트폴리오를 겸한다.
 
 > 초기 개발 중이다. 단계별 구현 계획은 `~/.claude/plans/rustling-jingling-reddy.md`에 있다. 아래 명령어와 구조 중 아직 만들어지지 않은 부분이 있으면, 해당 단계를 구현할 때 이 파일을 실제와 맞게 갱신한다.
 
@@ -13,11 +13,11 @@ Backend (`backend/`):
 - 테스트 `py -m uv run pytest` / 단일 `py -m uv run pytest tests/test_portfolio.py::test_name`
 - 린트 `py -m uv run ruff check .` / 포맷 `py -m uv run ruff format .`
 - 마이그레이션 `py -m uv run alembic revision --autogenerate -m "msg"` → `py -m uv run alembic upgrade head`
-- 모델 학습 `py -m uv run python -m app.ml.train --symbol AAPL`
+- 예측 모델 학습 `py -m uv run python -m app.forecast.train` (보유 + 참조 종목 약 65개, LightGBM은 `ml` 그룹. 첫 실행은 시세 내려받기로 수 분) / 예전 LSTM 비교용 `py -m uv run python -m app.ml.train --symbol AAPL`
 - 데모 데이터: 실제 DB를 건드리지 않도록 별도 파일을 지정한다. `$env:AM_DATABASE_URL="sqlite:///demo.db"; py -m uv run python -m seed.load` (`--reset`은 모든 거래를 삭제한다)
 
 Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 oxlint):
-- `npm install` / `npm run dev` (http://localhost:5173, `/api`는 8000번 백엔드로 프록시) / `npm run build` / `npm run lint`
+- `npm install` / `npm run dev` (http://localhost:5173, `/api`는 8000번 백엔드로 프록시. 8000번이 사용 중이면 백엔드를 `--port 8001`로 띄우고 `$env:AM_API_URL="http://localhost:8001"; npm run dev`) / `npm run build` / `npm run lint`
 - 테스트 `npm test` / 단일 `npx vitest run src/lib/format.test.ts`
 - API 타입 재생성 `npm run gen:api`: 서버 없이 `app.export_openapi`로 `src/api/openapi.json`을 만든 뒤 `src/api/schema.d.ts`를 생성한다. 백엔드 스키마를 바꾸면 반드시 실행하고 두 파일을 함께 커밋한다. openapi-typescript는 TS 5를 요구해 devDependency가 아니라 `npx`로 실행한다.
 
@@ -34,7 +34,7 @@ Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 o
 - 보유 현황은 저장하지 않고 `transactions`에서 이동평균 단가 방식으로 계산한다(`services/ledger.py`, 순수 함수). 거래를 생성·수정·삭제할 때는 해당 종목의 장부 전체를 다시 계산해, 어느 시점이든 보유량보다 많이 파는 거래가 생기면 거부한다.
 - 서비스 계층은 HTTP를 모른다. 규칙 위반은 `services/errors.py`의 `DomainError`(422)·`NotFoundError`(404)로 던지고, `main.py`의 예외 핸들러가 HTTP 응답으로 바꾼다.
 - API 응답의 `Decimal` 필드는 `schemas/common.py`의 `Num` 타입으로 선언해 JSON 숫자로 직렬화한다.
-- LSTM(`app/ml/`): `features.py`(행 t의 피처는 t까지의 데이터만 사용, 타깃은 t→t+1..5 누적 로그수익률) → `dataset.py`(시간순 train/val/test 분할, 분할 사이에 horizon만큼 퍼지, 스케일러는 train 구간에만 fit) → `train.py`(조기 종료, 테스트 구간 평가) → `ml/artifacts.py`가 `artifacts/{symbol}/{run}/`에 `model.pt` + JSON(meta, metrics, backtest)을 새 폴더로 쓰고 `current.json` 포인터를 원자적으로 바꾼다(git 제외). 학습은 CLI 또는 `POST /api/predictions/{symbol}/train`(프로세스 내 스레드, 한 번에 하나)으로 실행하고, `GET /api/predictions/{symbol}`은 저장된 모델로 추론만 한다. 로드한 모델은 `current.json`이 가리키는 run이 바뀔 때만 다시 읽는다.
+- 예측 엔진(`app/forecast/`, 순수 함수, DB·네트워크 없음): `panel.py`(자산·날짜 패널. 행 D는 D 마감까지의 정보만 쓴다. 코인 D봉은 미국 장 마감 뒤에 끝나므로 주식 행은 코인·환율 맥락을 하루 늦게 본다. 수익률은 자기 20일 변동성으로 나눈다. 기간은 1d/1w/1m = 주식 1/5/21봉, 코인 1/7/30봉) → `cv.py`(PurgedWalkForward: 확장 창, 91일 테스트 블록, 기간+5일 퍼지, 마지막 365일은 최종 확인 구간) → `models.py`(기준선 `Climatology`·`EwmaStudentT`, `PooledGBDT` = 분위수 0.1/0.5/0.9 + 상승 확률 분류기. LightGBM이면 학습 날짜 마지막 20%로 시간순 조기 종료, 없으면 sklearn HGB) → `walkforward.py`(표본 외 예측 + 직전 1년 오차로 conformal 보정) → `report.py`(Diebold-Mariano, Holm, 연도별 일관성, 홀드아웃 확인을 모두 통과해야 `edge`. 설정을 바꾸면 `CONFIGS_TRIED`를 올린다) → `aggregate.py`(t-copula + Ledoit-Wolf 상관 + USD/KRW로 포트폴리오 원화 분포). `train.py`가 `artifacts/global/runs/{run}/`에 모델(joblib)·report·oos를 저장하고 `current.json`을 바꾼다. 서비스(`services/forecasts.py`)는 보유 종목만 추론하고(참조 종목은 캐시만 읽음, 결과 30분 메모리 캐시), 처음 보여 준 예측을 `forecast_log`에 남겨 목표일이 지나면 채점한다(`/api/forecasts/track-record`). 테스트(`tests/test_forecast.py`)는 합성 데이터로 누수·랜덤워크 무우위·라벨 셔플·심어 둔 신호 탐지를 확인한다. 예전 LSTM(`app/ml/`, `/api/predictions`)은 비교용으로만 남아 있고 화면에서는 쓰지 않는다.
 - 스크린샷 업로드: Anthropic SDK는 `services/screenshot_extractor.py`에서만 import한다(`ClaudeExtractor`, 기본 모델 `claude-opus-5-5`, `beta.messages.parse` 구조화 출력 + `fallbacks="default"`). 흐름은 미리보기(`POST /api/imports/screenshot`, DB에 쓰지 않음) → 사용자가 확인·수정 → 확정(`POST /api/imports/commit`, `TransactionService.create_many`로 전부 성공 또는 전부 실패)이다. 화면에 원화 매입금액이 보이면 실제 매입 환율을 `transactions.fx_rate`에 저장하고, 장부는 이 값을 시장 환율보다 우선한다(`ledger.trade_fx`). 키는 `backend/.env`의 `AM_ANTHROPIC_API_KEY`(`.env.example` 참고)에 둔다. 업로드 이미지 형식은 확장자가 아니라 파일 내용(`sniff_image_type`)으로 판단한다(.png 이름의 JPEG가 흔함). `AM_IMPORT_EXTRACTOR=fake`로 실행하면 API 키 없이 고정된 데모 인식 결과를 쓴다. 테스트는 `get_extractor`를 `FakeExtractor`로 교체한다.
 - 거래 통화: `transactions.currency`(USD|KRW). 주식은 USD만 허용하고, 업비트·빗썸에서 산 코인은 KRW로 기록한다. 한 종목(포지션) 안에서 통화를 섞을 수 없다(`MixedCurrencyError`). KRW 코인은 원화 원금이 정확한 값이고 USD는 거래일 환율로 파생한다. 평가는 업비트 원화 시세(`portfolio.quote_symbol` → `KRW-BTC` 등)로 하고, `RoutingProvider`가 `KRW-*` 심볼을 `UpbitProvider`로 보낸다. 환차손익(`fx_pnl_krw`)은 USD 포지션만으로 계산한다. 김치 프리미엄은 `GET /api/market/kimchi`(주말에는 환율이 오래되어 `fx_stale`). 보유량이 0이 되면 다른 통화로 다시 시작할 수 있고, 기존 USD 코인 기록은 `POST /api/transactions/convert-currency`로 거래일 환율에 맞춰 KRW로 일괄 변환한다. 시뮬레이션의 KRW 코인 변동성은 업비트 원화 시계열로 추정한다.
 - 원화 표시: 장부(`ledger.py`)는 거래마다 해당 거래일의 USD/KRW(`MarketDataService.usd_krw_lookup`, 주말·휴일은 직전 영업일 환율)로 원화 원금과 원화 실현손익을 따로 계산한다. 그래서 `*_krw` 필드는 USD 값 × 오늘 환율과 다르고 환차손익(`fx_pnl_krw`)을 포함한다. 프론트엔드는 `useMoney().pick(usd, krw)`로 두 값 중 하나를 고르며, 원화 값을 직접 다시 계산하지 않는다. 종목 시세처럼 USD만 있는 값은 오늘 환율로 환산한다.
@@ -50,7 +50,7 @@ Frontend (`frontend/`, Vite 8 + React 19 + TS 6, 린트는 ESLint가 아니라 o
 - 레코드는 거래 통화로 저장(주식 USD, 업비트·빗썸 코인 KRW)하고 합계는 KRW로 환산한다.
 - 모델을 바꾼 뒤 마이그레이션을 생성하면 `alembic check`로 누락이 없는지 확인한다. SQLite라서 `render_as_batch=True`로 설정되어 있다.
 - 시계열 누수 금지: 시간순 분할, 셔플 금지, 스케일러는 train에만 fit한다.
-- 예측 성능은 항상 기준선(전일 종가 유지)과 함께 보고한다. 예측·시뮬레이션 화면에 투자 조언 아님 고지.
+- 예측 성능은 항상 기준선과 함께 보고하고, 통계 검정을 통과하지 못하면 화면에 '우위 없음'으로 표시한다. 예측·시뮬레이션 화면에 투자 조언 아님 고지.
 - 시뮬레이션은 seed를 받아 재현 가능해야 한다.
 
 ## 공개 저장소 주의

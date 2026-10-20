@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import (
     corporate_actions,
+    forecasts,
     health,
     imports,
     market,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
         imports,
         news,
         corporate_actions,
+        forecasts,
     ):
         api.include_router(module.router)
     app.include_router(api)

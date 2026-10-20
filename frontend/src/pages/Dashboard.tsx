@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useCorporateActions, useHoldings, usePortfolioHistory, useSummary } from '../api/hooks'
 import { AllocationBar } from '../components/AllocationBar'
 import { KimchiPremium } from '../components/KimchiPremium'
+import { PortfolioForecastCard } from '../components/PortfolioForecastCard'
 import { HoldingsTable } from '../components/HoldingsTable'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { ValueHistoryChart } from '../components/ValueHistoryChart'
@@ -120,6 +121,10 @@ export function Dashboard() {
           </Card>
         </div>
       </div>
+
+      <Card title="앞으로의 예상 자산">
+        <PortfolioForecastCard usdKrw={s.usd_krw} />
+      </Card>
 
       <Card title="보유 종목">
         {holdings.error ? (

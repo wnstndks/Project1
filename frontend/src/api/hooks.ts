@@ -19,9 +19,10 @@ export const keys = {
   assetInfo: (symbol: string) => ['market', symbol, 'info'] as const,
   quote: (symbol: string) => ['market', symbol, 'quote'] as const,
   history: (symbol: string, start?: string) => ['market', symbol, 'history', start] as const,
-  forecast: (symbol: string) => ['predictions', symbol] as const,
-  backtest: (symbol: string) => ['predictions', symbol, 'backtest'] as const,
-  training: (symbol: string) => ['predictions', symbol, 'training'] as const,
+  forecastStatus: ['forecasts', 'status'] as const,
+  forecast: (symbol: string) => ['forecasts', symbol] as const,
+  forecastBacktest: (symbol: string, horizon: string) => ['forecasts', symbol, 'backtest', horizon] as const,
+  portfolioForecast: ['portfolio', 'forecast'] as const,
   assumptions: ['portfolio', 'projection', 'assumptions'] as const,
   projection: (input: ProjectionInput) => ['portfolio', 'projection', input] as const,
 }
@@ -95,33 +96,47 @@ export const usePreviewScreenshots = () =>
 
 export const useCommitImport = () => useLedgerMutation((data: ImportCommit) => api.commitImport(data))
 
-export const useForecast = (symbol: string) =>
-  useQuery({ queryKey: keys.forecast(symbol), queryFn: () => api.forecast(symbol), retry: false })
+export const useForecastStatus = () =>
+  useQuery({ queryKey: keys.forecastStatus, queryFn: api.forecastStatus })
 
-export const useBacktest = (symbol: string, enabled: boolean) =>
-  useQuery({ queryKey: keys.backtest(symbol), queryFn: () => api.backtest(symbol), enabled })
+export const useForecast = (symbol: string, enabled = true) =>
+  useQuery({ queryKey: keys.forecast(symbol), queryFn: () => api.forecast(symbol), retry: false, enabled })
 
-/** Polls every 2s while a job runs; refreshes the forecast once it finishes. */
-export function useTraining(symbol: string) {
+/** Under ['portfolio'] so that ledger changes (new holdings) refresh it. */
+export const usePortfolioForecast = (enabled = true) =>
+  useQuery({ queryKey: keys.portfolioForecast, queryFn: api.portfolioForecast, retry: false, enabled })
+
+export const useTrackRecord = (symbol?: string) =>
+  useQuery({ queryKey: ['forecasts', 'track-record', symbol], queryFn: () => api.trackRecord(symbol) })
+
+export const useForecastBacktest = (symbol: string, horizon: string) =>
+  useQuery({ queryKey: keys.forecastBacktest(symbol, horizon), queryFn: () => api.forecastBacktest(symbol, horizon) })
+
+/** Starts the one global training job and polls every 3s while it runs. When it finishes,
+ *  every forecast is refetched from the new model. */
+export function useForecastTraining() {
   const client = useQueryClient()
-  const status = useQuery({
-    queryKey: keys.training(symbol),
+  const status = useForecastStatus()
+  const running = status.data?.job?.state === 'running'
+  useQuery({
+    queryKey: [...keys.forecastStatus, 'poll'],
     queryFn: async () => {
-      const job = await api.trainingStatus(symbol).catch(() => null)
-      if (job?.state === 'done') {
-        void client.invalidateQueries({ queryKey: keys.forecast(symbol) })
-        void client.invalidateQueries({ queryKey: keys.backtest(symbol) })
+      const next = await api.forecastStatus()
+      client.setQueryData(keys.forecastStatus, next)
+      if (next.job?.state !== 'running') {
+        void client.invalidateQueries({ queryKey: ['forecasts'] })
+        void client.invalidateQueries({ queryKey: keys.portfolioForecast })
       }
-      return job
+      return next
     },
-    refetchInterval: (q) => (q.state.data?.state === 'running' ? 2000 : false),
-    staleTime: 0,
+    enabled: running,
+    refetchInterval: running ? 3000 : false,
   })
   const start = useMutation({
-    mutationFn: () => api.startTraining(symbol),
-    onSuccess: (job) => client.setQueryData(keys.training(symbol), job),
+    mutationFn: api.startForecastTraining,
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.forecastStatus }),
   })
-  return { job: status.data, start }
+  return { status, running: running || start.isPending, start }
 }
 
 export const useAssumptions = () =>

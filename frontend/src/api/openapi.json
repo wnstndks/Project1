@@ -1206,6 +1206,221 @@
           }
         }
       }
+    },
+    "/api/forecasts/status": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Forecast Status",
+        "operationId": "forecast_status_api_forecasts_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forecasts/train": {
+      "post": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Start Training",
+        "operationId": "start_training_api_forecasts_train_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastJobOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forecasts/portfolio": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Portfolio Forecast",
+        "operationId": "portfolio_forecast_api_forecasts_portfolio_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioForecastOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forecasts/track-record": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Track Record",
+        "operationId": "track_record_api_forecasts_track_record_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackRecordOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forecasts/{symbol}": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Symbol Forecast",
+        "operationId": "symbol_forecast_api_forecasts__symbol__get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolForecastOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/forecasts/{symbol}/backtest": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Backtest",
+        "operationId": "backtest_api_forecasts__symbol__backtest_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "horizon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "1d",
+                "1w",
+                "1m"
+              ],
+              "type": "string",
+              "default": "1w",
+              "title": "Horizon"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ForecastBacktestPoint"
+                  },
+                  "title": "Response Backtest Api Forecasts  Symbol  Backtest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1730,6 +1945,102 @@
         ],
         "title": "ErrorMetrics"
       },
+      "ForecastBacktestPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "actual": {
+            "type": "number",
+            "title": "Actual"
+          },
+          "q10": {
+            "type": "number",
+            "title": "Q10"
+          },
+          "q50": {
+            "type": "number",
+            "title": "Q50"
+          },
+          "q90": {
+            "type": "number",
+            "title": "Q90"
+          },
+          "p_up": {
+            "type": "number",
+            "title": "P Up"
+          },
+          "segment": {
+            "type": "string",
+            "title": "Segment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "actual",
+          "q10",
+          "q50",
+          "q90",
+          "p_up",
+          "segment"
+        ],
+        "title": "ForecastBacktestPoint"
+      },
+      "ForecastJobOut": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Log"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "started_at",
+          "finished_at",
+          "error",
+          "log"
+        ],
+        "title": "ForecastJobOut"
+      },
       "ForecastOut": {
         "properties": {
           "symbol": {
@@ -1821,6 +2132,53 @@
           "return_pct"
         ],
         "title": "ForecastPoint"
+      },
+      "ForecastStatusOut": {
+        "properties": {
+          "trained": {
+            "type": "boolean",
+            "title": "Trained"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForecastJobOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "trained"
+        ],
+        "title": "ForecastStatusOut"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1986,6 +2344,81 @@
         ],
         "title": "HoldingOut",
         "description": "USD fields plus *_krw fields: KRW cost uses each trade date's FX rate, KRW value today's."
+      },
+      "HorizonForecastOut": {
+        "properties": {
+          "horizon": {
+            "type": "string",
+            "title": "Horizon"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "target_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Target Date"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price"
+          },
+          "p10": {
+            "type": "number",
+            "title": "P10"
+          },
+          "p50": {
+            "type": "number",
+            "title": "P50"
+          },
+          "p90": {
+            "type": "number",
+            "title": "P90"
+          },
+          "p_up": {
+            "type": "number",
+            "title": "P Up"
+          },
+          "baseline_p_up": {
+            "type": "number",
+            "title": "Baseline P Up"
+          },
+          "baseline_p10": {
+            "type": "number",
+            "title": "Baseline P10"
+          },
+          "baseline_p90": {
+            "type": "number",
+            "title": "Baseline P90"
+          },
+          "direction_edge": {
+            "type": "boolean",
+            "title": "Direction Edge"
+          },
+          "range_edge": {
+            "type": "boolean",
+            "title": "Range Edge"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon",
+          "as_of",
+          "target_date",
+          "base_price",
+          "p10",
+          "p50",
+          "p90",
+          "p_up",
+          "baseline_p_up",
+          "baseline_p10",
+          "baseline_p90",
+          "direction_edge",
+          "range_edge"
+        ],
+        "title": "HorizonForecastOut"
       },
       "HorizonMetrics": {
         "properties": {
@@ -2214,6 +2647,89 @@
           "warnings"
         ],
         "title": "NewsOut"
+      },
+      "PortfolioForecastOut": {
+        "properties": {
+          "trained_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trained At"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/PortfolioHorizonOut"
+            },
+            "type": "array",
+            "title": "Horizons"
+          },
+          "excluded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trained_at",
+          "horizons",
+          "excluded"
+        ],
+        "title": "PortfolioForecastOut"
+      },
+      "PortfolioHorizonOut": {
+        "properties": {
+          "horizon": {
+            "type": "string",
+            "title": "Horizon"
+          },
+          "value_krw": {
+            "type": "number",
+            "title": "Value Krw"
+          },
+          "p10": {
+            "type": "number",
+            "title": "P10"
+          },
+          "p50": {
+            "type": "number",
+            "title": "P50"
+          },
+          "p90": {
+            "type": "number",
+            "title": "P90"
+          },
+          "mean": {
+            "type": "number",
+            "title": "Mean"
+          },
+          "var95": {
+            "type": "number",
+            "title": "Var95"
+          },
+          "es95": {
+            "type": "number",
+            "title": "Es95"
+          },
+          "paths": {
+            "type": "integer",
+            "title": "Paths"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon",
+          "value_krw",
+          "p10",
+          "p50",
+          "p90",
+          "mean",
+          "var95",
+          "es95",
+          "paths"
+        ],
+        "title": "PortfolioHorizonOut"
       },
       "PreviewOut": {
         "properties": {
@@ -2720,6 +3236,174 @@
         ],
         "title": "SummaryOut",
         "description": "Amounts in USD unless suffixed with _krw."
+      },
+      "SymbolForecastOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "trained_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trained At"
+          },
+          "data_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Data End"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/HorizonForecastOut"
+            },
+            "type": "array",
+            "title": "Horizons"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/ClosePoint"
+            },
+            "type": "array",
+            "title": "Recent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "trained_at",
+          "data_end",
+          "horizons",
+          "recent"
+        ],
+        "title": "SymbolForecastOut"
+      },
+      "TrackRecordOut": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "summary": {
+            "items": {
+              "$ref": "#/components/schemas/TrackSummaryOut"
+            },
+            "type": "array",
+            "title": "Summary"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/TrackRowOut"
+            },
+            "type": "array",
+            "title": "Recent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "summary",
+          "recent"
+        ],
+        "title": "TrackRecordOut"
+      },
+      "TrackRowOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "horizon": {
+            "type": "string",
+            "title": "Horizon"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "target_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Target Date"
+          },
+          "q10": {
+            "type": "number",
+            "title": "Q10"
+          },
+          "q50": {
+            "type": "number",
+            "title": "Q50"
+          },
+          "q90": {
+            "type": "number",
+            "title": "Q90"
+          },
+          "p_up": {
+            "type": "number",
+            "title": "P Up"
+          },
+          "realized": {
+            "type": "number",
+            "title": "Realized"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "horizon",
+          "as_of",
+          "target_date",
+          "q10",
+          "q50",
+          "q90",
+          "p_up",
+          "realized"
+        ],
+        "title": "TrackRowOut"
+      },
+      "TrackSummaryOut": {
+        "properties": {
+          "horizon": {
+            "type": "string",
+            "title": "Horizon"
+          },
+          "scored": {
+            "type": "integer",
+            "title": "Scored"
+          },
+          "coverage": {
+            "type": "number",
+            "title": "Coverage"
+          },
+          "hit_rate": {
+            "type": "number",
+            "title": "Hit Rate"
+          },
+          "baseline_hit_rate": {
+            "type": "number",
+            "title": "Baseline Hit Rate"
+          },
+          "brier": {
+            "type": "number",
+            "title": "Brier"
+          },
+          "baseline_brier": {
+            "type": "number",
+            "title": "Baseline Brier"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon",
+          "scored",
+          "coverage",
+          "hit_rate",
+          "baseline_hit_rate",
+          "brier",
+          "baseline_brier"
+        ],
+        "title": "TrackSummaryOut"
       },
       "TrainedModelOut": {
         "properties": {

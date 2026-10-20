@@ -71,5 +71,9 @@ def base_symbol(symbol: str) -> str:
 
 
 def trades_every_day(symbol: str) -> bool:
-    """Coins trade 24/7, so their daily bars include weekends; stocks do not."""
-    return symbol in CRYPTO_ASSETS or symbol in UPBIT_MARKETS.values()
+    """Coins trade 24/7, so their daily bars include weekends; stocks do not.
+
+    Any yfinance "-USD" pair counts: the forecaster trains on more coins than the four
+    users can hold.
+    """
+    return symbol.endswith("-USD") or symbol in UPBIT_MARKETS.values()

@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useAssetInfo, useConvertCurrency, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart } from '../components/CandleChart'
 import { NewsCard } from '../components/NewsCard'
-import { PredictionPanel } from '../components/PredictionPanel'
+import { ForecastPanel } from '../components/ForecastPanel'
 import { Card, ErrorBox, Muted, PnL, SegmentedControl, StatTile } from '../components/ui'
 import { useMoney } from '../lib/currency'
 import { displaySymbol, formatPct, formatQty, formatUsd } from '../lib/format'
@@ -151,9 +151,11 @@ export function AssetDetail() {
         <NewsCard symbol={resolved} />
       </Card>
 
-      <Card title="주가 예측">
-        <PredictionPanel symbol={resolved} fx={fx} />
-      </Card>
+      {position && (
+        <Card title="가격 범위 예측">
+          <ForecastPanel symbol={resolved} fx={fx} />
+        </Card>
+      )}
     </div>
   )
 }

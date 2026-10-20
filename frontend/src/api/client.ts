@@ -15,9 +15,13 @@ export type Summary = Schemas['SummaryOut']
 export type HistoryPoint = Schemas['HistoryPointOut']
 export type Transaction = Schemas['TransactionOut']
 export type TransactionInput = Schemas['TransactionIn']
-export type Forecast = Schemas['ForecastOut']
-export type BacktestPoint = Schemas['BacktestPoint']
-export type TrainingJob = Schemas['TrainingJobOut']
+export type SymbolForecast = Schemas['SymbolForecastOut']
+export type HorizonForecast = Schemas['HorizonForecastOut']
+export type PortfolioForecast = Schemas['PortfolioForecastOut']
+export type ForecastStatus = Schemas['ForecastStatusOut']
+export type ForecastJob = Schemas['ForecastJobOut']
+export type ForecastBacktestPoint = Schemas['ForecastBacktestPoint']
+export type TrackRecord = Schemas['TrackRecordOut']
 export type Assumptions = Schemas['AssumptionsOut']
 export type ProjectionInput = Schemas['ProjectionIn']
 export type Projection = Schemas['ProjectionOut']
@@ -87,13 +91,15 @@ export const api = {
 
   supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),
   assetInfo: (symbol: string) => request<AssetInfo>(`/market/${encodeURIComponent(symbol)}/info`),
-  forecast: (symbol: string) => request<Forecast>(`/predictions/${encodeURIComponent(symbol)}`),
-  backtest: (symbol: string) =>
-    request<BacktestPoint[]>(`/predictions/${encodeURIComponent(symbol)}/backtest`),
-  startTraining: (symbol: string) =>
-    request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`, { method: 'POST' }),
-  trainingStatus: (symbol: string) =>
-    request<TrainingJob>(`/predictions/${encodeURIComponent(symbol)}/train`),
+  forecastStatus: () => request<ForecastStatus>('/forecasts/status'),
+  startForecastTraining: () => request<ForecastJob>('/forecasts/train', { method: 'POST' }),
+  forecast: (symbol: string) => request<SymbolForecast>(`/forecasts/${encodeURIComponent(symbol)}`),
+  trackRecord: (symbol?: string) => request<TrackRecord>(`/forecasts/track-record${query({ symbol })}`),
+  portfolioForecast: () => request<PortfolioForecast>('/forecasts/portfolio'),
+  forecastBacktest: (symbol: string, horizon: string) =>
+    request<ForecastBacktestPoint[]>(
+      `/forecasts/${encodeURIComponent(symbol)}/backtest${query({ horizon })}`,
+    ),
   assumptions: () => request<Assumptions>('/projection/assumptions'),
   simulate: (input: ProjectionInput) =>
     request<Projection>('/projection/simulate', { method: 'POST', body: JSON.stringify(input) }),
