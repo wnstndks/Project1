@@ -74,7 +74,7 @@ LSTM은 단순 기준선을 의미 있게 이기지 못합니다. 방향 적중�
 cd backend
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload          # http://localhost:8000/docs
+uv run uvicorn app.main:app --reload --port 8001   # http://localhost:8001/docs
 
 # 데모 데이터 (실제 DB와 분리하려면 별도 파일 사용)
 AM_DATABASE_URL=sqlite:///demo.db uv run python -m seed.load

@@ -36,7 +36,10 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(DomainError)
     async def _domain_error(_: Request, exc: DomainError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+        content = {"detail": str(exc)}
+        if getattr(exc, "code", None):
+            content["code"] = exc.code
+        return JSONResponse(status_code=exc.status_code, content=content)
 
     @app.exception_handler(UnsupportedSymbolError)
     async def _unsupported_symbol(_: Request, exc: UnsupportedSymbolError) -> JSONResponse:

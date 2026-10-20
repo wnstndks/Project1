@@ -8,6 +8,7 @@ import {
   useTransactions,
   useUpdateTransaction,
 } from '../api/hooks'
+import { BulkDelete } from '../components/BulkDelete'
 import { CorporateActions } from '../components/CorporateActions'
 import { TransactionForm } from '../components/TransactionForm'
 import { Card, ErrorBox, Muted, SegmentedControl } from '../components/ui'
@@ -88,6 +89,8 @@ export function Transactions() {
         ) : rows.length === 0 ? (
           <Muted>거래 내역이 없습니다.</Muted>
         ) : (
+          <>
+          <BulkDelete transactions={transactions.data} />
           <div className="-mx-5 overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
@@ -154,6 +157,7 @@ export function Transactions() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
     </div>

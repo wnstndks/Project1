@@ -4,8 +4,10 @@ More assets mean more independent examples of the same patterns (a volatility sp
 alike in XLE and NVDA), which is what lets a GBDT beat per-symbol models. Predictions are
 only served for held symbols.
 
-Survivorship bias: these are today's large, liquid names. Delisted losers are missing, so
-historical returns of the universe look better than a real investor would have seen.
+Survivorship bias: these are today's large, liquid names. Delisted stocks are missing, so
+historical returns of the universe look better than a real investor would have seen. For
+coins, where collapses are common, former top-15 coins that lost 80-99% are included as
+training-only assets so the model does not learn that every dip recovers.
 """
 
 from collections.abc import Mapping
@@ -23,6 +25,11 @@ COINS = [
     "BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "BNB-USD", "ADA-USD", "DOGE-USD",
     "TRX-USD", "LTC-USD", "LINK-USD", "AVAX-USD", "DOT-USD", "BCH-USD", "XLM-USD", "ETC-USD",
 ]  # fmt: skip
+# Fallen former leaders (still quoted on Yahoo), for training only.
+FALLEN_COINS = [
+    "EOS-USD", "NEO-USD", "DASH-USD", "XEM-USD", "BSV-USD", "FTT-USD", "LUNC-USD", "ICP-USD",
+    "XMR-USD", "ZEC-USD",
+]  # fmt: skip
 
 STOCK_BENCHMARK = "SPY"
 CRYPTO_BENCHMARK = "BTC-USD"
@@ -36,12 +43,13 @@ CONTEXT: Mapping[str, tuple[str, str, Mapping[AssetClass, int]]] = {
     "spy": ("SPY", "returns", {"stock": 0, "crypto": 0}),
     "btc": ("BTC-USD", "returns", {"stock": 1, "crypto": 0}),
     "usdkrw": ("KRW=X", "returns", {"stock": 1, "crypto": 1}),
-    "dxy": ("DX-Y.NYB", "returns", {"stock": 0, "crypto": 0}),
+    # The dollar index settles an hour after the US close: stock rows wait a day.
+    "dxy": ("DX-Y.NYB", "returns", {"stock": 1, "crypto": 0}),
     "us10y": ("^TNX", "diff", {"stock": 0, "crypto": 0}),
 }
 
 
 def reference_symbols() -> dict[str, AssetClass]:
     out: dict[str, AssetClass] = {s: "stock" for s in INDEX_ETFS + SECTOR_ETFS + LARGE_CAPS}
-    out |= {s: "crypto" for s in COINS}
+    out |= {s: "crypto" for s in COINS + FALLEN_COINS}
     return out

@@ -21,14 +21,19 @@ ForecasterFactory = Callable[[], Forecaster]
 
 
 def conformal_offsets(calibration: pd.DataFrame, model: str) -> dict[str, float]:
-    """Per asset class, how far to move q10 down and q90 up (negative narrows)."""
+    """Per asset class, how far to move q10 down and q90 up (negative narrows).
+
+    Scored on the model's raw (uncalibrated) quantiles: offsets are applied to raw
+    predictions, so measuring already-shifted ones would only correct half the error.
+    """
+    lo, hi = f"{model}_q10_raw", f"{model}_q90_raw"
     out = {}
     for cls, g in calibration.groupby("asset_class"):
-        g = g.dropna(subset=["y", f"{model}_q10", f"{model}_q90"])
+        g = g.dropna(subset=["y", lo, hi])
         n = len(g)
         if n < MIN_CALIBRATION_ROWS:
             continue
-        scores = np.maximum(g[f"{model}_q10"] - g["y"], g["y"] - g[f"{model}_q90"])
+        scores = np.maximum(g[lo] - g["y"], g["y"] - g[hi])
         level = min(1.0, np.ceil((n + 1) * COVERAGE) / n)
         out[cls] = float(np.quantile(scores, level))
     return out
@@ -75,6 +80,8 @@ def _run_fold(
         model = make()
         model.fit(train, target)
         pred = model.predict(test)
+        out[f"{name}_q10_raw"] = pred["q10"].to_numpy()
+        out[f"{name}_q90_raw"] = pred["q90"].to_numpy()
         if not calib.empty:
             pred = apply_offsets(pred, conformal_offsets(calib, name), test["asset_class"])
         for col in pred.columns:

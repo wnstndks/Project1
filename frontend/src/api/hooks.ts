@@ -83,6 +83,9 @@ export const useUpdateTransaction = () =>
 
 export const useDeleteTransaction = () => useLedgerMutation((id: number) => api.deleteTransaction(id))
 
+export const useDeleteAllTransactions = () =>
+  useLedgerMutation((scope: 'all' | 'imports') => api.deleteAllTransactions(scope))
+
 export const useConvertCurrency = () =>
   useLedgerMutation(({ symbol, currency }: { symbol: string; currency: Currency }) =>
     api.convertCurrency(symbol, currency),

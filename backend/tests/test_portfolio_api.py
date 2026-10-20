@@ -272,3 +272,37 @@ def test_stocks_cannot_be_converted_to_krw(client):
         "/api/transactions/convert-currency", json={"symbol": "AAPL", "currency": "KRW"}
     )
     assert res.status_code == 422
+
+
+def test_delete_all_requires_explicit_confirmation(client, db):
+    from app.db.models import Transaction
+    from app.services.transactions import IMPORT_NOTE
+
+    buy(client, "AAPL", 10, 150)
+    buy(client, "MSFT", 2, 400)
+    # Mark the MSFT buy as a screenshot import.
+    tx = db.query(Transaction).filter_by(symbol="MSFT").one()
+    tx.note = IMPORT_NOTE
+    db.commit()
+
+    assert client.delete("/api/transactions").status_code == 422  # no confirm parameter
+    res = client.delete("/api/transactions?confirm=imports")
+    assert res.json() == {"deleted": 1}
+    assert [t["symbol"] for t in client.get("/api/transactions").json()] == ["AAPL"]
+
+    assert client.delete("/api/transactions?confirm=all").json() == {"deleted": 1}
+    assert client.get("/api/transactions").json() == []
+    assert client.get("/api/portfolio/holdings").json() == []
+
+
+def test_deleting_imports_that_later_sells_depend_on_is_refused(client, db):
+    from app.db.models import Transaction
+    from app.services.transactions import IMPORT_NOTE
+
+    buy(client, "AAPL", 10, 150, day="2026-09-01")
+    buy(client, "AAPL", 5, 160, day="2026-10-01", side="sell")
+    tx = db.query(Transaction).filter_by(side="buy").one()
+    tx.note = IMPORT_NOTE
+    db.commit()
+    assert client.delete("/api/transactions?confirm=imports").status_code == 422
+    assert len(client.get("/api/transactions").json()) == 2

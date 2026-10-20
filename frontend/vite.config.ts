@@ -7,8 +7,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      // AM_API_URL points the dev server at a backend on another port (8000 may be taken).
-      '/api': process.env.AM_API_URL ?? 'http://localhost:8000',
+      // The backend runs on 8001 (8000 is often taken by other local projects).
+      '/api': process.env.AM_API_URL ?? 'http://localhost:8001',
     },
   },
   test: {

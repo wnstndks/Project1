@@ -83,7 +83,7 @@ class MarketDataService:
         start: date,
         end: date | None = None,
         final_only: bool = False,
-        cached: bool = False,
+        max_age: timedelta | None = None,
     ) -> list[PriceBar]:
         """Daily bars from the cache, syncing missing ones first.
 
@@ -91,12 +91,18 @@ class MarketDataService:
         current UTC day for coins). Models must use it: a partial bar's volume and range look
         nothing like the completed bars they were trained on.
 
-        `cached` skips the sync when the symbol has bars already, for bulk reads (the
-        forecaster's reference universe) that can tolerate data a few hours old.
+        `max_age` skips the sync while the cache was refreshed more recently than that, for
+        bulk reads (the forecaster's reference universe) that can tolerate older data.
         """
         today = self.now().date()
         end = min(end or today, today)
-        if not (cached and self.db.get(SymbolSync, symbol) is not None):
+        sync = self.db.get(SymbolSync, symbol) if max_age is not None else None
+        fresh = (
+            sync is not None
+            and self.now() - sync.synced_at < max_age
+            and sync.fetched_from <= start
+        )
+        if not fresh:
             self._sync(symbol, start, today)
 
         rows = self.db.scalars(

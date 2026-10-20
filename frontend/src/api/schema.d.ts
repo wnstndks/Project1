@@ -138,7 +138,12 @@ export interface paths {
         put?: never;
         /** Create Transaction */
         post: operations["create_transaction_api_transactions_post"];
-        delete?: never;
+        /**
+         * Delete All Transactions
+         * @description Delete every transaction (`confirm=all`) or only screenshot imports (`imports`).
+         *     The required parameter keeps a stray DELETE on the collection from wiping the ledger.
+         */
+        delete: operations["delete_all_transactions_api_transactions_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -789,6 +794,11 @@ export interface components {
          * @enum {string}
          */
         Currency: "USD" | "KRW";
+        /** DeletedOut */
+        DeletedOut: {
+            /** Deleted */
+            deleted: number;
+        };
         /** ErrorMetrics */
         ErrorMetrics: {
             /** Mae */
@@ -1092,6 +1102,13 @@ export interface components {
             horizons: components["schemas"]["PortfolioHorizonOut"][];
             /** Excluded */
             excluded: string[];
+            /**
+             * Kimchi Premium
+             * @default {}
+             */
+            kimchi_premium: {
+                [key: string]: number;
+            };
         };
         /** PortfolioHorizonOut */
         PortfolioHorizonOut: {
@@ -1290,6 +1307,8 @@ export interface components {
              * Format: date
              */
             data_end: string;
+            /** Krw Rate */
+            krw_rate?: number | null;
             /** Horizons */
             horizons: components["schemas"]["HorizonForecastOut"][];
             /** Recent */
@@ -1742,6 +1761,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_all_transactions_api_transactions_delete: {
+        parameters: {
+            query: {
+                confirm: "all" | "imports";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedOut"];
                 };
             };
             /** @description Validation Error */

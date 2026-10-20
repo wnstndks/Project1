@@ -18,23 +18,27 @@ from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from app.data.assets import FX_USDKRW, trades_every_day
+from app.data.assets import FX_USDKRW, UPBIT_MARKETS, trades_every_day
 from app.data.calendar import next_trading_dates
-from app.db.models import AssetType, ForecastLog, Transaction
+from app.data.provider import MarketDataError
+from app.db.models import AssetType, Currency, ForecastLog, Transaction
 from app.forecast import aggregate, store
 from app.forecast.data import Inputs, bars_frame, load_inputs
-from app.forecast.panel import HORIZONS, AssetClass, build_panel
+from app.forecast.panel import HORIZONS, AssetClass, build_panel, latest_ranks
 from app.forecast.walkforward import apply_offsets
-from app.services.errors import ConflictError, NotFoundError
-from app.services.market_data import MarketDataService
+from app.services.errors import ConflictError, DomainError, NotFoundError
+from app.services.market_data import MarketDataService, SymbolNotFoundError
 from app.services.portfolio import PortfolioService
 
 INFERENCE_TTL = 30 * 60.0  # seconds
 CORRELATION_DAYS = 730
 
 _runs: dict[Path, store.Run] = {}
+# Only the latest inference is kept: a retrain or a new holding replaces it.
 _inference: dict[tuple, tuple[float, pd.DataFrame, Inputs]] = {}
 _lock = threading.Lock()
+# Serializes cache misses, so concurrent requests do not each rebuild the whole panel.
+_compute_lock = threading.Lock()
 
 
 def held_symbols(db: Session) -> list[tuple[str, AssetClass]]:
@@ -50,7 +54,8 @@ def _run(artifacts_dir: Path) -> store.Run:
     if path is None:
         raise NotFoundError(
             "예측 모델이 아직 학습되지 않았습니다. 학습을 시작하거나 "
-            "`py -m uv run python -m app.forecast.train`을 실행하세요."
+            "`py -m uv run python -m app.forecast.train`을 실행하세요.",
+            code="not_trained",
         )
     with _lock:
         run = _runs.get(artifacts_dir)
@@ -86,17 +91,27 @@ class ForecastService:
         """Predictions for the newest row of every held symbol, per horizon and model."""
         held = held_symbols(self.db)
         key = (run.run_id, tuple(held))
-        now = self.clock()
-        with _lock:
-            hit = _inference.get(key)
-        if hit is not None and now - hit[0] < INFERENCE_TTL:
-            return hit[1], hit[2]
+        with _compute_lock:
+            now = self.clock()
+            with _lock:
+                hit = _inference.get(key)
+            if hit is not None and now - hit[0] < INFERENCE_TTL:
+                return hit[1], hit[2]
+            out, inputs = self._compute(run, held)
+            with _lock:
+                _inference.clear()
+                _inference[key] = (now, out, inputs)
+            return out, inputs
 
+    def _compute(
+        self, run: store.Run, held: list[tuple[str, AssetClass]]
+    ) -> tuple[pd.DataFrame, Inputs]:
         start = date.today() - timedelta(days=CORRELATION_DAYS + 400)
         inputs = load_inputs(self.market, held, start=start, cached_reference=True)
         panel = build_panel(inputs.assets, inputs.context, inputs.benchmarks)
         symbols = [s for s, _ in held]
-        rows = panel[panel["symbol"].isin(symbols)].groupby("symbol").tail(1).set_index("symbol")
+        rows = panel[panel["symbol"].isin(symbols)].groupby("symbol").tail(1)
+        rows = latest_ranks(panel, rows).set_index("symbol")
         frames = []
         for h, models in run.models.items():
             for name, model in models.items():
@@ -108,8 +123,6 @@ class ForecastService:
                 frames.append(pred)
         out = pd.concat(frames).reset_index(names="symbol")
         self._log(run, out, inputs)
-        with _lock:
-            _inference[key] = (now, out, inputs)
         return out, inputs
 
     def _log(self, run: store.Run, preds: pd.DataFrame, inputs: Inputs) -> None:
@@ -149,7 +162,9 @@ class ForecastService:
         for row in logs:
             if row.symbol not in prices:
                 start = min(r.as_of for r in logs if r.symbol == row.symbol)
-                bars = self.market.get_history(row.symbol, start, final_only=True, cached=True)
+                bars = self.market.get_history(
+                    row.symbol, start, final_only=True, max_age=timedelta(hours=12)
+                )
                 prices[row.symbol] = pd.Series(
                     [b.adj_close for b in bars], index=[b.date for b in bars], dtype=float
                 )
@@ -207,6 +222,11 @@ class ForecastService:
         preds, inputs = self._latest(run)
         mine = preds[preds["symbol"] == symbol]
         if mine.empty:
+            if symbol in dict(held_symbols(self.db)):
+                raise DomainError(
+                    f"{symbol}은(는) 가격 이력이 짧아(300거래일 미만) 아직 예측하지 않습니다",
+                    code="insufficient_history",
+                )
             raise NotFoundError(f"{symbol}은(는) 보유 종목이 아니라 예측하지 않습니다")
         bars = inputs.assets[symbol].bars
         base = float(bars["close"].iloc[-1])
@@ -235,10 +255,19 @@ class ForecastService:
                     "range_edge": bool(comp.get("range", {}).get("edge", False)),
                 }
             )
+        held = next((h for h in self.portfolio.holdings() if h.symbol == symbol), None)
+        krw_rate = None
+        if held is not None and held.currency == Currency.KRW and symbol in UPBIT_MARKETS:
+            # Upbit won per dollar of this coin, premium included: what the user actually sees.
+            premium = self._premia([symbol], inputs).get(symbol)
+            fx = inputs.context_close("usdkrw")
+            if premium is not None and not premium.empty and fx is not None:
+                krw_rate = float(fx.iloc[-1] * np.exp(premium.iloc[-1]))
         return {
             "symbol": symbol,
             "trained_at": run.meta["trained_at"],
             "data_end": run.meta["data_end"],
+            "krw_rate": krw_rate,
             "horizons": horizons,
             "recent": [{"date": d, "close": float(c)} for d, c in bars["close"].iloc[-90:].items()],
         }
@@ -267,6 +296,12 @@ class ForecastService:
         returns = returns.sort_index().ffill()
         returns = returns[returns.index.dayofweek < 5].diff().iloc[-CORRELATION_DAYS:]
 
+        upbit = [
+            h.symbol for h in holdings if h.currency == Currency.KRW and h.symbol in UPBIT_MARKETS
+        ]
+        premia = self._premia(upbit, inputs)
+        premium_model = aggregate.fit_premium(premia)
+
         out = []
         for h in run.models:
             assets = []
@@ -288,14 +323,42 @@ class ForecastService:
             corr = aggregate.correlation(returns[cols])
             days = {"1d": 1, "1w": 7, "1m": 30}[h]
             fx = aggregate.fx_forecast(usdkrw, days)
-            pf = aggregate.simulate(assets, fx, corr, seed=seed)
+            premium = (
+                {s: premium_model.horizon(float(p.iloc[-1]), days) for s, p in premia.items()}
+                if premium_model
+                else None
+            )
+            pf = aggregate.simulate(assets, fx, corr, seed=seed, premium=premium)
             out.append({"horizon": h} | pf.__dict__)
         covered = {a for a in preds["symbol"]}
         return {
             "trained_at": run.meta["trained_at"],
             "horizons": out,
+            "kimchi_premium": {s: float(np.expm1(p.iloc[-1])) for s, p in premia.items()},
             "excluded": [h.symbol for h in holdings if h.symbol not in covered],
         }
+
+    def _premia(self, symbols: list[str], inputs: Inputs) -> dict[str, pd.Series]:
+        """Daily log kimchi premium per coin: Upbit won close over dollar close x USD/KRW."""
+        fx = inputs.context_close("usdkrw")
+        if fx is None:
+            return {}
+        fx = pd.Series(fx.to_numpy(), index=pd.to_datetime(fx.index))
+        out = {}
+        start = date.today() - timedelta(days=CORRELATION_DAYS)
+        for symbol in symbols:
+            if symbol not in inputs.assets:
+                continue
+            try:
+                bars = self.market.get_history(UPBIT_MARKETS[symbol], start, final_only=True)
+            except (SymbolNotFoundError, MarketDataError):
+                continue
+            krw = pd.Series([b.close for b in bars], index=pd.to_datetime([b.date for b in bars]))
+            usd = inputs.assets[symbol].bars["close"]
+            usd = pd.Series(usd.to_numpy(), index=pd.to_datetime(usd.index))
+            rate = fx.reindex(krw.index.union(fx.index)).ffill().reindex(krw.index)
+            out[symbol] = np.log(krw / (usd.reindex(krw.index) * rate)).dropna()
+        return out
 
     def status(self) -> dict:
         path = store.resolve(self.artifacts_dir)

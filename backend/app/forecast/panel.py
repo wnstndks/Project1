@@ -30,6 +30,7 @@ HORIZONS: dict[str, dict[AssetClass, int]] = {
 HORIZON_DAYS = {"1d": 4, "1w": 9, "1m": 32}
 
 MIN_VOL = 1e-4
+MIN_RANK_ASSETS = 5
 ASSET_FEATURES = [
     "r1",
     "r5",
@@ -212,9 +213,11 @@ def build_panel(
 
     # Cross-sectional ranks within each asset class on each date: comparisons between
     # assets carry information a single series does not.
+    # Too few assets make ranks meaningless (BTC alone in 2016 always ranks 1.0).
     grouped = panel.groupby(["date", "asset_class"])
+    enough = grouped["symbol"].transform("size") >= MIN_RANK_ASSETS
     for col in ("r5", "r20", "rv20", "drawdown252"):
-        panel[f"rank_{col}"] = grouped[col].rank(pct=True)
+        panel[f"rank_{col}"] = grouped[col].rank(pct=True).where(enough)
     panel["is_crypto"] = (panel["asset_class"] == "crypto").astype(float)
     return panel
 
@@ -225,3 +228,32 @@ def feature_columns(panel: pd.DataFrame) -> list[str]:
     return [
         c for c in panel.columns if c not in excluded and not c.startswith(("fr_", "scale_", "y_"))
     ]
+
+
+def latest_ranks(panel: pd.DataFrame, rows: pd.DataFrame, max_age_days: int = 4) -> pd.DataFrame:
+    """Recompute rank features for served rows against every asset's newest row.
+
+    At inference the newest date may only have rows for the held symbols (reference assets
+    refresh less often), and ranking within that date alone would compare a stock with two
+    or three others instead of the ~45 the model learned from. Peers here are each asset's
+    latest row in the same class from the last few days.
+    """
+    latest = panel.sort_values("date").groupby("symbol").tail(1)
+    out = rows.copy()
+    for idx, r in rows.iterrows():
+        peers = latest[
+            (latest["asset_class"] == r["asset_class"])
+            & (latest["symbol"] != r["symbol"])
+            & (latest["date"] <= r["date"])
+            & (latest["date"] >= r["date"] - pd.Timedelta(days=max_age_days))
+        ]
+        for col in ("r5", "r20", "rv20", "drawdown252"):
+            values = peers[col].dropna().to_numpy()
+            v = r[col]
+            if pd.isna(v) or len(values) + 1 < MIN_RANK_ASSETS:
+                out.at[idx, f"rank_{col}"] = np.nan
+                continue
+            # Same convention as pandas rank(pct=True): average rank of ties, over n.
+            rank = (values < v).sum() + ((values == v).sum() + 2) / 2
+            out.at[idx, f"rank_{col}"] = rank / (len(values) + 1)
+    return out

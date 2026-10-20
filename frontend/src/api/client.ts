@@ -33,10 +33,13 @@ export type ImportCommit = Schemas['CommitIn']
 
 export class ApiError extends Error {
   readonly status: number
+  /** Machine-readable reason from the backend (e.g. 'not_trained'), when it sends one. */
+  readonly code?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -63,7 +66,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(res.status, errorMessage(body, res.statusText))
+  if (!res.ok) {
+    const code = body && typeof body === 'object' && 'code' in body ? String(body.code) : undefined
+    throw new ApiError(res.status, errorMessage(body, res.statusText), code)
+  }
   return body as T
 }
 
@@ -88,6 +94,8 @@ export const api = {
       body: JSON.stringify({ symbol, currency }),
     }),
   deleteTransaction: (id: number) => request<void>(`/transactions/${id}`, { method: 'DELETE' }),
+  deleteAllTransactions: (scope: 'all' | 'imports') =>
+    request<{ deleted: number }>(`/transactions${query({ confirm: scope })}`, { method: 'DELETE' }),
 
   supportedCrypto: () => request<AssetInfo[]>('/market/crypto'),
   assetInfo: (symbol: string) => request<AssetInfo>(`/market/${encodeURIComponent(symbol)}/info`),

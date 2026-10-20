@@ -59,6 +59,7 @@ def trained_dir(tmp_path_factory):
     mp.setattr(universe, "SECTOR_ETFS", ["XLK", "XLE"])
     mp.setattr(universe, "LARGE_CAPS", ["MSFT", "JPM", "XOM"])
     mp.setattr(universe, "COINS", ["BTC-USD", "ETH-USD", "SOL-USD"])
+    mp.setattr(universe, "FALLEN_COINS", [])
     engine = make_engine("sqlite://", poolclass=StaticPool)
     Base.metadata.create_all(engine)
     out = tmp_path_factory.mktemp("artifacts")
@@ -175,3 +176,41 @@ def test_live_forecasts_are_logged_once_and_scored_later(client, trained, db):
     assert week["scored"] == 1 and week["coverage"] == 1.0
     assert body["recent"][0]["as_of"] == "2026-09-01"
     assert body["pending"] == 2  # the 1d and 1m forecasts are not due yet
+
+
+def test_untrained_error_has_a_machine_readable_code(client, artifacts):
+    assert client.get("/api/forecasts/AAPL").json()["code"] == "not_trained"
+
+
+def test_upbit_coins_carry_the_kimchi_premium(client, trained):
+    body = client.get("/api/forecasts/portfolio").json()
+    assert "BTC-USD" in body["kimchi_premium"]
+    coin = client.get("/api/forecasts/BTC").json()
+    assert coin["krw_rate"] and coin["krw_rate"] > 0
+    assert client.get("/api/forecasts/AAPL").json()["krw_rate"] is None  # a USD stock
+
+
+def test_held_symbol_without_enough_history_says_so(client, trained, monkeypatch):
+    real = forecasts.load_inputs
+
+    def without_msft(*args, **kwargs):
+        inputs = real(*args, **kwargs)
+        inputs.assets.pop("MSFT", None)
+        return inputs
+
+    monkeypatch.setattr(forecasts, "load_inputs", without_msft)
+    buy(client, "MSFT", 1, 400)
+    res = client.get("/api/forecasts/MSFT")
+    assert res.status_code == 422 and res.json()["code"] == "insufficient_history"
+
+
+def test_premium_reverts_toward_its_mean():
+    model = aggregate.PremiumModel(mu=0.01, phi=0.9, sigma=0.005)
+    mean, sd = model.horizon(current=0.08, days=30)
+    assert mean == pytest.approx((0.01 - 0.08) * (1 - 0.9**30))
+    assert 0 < sd < 0.005 * np.sqrt(30)
+    a = aggregate.AssetForecast("BTC-USD", 1_000_000, -0.1, 0.0, 0.1)
+    fx = aggregate.AssetForecast(aggregate.FX, 0, -1e-9, 0.0, 1e-9)
+    plain = aggregate.simulate([a], fx, np.eye(2), seed=3)
+    with_premium = aggregate.simulate([a], fx, np.eye(2), seed=3, premium={"BTC-USD": (mean, sd)})
+    assert with_premium.p50 < plain.p50  # a high premium is expected to shrink

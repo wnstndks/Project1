@@ -8,9 +8,14 @@ that assets fall together, so paths are simulated instead:
 - marginals: a two-piece Student-t through each asset's 10/50/90% quantiles, so skewed
   forecasts stay skewed;
 - won value: every holding is a dollar asset (coins on Upbit track the dollar price times
-  the exchange rate), so its won return is its dollar return plus the USD/KRW return.
+  the exchange rate), so its won return is its dollar return plus the USD/KRW return;
+- the kimchi premium: coins held on Upbit also carry the change in their premium over the
+  dollar price. The premium mean-reverts (a pooled AR(1) on the log premium), so a high
+  premium is expected to shrink: a drift, not just extra noise. The four coins' premia
+  move together, so one shared shock drives them.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -45,6 +50,37 @@ class PortfolioForecast:
     paths: int
 
 
+@dataclass(frozen=True)
+class PremiumModel:
+    """Daily AR(1) of the log kimchi premium: p[t+1] - mu = phi (p[t] - mu) + e."""
+
+    mu: float
+    phi: float
+    sigma: float
+
+    def horizon(self, current: float, days: int) -> tuple[float, float]:
+        """Mean and standard deviation of the premium's change over `days`."""
+        decay = self.phi**days
+        mean = (self.mu - current) * (1 - decay)
+        if self.phi >= 1:
+            return mean, self.sigma * np.sqrt(days)
+        sd = self.sigma * np.sqrt((1 - decay**2) / (1 - self.phi**2))
+        return float(mean), float(sd)
+
+
+def fit_premium(premia: Mapping[str, pd.Series], min_rows: int = 60) -> PremiumModel | None:
+    """Pooled fit over the coins' daily log premia (common mean and persistence)."""
+    series = [s.dropna() for s in premia.values() if len(s.dropna()) >= min_rows]
+    if not series:
+        return None
+    mu = float(np.mean(np.concatenate([s.to_numpy() for s in series])))
+    x = np.concatenate([s.to_numpy()[:-1] - mu for s in series])
+    y = np.concatenate([s.to_numpy()[1:] - mu for s in series])
+    phi = float(np.clip(x @ y / max(x @ x, 1e-12), 0.0, 0.999))
+    sigma = float(np.std(y - phi * x))
+    return PremiumModel(mu, phi, sigma)
+
+
 def correlation(returns: pd.DataFrame, min_rows: int = 120) -> np.ndarray:
     """Shrunk correlation of daily returns (columns = assets). Identity when too short."""
     data = returns.dropna()
@@ -72,8 +108,10 @@ def simulate(
     corr: np.ndarray,
     paths: int = 10_000,
     seed: int = 0,
+    premium: Mapping[str, tuple[float, float]] | None = None,
 ) -> PortfolioForecast:
-    """`corr` is ordered as `assets` followed by the exchange rate."""
+    """`corr` is ordered as `assets` followed by the exchange rate. `premium` maps the
+    symbols held on Upbit to the (mean, sd) of their premium change over the horizon."""
     total = sum(a.value_krw for a in assets)
     if not assets or total <= 0:
         return PortfolioForecast(total, total, total, total, total, 0.0, 0.0, 0)
@@ -86,10 +124,14 @@ def simulate(
     u = np.clip(u, 1e-12, 1 - 1e-12)
 
     fx_ret = _marginal(u[:, -1], fx.q10, fx.q50, fx.q90)
+    shock = rng.standard_normal(paths)  # one premium shock shared by every Upbit coin
     end = np.zeros(paths)
     for i, a in enumerate(assets):
-        r = _marginal(u[:, i], a.q10, a.q50, a.q90)
-        end += a.value_krw * np.exp(r + fx_ret)
+        r = _marginal(u[:, i], a.q10, a.q50, a.q90) + fx_ret
+        if premium and a.symbol in premium:
+            mean, sd = premium[a.symbol]
+            r = r + mean + sd * shock
+        end += a.value_krw * np.exp(r)
     loss = total - end
     var95 = float(np.quantile(loss, 0.95))
     return PortfolioForecast(

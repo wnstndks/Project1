@@ -374,6 +374,51 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Delete All Transactions",
+        "description": "Delete every transaction (`confirm=all`) or only screenshot imports (`imports`).\nThe required parameter keeps a stray DELETE on the collection from wiping the ledger.",
+        "operationId": "delete_all_transactions_api_transactions_delete",
+        "parameters": [
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "all",
+                "imports"
+              ],
+              "type": "string",
+              "title": "Confirm"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/transactions/{tx_id}": {
@@ -1917,6 +1962,19 @@
         ],
         "title": "Currency"
       },
+      "DeletedOut": {
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "title": "DeletedOut"
+      },
       "ErrorMetrics": {
         "properties": {
           "mae": {
@@ -2668,6 +2726,14 @@
             },
             "type": "array",
             "title": "Excluded"
+          },
+          "kimchi_premium": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Kimchi Premium",
+            "default": {}
           }
         },
         "type": "object",
@@ -3252,6 +3318,17 @@
             "type": "string",
             "format": "date",
             "title": "Data End"
+          },
+          "krw_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Krw Rate"
           },
           "horizons": {
             "items": {

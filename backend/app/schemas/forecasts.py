@@ -30,6 +30,8 @@ class SymbolForecastOut(BaseModel):
     symbol: str
     trained_at: datetime
     data_end: date
+    # Won per dollar of this asset as the user values it (Upbit coins: premium included).
+    krw_rate: float | None = None
     horizons: list[HorizonForecastOut]
     recent: list[ClosePoint]
 
@@ -50,6 +52,8 @@ class PortfolioForecastOut(BaseModel):
     trained_at: datetime
     horizons: list[PortfolioHorizonOut]
     excluded: list[str]
+    # Current premium of Upbit-held coins over the dollar price (0.01 = 1%).
+    kimchi_premium: dict[str, float] = {}
 
 
 class ForecastBacktestPoint(BaseModel):

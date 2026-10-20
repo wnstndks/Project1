@@ -8,7 +8,7 @@ minute for the whole universe); later loads only fetch the missing days.
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -55,11 +55,15 @@ def bars_frame(bars) -> pd.DataFrame:
     ).sort_index()
 
 
+# How old reference assets may be at inference: they only feed cross-sectional ranks.
+REFERENCE_MAX_AGE = timedelta(hours=20)
+
+
 def _load(
-    market: MarketDataService, symbol: str, start: date, cached: bool = False
+    market: MarketDataService, symbol: str, start: date, max_age: timedelta | None = None
 ) -> pd.DataFrame | None:
     try:
-        bars = market.get_history(symbol, start, final_only=True, cached=cached)
+        bars = market.get_history(symbol, start, final_only=True, max_age=max_age)
     except (SymbolNotFoundError, MarketDataError) as exc:
         log.warning("Skipping %s: %s", symbol, exc)
         return None
@@ -74,9 +78,9 @@ def load_inputs(
 ) -> Inputs:
     """Held symbols (in their USD form, e.g. BTC-USD) plus the reference universe.
 
-    `cached_reference` reads reference assets from the cache without refreshing them (for
-    inference: they only feed cross-sectional ranks). Held symbols and context series are
-    always brought up to date.
+    `cached_reference` refreshes reference assets at most every REFERENCE_MAX_AGE (for
+    inference, where they only feed cross-sectional ranks). Held symbols and context series
+    are always brought up to date.
     """
     held = dict(held)
     wanted = universe.reference_symbols()
@@ -88,7 +92,7 @@ def load_inputs(
     missing: list[str] = []
     for symbol, cls in wanted.items():
         stale_ok = cached_reference and symbol not in held and symbol not in context_symbols
-        df = _load(market, symbol, start, cached=stale_ok)
+        df = _load(market, symbol, start, REFERENCE_MAX_AGE if stale_ok else None)
         if df is None:
             missing.append(symbol)
         else:

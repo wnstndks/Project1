@@ -2,17 +2,20 @@ from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.data.assets import normalize_symbol
-from app.db.models import AssetType, Currency, Transaction
+from app.db.models import AssetType, CorporateAction, Currency, Transaction
 from app.schemas.transactions import TransactionIn
 from app.services.corporate_actions import confirmed_events
 from app.services.errors import DomainError, NotFoundError
 from app.services.ledger import build_positions, trade_fx
 from app.services.market_data import MarketDataService, SymbolNotFoundError
 from app.services.portfolio import quote_symbol
+
+# Note on transactions created by the screenshot import (lets them be removed together).
+IMPORT_NOTE = "스크린샷 가져오기"
 
 
 class TransactionService:
@@ -106,6 +109,27 @@ class TransactionService:
         self.db.delete(tx)
         self.db.commit()
 
+    def delete_all(self, only_imported: bool = False) -> int:
+        """Delete every transaction (or only screenshot imports). Returns how many.
+
+        Deleting whole symbols keeps every remaining ledger valid, so no per-trade check is
+        needed; when everything goes, the derived dividend/split records go too.
+        """
+        stmt = select(Transaction)
+        if only_imported:
+            stmt = stmt.where(Transaction.note == IMPORT_NOTE)
+        txs = list(self.db.scalars(stmt))
+        if only_imported:
+            # Removing imported buys must not leave later manual sells overselling.
+            for symbol in {t.symbol for t in txs}:
+                self._check_ledger(symbol, removes=[t for t in txs if t.symbol == symbol])
+        for t in txs:
+            self.db.delete(t)
+        if not only_imported:
+            self.db.execute(delete(CorporateAction))
+        self.db.commit()
+        return len(txs)
+
     def _get(self, tx_id: int) -> Transaction:
         tx = self.db.get(Transaction, tx_id)
         if tx is None:
@@ -128,12 +152,17 @@ class TransactionService:
         return data.model_dump() | {"symbol": symbol}
 
     def _check_ledger(
-        self, symbol: str, adds: Sequence[Transaction] = (), remove: Transaction | None = None
+        self,
+        symbol: str,
+        adds: Sequence[Transaction] = (),
+        remove: Transaction | None = None,
+        removes: Sequence[Transaction] = (),
     ) -> None:
+        gone = {t.id for t in removes} | ({remove.id} if remove is not None else set())
         txs = [
             t
             for t in self.db.scalars(select(Transaction).where(Transaction.symbol == symbol))
-            if remove is None or t.id != remove.id
+            if t.id not in gone
         ]
         txs += [t for t in adds if t.symbol == symbol]
         # Confirmed splits count: a post-split sell of 100 shares bought as 10 is valid.

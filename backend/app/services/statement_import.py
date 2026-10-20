@@ -13,12 +13,11 @@ from app.services.errors import DomainError
 from app.services.market_data import MarketDataService, SymbolNotFoundError
 from app.services.portfolio import PortfolioService
 from app.services.screenshot_extractor import ExtractedHolding, HoldingsExtractor, Image
-from app.services.transactions import TransactionService
+from app.services.transactions import IMPORT_NOTE, TransactionService
 
 MAX_IMAGES = 5
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
-IMPORT_NOTE = "스크린샷 가져오기"
 # Average cost / current price outside this range cannot be a real holding. Long-held winners
 # reach 0.005 (NVDA bought in 2016) and big losers 50+, so the band is wide.
 PRICE_SANITY = (Decimal("0.001"), Decimal("1000"))

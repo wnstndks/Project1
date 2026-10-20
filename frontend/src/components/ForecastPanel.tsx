@@ -57,8 +57,7 @@ export function TrainButton({ notTrained }: { notTrained: boolean }) {
 
 export function ForecastPanel({ symbol, fx }: { symbol: string; fx?: number }) {
   const forecast = useForecast(symbol)
-  const notTrained =
-    forecast.error instanceof ApiError && forecast.error.status === 404 && /학습/.test(forecast.error.message)
+  const notTrained = forecast.error instanceof ApiError && forecast.error.code === 'not_trained'
 
   return (
     <div className="space-y-4">
@@ -85,8 +84,11 @@ export function ForecastPanel({ symbol, fx }: { symbol: string; fx?: number }) {
 
 function ForecastView({ data, symbol, fx }: { data: SymbolForecast; symbol: string; fx?: number }) {
   const { currency, format, compact } = useMoney()
-  // Prices are USD; in KRW mode convert at today's rate (the best guess for future rates too).
-  const conv = (usd: number) => (currency === 'KRW' && fx ? usd * fx : usd)
+  // Prices are USD; in KRW mode convert at today's rate (the best guess for future rates
+  // too). Coins held on Upbit use their Upbit rate, which includes the kimchi premium.
+  const rate = data.krw_rate ?? fx
+  const conv = (usd: number) => (currency === 'KRW' && rate ? usd * rate : usd)
+  const coin = symbol.endsWith('-USD')
 
   const rows: Row[] = data.recent.map((p) => ({ t: day(p.date), actual: conv(p.close) }))
   const last = rows.at(-1)
@@ -105,10 +107,12 @@ function ForecastView({ data, symbol, fx }: { data: SymbolForecast; symbol: stri
         <Legend />
         <FanChart rows={rows} format={format} compact={compact} />
       </div>
-      <HorizonTable horizons={data.horizons} format={(v) => format(conv(v))} />
+      <HorizonTable horizons={data.horizons} format={(v) => format(conv(v))} coin={coin} />
       <p className="text-xs text-muted">
         기준선: 오를 확률은 학습 기간에 오른 날의 비율, 범위는 EWMA 변동성 + 두꺼운 꼬리(t분포). 데이터 기준일{' '}
-        {data.horizons[0]?.as_of} 미국 장 마감, 학습 {data.trained_at.slice(0, 16).replace('T', ' ')}.
+        {data.horizons[0]?.as_of} {coin ? '일봉 마감(한국 시간 다음 날 오전 9시, 달러 시세 기준)' : '미국 장 마감'}, 학습{' '}
+        {data.trained_at.slice(0, 16).replace('T', ' ')}.
+        {coin && currency === 'KRW' && (data.krw_rate ? ' 원화는 현재 업비트 가격 비율(김치 프리미엄 포함)로 환산했습니다.' : ' 원화는 달러 시세를 오늘 환율로 환산한 값입니다.')}
       </p>
       <Validation />
       <Backtest symbol={symbol} />
@@ -129,7 +133,19 @@ function Badge({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
   )
 }
 
-function HorizonTable({ horizons, format }: { horizons: HorizonForecast[]; format: (v: number) => string }) {
+/** A coin's daily bar for date D closes at 00:00 UTC on D+1, which is 09:00 the next day in Korea. */
+function closeLabel(date: string, coin: boolean): string {
+  if (!coin) return date
+  const next = new Date(`${date}T00:00:00Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  return `${next.toISOString().slice(0, 10)} 09:00`
+}
+
+function HorizonTable({ horizons, format, coin }: {
+  horizons: HorizonForecast[]
+  format: (v: number) => string
+  coin: boolean
+}) {
   return (
     <div className="-mx-5 overflow-x-auto">
       <table className="num w-full min-w-[640px] text-sm">
@@ -147,7 +163,7 @@ function HorizonTable({ horizons, format }: { horizons: HorizonForecast[]; forma
           {horizons.map((h) => (
             <tr key={h.horizon} className="border-b border-line align-top last:border-0">
               <td className="px-5 py-2.5 font-medium">{HORIZON_LABEL[h.horizon]}</td>
-              <td className="px-3 py-2.5 text-ink-2">{h.target_date}</td>
+              <td className="px-3 py-2.5 text-ink-2">{closeLabel(h.target_date, coin)}</td>
               <td className="px-3 py-2.5 text-right">
                 {format(h.p10)} ~ {format(h.p90)}
                 <div className="text-xs text-muted">

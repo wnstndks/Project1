@@ -174,3 +174,45 @@ def test_metric_sanity():
     )
     adj = metrics.holm({"a": 0.01, "b": 0.04, "c": 0.03})
     assert adj == {"a": 0.03, "c": 0.06, "b": 0.06}
+
+
+def test_latest_ranks_use_recent_peers_when_the_newest_date_is_sparse():
+    from app.forecast.panel import latest_ranks
+
+    panel = synth_panel()
+    last = panel["date"].max()
+    # Only one stock has a row on the newest date; its peers stop a day earlier.
+    sparse = panel[(panel["date"] < last) | (panel["symbol"] == "S0")]
+    row = sparse[(sparse["symbol"] == "S0") & (sparse["date"] == last)]
+    fixed = latest_ranks(sparse, row)
+    day_before = sparse["date"] == last - pd.Timedelta(days=1)
+    peers = sparse[(sparse["asset_class"] == "stock") & day_before & (sparse["symbol"] != "S0")]
+    v = row["r5"].iloc[0]
+    expected = ((peers["r5"] < v).sum() + 1) / (len(peers) + 1)
+    assert fixed["rank_r5"].iloc[0] == pytest.approx(expected)
+
+
+class TooNarrow:
+    """A forecaster whose 10-90% range is far too narrow (it covers about a quarter)."""
+
+    name = "narrow"
+
+    def fit(self, train, target):
+        pass
+
+    def predict(self, rows):
+        n = len(rows)
+        data = {"q10": [-0.3] * n, "q50": [0.0] * n, "q90": [0.3] * n, "p_up": [0.5] * n}
+        return pd.DataFrame(data, index=rows.index)
+
+
+def test_conformal_calibration_reaches_the_target_coverage():
+    panel = synth_panel()
+    oos = walk_forward(panel, "1d", {"narrow": TooNarrow}, CV)
+    raw = ((oos["y"] >= oos["narrow_q10_raw"]) & (oos["y"] <= oos["narrow_q90_raw"])).mean()
+    assert raw < 0.4
+    # Once a full year of out-of-sample errors is available, coverage is on target.
+    start = oos["date"].min() + pd.Timedelta(days=400)
+    late = oos[oos["date"] >= start]
+    covered = ((late["y"] >= late["narrow_q10"]) & (late["y"] <= late["narrow_q90"])).mean()
+    assert covered == pytest.approx(0.8, abs=0.02)
