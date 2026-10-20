@@ -112,6 +112,11 @@ export const api = {
       `/corporate-actions/${id}/${status === 'confirmed' ? 'confirm' : 'ignore'}`,
       { method: 'POST' },
     ),
+  setWithholding: (symbol: string, rate: string) =>
+    request<CorporateAction[]>('/corporate-actions/withholding', {
+      method: 'POST',
+      body: JSON.stringify({ symbol, rate }),
+    }),
   confirmAllDividends: () =>
     request<CorporateAction[]>('/corporate-actions/dividends/confirm-all', { method: 'POST' }),
   kimchi: () => request<KimchiPremium[]>('/market/kimchi'),

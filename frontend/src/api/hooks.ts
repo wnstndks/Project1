@@ -66,6 +66,8 @@ function useLedgerMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: keys.transactions })
       void client.invalidateQueries({ queryKey: ['portfolio'] })
+      // Held shares (and so which events apply, and their effect) depend on the trades.
+      void client.invalidateQueries({ queryKey: ['corporate-actions'] })
     },
   })
 }
@@ -155,6 +157,17 @@ export function useSetActionStatus() {
   return useMutation({
     mutationFn: ({ id, status }: { id: number; status: ActionStatus }) =>
       api.setActionStatus(id, status),
+    onSuccess: (data) => {
+      client.setQueryData(['corporate-actions'], data)
+      void client.invalidateQueries({ queryKey: ['portfolio'] })
+    },
+  })
+}
+
+export function useSetWithholding() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ symbol, rate }: { symbol: string; rate: string }) => api.setWithholding(symbol, rate),
     onSuccess: (data) => {
       client.setQueryData(['corporate-actions'], data)
       void client.invalidateQueries({ queryKey: ['portfolio'] })

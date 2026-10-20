@@ -109,6 +109,9 @@ class CorporateAction(Base):
     value: Mapped[Decimal] = mapped_column(DecimalText)
     status: Mapped[ActionStatus] = mapped_column(_str_enum(ActionStatus, 10))
     detected_at: Mapped[datetime] = mapped_column(DateTime)
+    # Dividends only: tax withheld at source. 15% for US companies under the Korea-US
+    # treaty; foreign ADRs and partnerships differ, so the user can change it per symbol.
+    withholding: Mapped[Decimal] = mapped_column(DecimalText, default=Decimal("0.15"))
 
 
 class NewsArticle(Base):

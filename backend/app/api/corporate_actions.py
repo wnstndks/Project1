@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.db.models import ActionStatus
 from app.deps import get_corporate_action_service
-from app.schemas.corporate_actions import CorporateActionOut
+from app.schemas.corporate_actions import CorporateActionOut, WithholdingIn
 from app.services.corporate_actions import CorporateActionService
 
 router = APIRouter(prefix="/corporate-actions", tags=["corporate-actions"])
@@ -25,6 +25,14 @@ def confirm_all_dividends(
     service: CorporateActionService = Depends(get_corporate_action_service),
 ):
     service.confirm_all_dividends()
+    return [asdict(a) for a in service.list_all()]
+
+
+@router.post("/withholding", response_model=list[CorporateActionOut])
+def set_withholding(
+    data: WithholdingIn, service: CorporateActionService = Depends(get_corporate_action_service)
+):
+    service.set_withholding(data.symbol.upper(), data.rate)
     return [asdict(a) for a in service.list_all()]
 
 

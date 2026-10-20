@@ -435,6 +435,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/corporate-actions/withholding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Withholding */
+        post: operations["set_withholding_api_corporate_actions_withholding_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/corporate-actions/{action_id}/confirm": {
         parameters: {
             query?: never;
@@ -662,6 +679,8 @@ export interface components {
             shares_before: number;
             /** Effect */
             effect: number;
+            /** Withholding */
+            withholding: number;
         };
         /**
          * Currency
@@ -1164,6 +1183,13 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WithholdingIn */
+        WithholdingIn: {
+            /** Symbol */
+            symbol: string;
+            /** Rate */
+            rate: number | string;
         };
         /** YearPointOut */
         YearPointOut: {
@@ -1957,6 +1983,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CorporateActionOut"][];
+                };
+            };
+        };
+    };
+    set_withholding_api_corporate_actions_withholding_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithholdingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorporateActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

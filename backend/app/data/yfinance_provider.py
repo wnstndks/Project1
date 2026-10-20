@@ -10,7 +10,13 @@ from decimal import Decimal
 import pandas as pd
 import yfinance as yf
 
-from app.data.provider import Bar, CorporateEvent, MarketDataError, Quote
+from app.data.provider import (
+    Bar,
+    CorporateEvent,
+    MarketDataError,
+    Quote,
+    unadjust_dividends,
+)
 
 
 class YFinanceProvider:
@@ -61,7 +67,7 @@ class YFinanceProvider:
                 out.append(CorporateEvent(d, "split", Decimal(str(row["Stock Splits"]))))
             if row.get("Dividends", 0) and row["Dividends"] > 0:
                 out.append(CorporateEvent(d, "dividend", Decimal(str(row["Dividends"]))))
-        return out
+        return unadjust_dividends(out)
 
     @staticmethod
     def _download(symbol: str, **kwargs) -> pd.DataFrame:

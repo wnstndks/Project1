@@ -19,6 +19,8 @@ MAX_IMAGES = 5
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
 IMPORT_NOTE = "스크린샷 가져오기"
+# Average cost / current price outside this range means a misread number.
+PRICE_SANITY = (Decimal("0.02"), Decimal("50"))
 
 RowStatus = Literal["ok", "unsupported", "unknown", "invalid"]
 Diff = Literal["new", "same", "different"]
@@ -204,9 +206,21 @@ class StatementImportService:
                 if not (Decimal("500") <= implied_fx <= Decimal("3000")):
                     implied_fx = None
 
-        symbol, status, message = self._resolve(h, asset_type)
+        symbol, status, message, market = self._resolve(h, asset_type)
         if status == "ok" and (qty is None or avg is None):
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
+        if status == "ok" and market and avg is not None:
+            # Vision models sometimes put the won amount, or the position total, in the
+            # unit-price field. No real average cost is 50x the current price either way.
+            now = Decimal(str(market)) * (fx_today if currency == Currency.KRW else 1)
+            ratio = avg / now
+            if not PRICE_SANITY[0] <= ratio <= PRICE_SANITY[1]:
+                status = "invalid"
+                unit = "₩" if currency == Currency.KRW else "$"
+                message = (
+                    f"평균단가가 현재가({unit}{now:,.2f})의 {ratio:,.1f}배입니다. 원화 금액이나 "
+                    "총액을 단가로 읽었을 수 있으니 단가를 확인하세요"
+                )
 
         current, current_cost, held_currency = (
             held.get(symbol, (None, None, None)) if symbol else (None, None, None)
@@ -253,19 +267,20 @@ class StatementImportService:
 
     def _resolve(
         self, h: ExtractedHolding, asset_type: AssetType
-    ) -> tuple[str | None, RowStatus, str | None]:
+    ) -> tuple[str | None, RowStatus, str | None, float | None]:
+        """The symbol, its status, a message for the user, and its current USD price."""
         if not h.ticker:
-            return None, "unknown", "티커를 알 수 없습니다. 직접 입력하세요"
+            return None, "unknown", "티커를 알 수 없습니다. 직접 입력하세요", None
         try:
             # Trust the asset type read from the screenshot: "DOGE" listed as a coin must not
             # fall through to a same-named stock ticker.
             symbol = normalize_symbol(asset_type, h.ticker)
         except UnsupportedSymbolError:
             if asset_type == AssetType.CRYPTO:
-                return None, "unsupported", "지원하는 코인은 BTC, ETH, XRP, SOL입니다"
-            return None, "unknown", f"'{h.ticker}'는 올바른 티커가 아닙니다"
+                return None, "unsupported", "지원하는 코인은 BTC, ETH, XRP, SOL입니다", None
+            return None, "unknown", f"'{h.ticker}'는 올바른 티커가 아닙니다", None
         try:
-            self.market.get_quote(symbol)
+            quote = self.market.get_quote(symbol)
         except SymbolNotFoundError:
-            return symbol, "unknown", f"{symbol} 시세를 찾을 수 없습니다"
-        return symbol, "ok", None
+            return symbol, "unknown", f"{symbol} 시세를 찾을 수 없습니다", None
+        return symbol, "ok", None, quote.price

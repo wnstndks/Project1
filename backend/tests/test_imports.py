@@ -305,3 +305,11 @@ def test_upbit_coin_rows_are_kept_in_krw(client, extractor):
     tx = client.get("/api/transactions").json()[0]
     assert tx["currency"] == "KRW" and tx["price"] == 80_000_000
     assert tx["fx_rate"] is None  # a won trade needs no FX rate
+
+
+def test_won_amount_read_as_unit_price_is_flagged(client, extractor):
+    # A Woori screen: the model put the KRW valuation of 13 shares in the USD price field.
+    extractor.statement.holdings[:] = [holding("알파벳 C", "GOOG", "13", avg="5,879,484")]
+    row = upload(client).json()["rows"][0]
+    assert row["status"] == "invalid"
+    assert "현재가" in row["message"]

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from app.data.provider import split_fraction
 from app.db.models import (
     ActionKind,
     AssetType,
@@ -25,6 +26,8 @@ from app.services.errors import DomainError
 ZERO = Decimal("0")
 # US tax withheld from dividends paid to Korean residents (Korea-US tax treaty rate).
 WITHHOLDING_TAX = Decimal("0.15")
+# Quantities are entered with up to 8 decimals (schemas/transactions.py).
+QTY_STEP = Decimal("1e-8")
 
 # USD/KRW rate for a trade date.
 FxLookup = Callable[[date], Decimal]
@@ -126,12 +129,23 @@ class Position:
             return
         if action.kind == ActionKind.SPLIT:
             # Same money invested, more shares: the average cost falls by the ratio.
-            self.quantity *= action.value
+            self.quantity = split_quantity(self.quantity, action.value)
             return
-        net = self.quantity * action.value * (1 - WITHHOLDING_TAX)
+        net = net_dividend(self.quantity, action)
         self.dividends += net
         if fx is not None:
             self.dividends_krw += net * fx
+
+
+def split_quantity(quantity: Decimal, ratio: Decimal) -> Decimal:
+    """Shares after a split, exact to the 8 decimals quantities are entered with."""
+    f = split_fraction(ratio)
+    return (quantity * f.numerator / f.denominator).quantize(QTY_STEP)
+
+
+def net_dividend(quantity: Decimal, action: CorporateAction) -> Decimal:
+    rate = action.withholding if action.withholding is not None else WITHHOLDING_TAX
+    return quantity * action.value * (1 - rate)
 
 
 def trade_fx(tx: Transaction, fx_on: FxLookup) -> Decimal:
@@ -156,13 +170,14 @@ def timeline(
 ) -> list[Transaction | CorporateAction]:
     """Trades and confirmed corporate actions in replay order.
 
-    An action takes effect at the start of its ex-date, before that day's trades.
+    An action takes effect at the start of its ex-date, before that day's trades. A dividend
+    sharing its ex-date with a split is paid on the pre-split shares.
     """
     trades = ordered(transactions)
     items: list[tuple[tuple, Transaction | CorporateAction]] = [
-        ((e.ex_date, 0, i), e) for i, e in enumerate(events)
+        ((e.ex_date, 0, e.kind != ActionKind.DIVIDEND, i), e) for i, e in enumerate(events)
     ]
-    items += [((t.trade_date, 1, i), t) for i, t in enumerate(trades)]
+    items += [((t.trade_date, 1, 0, i), t) for i, t in enumerate(trades)]
     return [item for _, item in sorted(items, key=lambda p: p[0])]
 
 

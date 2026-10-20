@@ -193,6 +193,40 @@ def test_provider_readjustment_triggers_full_refetch(db, clock):
     assert set(after) == set(before)
 
 
+def test_single_corrected_bar_does_not_wipe_the_cache(db, clock):
+    from dataclasses import replace
+
+    from app.data.fake_provider import FakeProvider
+
+    fixed = TODAY - timedelta(days=4)
+
+    class CorrectingProvider(FakeProvider):
+        """The provider corrects one bar in the overlap window; the rest are unchanged."""
+
+        corrected = False
+
+        def get_history(self, symbol, start, end):
+            bars = super().get_history(symbol, start, end)
+            if self.corrected:
+                bars = [replace(b, close=b.close * 1.02) if b.date == fixed else b for b in bars]
+            return bars
+
+    provider = CorrectingProvider(today=TODAY)
+    service = MarketDataService(db, provider, QuoteCache(), now=clock)
+    service.get_history("NVDA", date(2026, 1, 1))
+    provider.corrected = True
+    provider.history_calls.clear()
+    clock.t += timedelta(hours=1)
+    after = {b.date: b.close for b in service.get_history("NVDA", date(2026, 1, 1))}
+
+    # Only the overlap window was fetched, and the corrected bar was overwritten in place.
+    assert [start for _, start, _ in provider.history_calls] == [TODAY - timedelta(days=10)]
+    expected = {
+        b.date: b.close for b in FakeProvider(today=TODAY).get_history("NVDA", fixed, fixed)
+    }
+    assert after[fixed] == pytest.approx(expected[fixed] * 1.02)
+
+
 def test_unchanged_history_is_not_refetched(service, provider, clock):
     service.get_history("AAPL", date(2026, 6, 1))
     clock.t += timedelta(hours=1)

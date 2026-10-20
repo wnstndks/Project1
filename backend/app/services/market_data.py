@@ -28,6 +28,13 @@ RESCALE_TOLERANCE = 1e-4
 QUOTE_TTL_SECONDS = 60.0
 
 
+def drop_cached_bars(db: Session, symbol: str) -> None:
+    """Forget a symbol's cached bars so the next request downloads its full history.
+    Left for the caller to commit."""
+    db.execute(delete(PriceBar).where(PriceBar.symbol == symbol))
+    db.execute(delete(SymbolSync).where(SymbolSync.symbol == symbol))
+
+
 class SymbolNotFoundError(LookupError):
     pass
 
@@ -156,11 +163,13 @@ class MarketDataService:
             if stale:
                 last = self._last_bar_date(symbol) or sync.fetched_from
                 fresh = self.provider.get_history(symbol, last - OVERLAP, today)
+                full = None
                 if self._rescaled(symbol, fresh, before=last):
                     # The provider re-adjusted its history: every cached bar is on the old
                     # scale, so replace the whole series rather than patching the end.
-                    bars = self.provider.get_history(symbol, fetched_from, today)
-                    replace = bool(bars)
+                    full = self.provider.get_history(symbol, fetched_from, today)
+                if full is not None and self._covers_cache(symbol, full):
+                    bars, replace = full, True
                 else:
                     bars += fresh
             if not bars and not stale and start >= sync.fetched_from:
@@ -187,20 +196,37 @@ class MarketDataService:
             self.db.expire(sync)  # reload the upserted row on next access
 
     def _rescaled(self, symbol: str, fresh: list[Bar], before: date) -> bool:
-        """True if bars the provider re-sent differ from the cache (ignoring the last cached
-        bar, which may have been an in-progress session)."""
+        """True if the provider re-scaled its past bars (ignoring the last cached bar, which
+        may have been an in-progress session).
+
+        A re-adjustment moves every overlapping bar by the same factor; a correction to a
+        single bar does not, and is simply overwritten by the refresh.
+        """
         overlap = {b.date: b for b in fresh if b.date < before}
         if not overlap:
             return False
-        cached = self.db.scalars(
-            select(PriceBar).where(PriceBar.symbol == symbol, PriceBar.date.in_(list(overlap)))
+        cached = list(
+            self.db.scalars(
+                select(PriceBar).where(PriceBar.symbol == symbol, PriceBar.date.in_(list(overlap)))
+            )
         )
-        for row in cached:
-            new = overlap[row.date]
-            for old_v, new_v in ((row.close, new.close), (row.adj_close, new.adj_close)):
-                if old_v and abs(new_v / old_v - 1) > RESCALE_TOLERANCE:
-                    return True
+        for field in ("close", "adj_close"):
+            ratios = [
+                getattr(overlap[row.date], field) / getattr(row, field)
+                for row in cached
+                if getattr(row, field)
+            ]
+            if not ratios or all(abs(r - 1) <= RESCALE_TOLERANCE for r in ratios):
+                continue
+            if max(ratios) / min(ratios) - 1 <= RESCALE_TOLERANCE * 10:
+                return True
         return False
+
+    def _covers_cache(self, symbol: str, bars: list[Bar]) -> bool:
+        """A full refetch may replace the cache only if it reaches back as far (a truncated
+        response must not wipe older history)."""
+        oldest = self.db.scalar(select(func.min(PriceBar.date)).where(PriceBar.symbol == symbol))
+        return bool(bars) and (oldest is None or bars[0].date <= oldest + timedelta(days=7))
 
     def _store(self, symbol: str, bars: list[Bar]) -> None:
         # Chunked to stay under SQLite's bound-parameter limit.

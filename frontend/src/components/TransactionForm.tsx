@@ -181,7 +181,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
             />
           )}
         </Field>
-        <Field label="거래일">
+        <Field label="거래일" hint={form.asset_type === 'stock' ? '미국 현지 날짜' : undefined}>
           <input
             required
             type="date"

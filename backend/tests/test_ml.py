@@ -118,3 +118,11 @@ def test_artifacts_use_atomic_pointer_and_prune_old_runs(tmp_path, provider):
     loaded = artifacts.load(runs[-1])
     assert loaded.meta["symbol"] == "AAPL"
     assert not list(base.glob("*.tmp"))  # no stray pointer temp files
+
+
+def test_calendar_falls_back_to_weekdays_outside_its_range():
+    from app.data.calendar import next_trading_dates, nyse_close_utc
+
+    assert nyse_close_utc(date(1999, 1, 4)) is not None  # Monday, before the calendar starts
+    assert nyse_close_utc(date(1999, 1, 2)) is None  # Saturday
+    assert next_trading_dates("AAPL", date(2040, 1, 6), 1) == [date(2040, 1, 9)]  # Fri -> Mon

@@ -1070,6 +1070,51 @@
         }
       }
     },
+    "/api/corporate-actions/withholding": {
+      "post": {
+        "tags": [
+          "corporate-actions"
+        ],
+        "summary": "Set Withholding",
+        "operationId": "set_withholding_api_corporate_actions_withholding_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithholdingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CorporateActionOut"
+                  },
+                  "type": "array",
+                  "title": "Response Set Withholding Api Corporate Actions Withholding Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/corporate-actions/{action_id}/confirm": {
       "post": {
         "tags": [
@@ -1629,6 +1674,10 @@
           "effect": {
             "type": "number",
             "title": "Effect"
+          },
+          "withholding": {
+            "type": "number",
+            "title": "Withholding"
           }
         },
         "type": "object",
@@ -1640,7 +1689,8 @@
           "value",
           "status",
           "shares_before",
-          "effect"
+          "effect",
+          "withholding"
         ],
         "title": "CorporateActionOut"
       },
@@ -3008,6 +3058,33 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WithholdingIn": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "rate"
+        ],
+        "title": "WithholdingIn"
       },
       "YearPointOut": {
         "properties": {

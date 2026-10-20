@@ -105,6 +105,7 @@ export function Dashboard() {
           ) : history.data ? (
             <div className={history.isPlaceholderData ? 'opacity-50 transition-opacity' : ''}>
               <ValueHistoryChart points={history.data} />
+              <p className="mt-2 text-xs text-muted">시세 × 보유 수량 기준이며, 받은 배당은 포함하지 않습니다.</p>
             </div>
           ) : (
             <div className="h-80" />
