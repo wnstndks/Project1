@@ -84,18 +84,28 @@ def pesaran_timmermann(pred_up: np.ndarray, actual_up: np.ndarray) -> tuple[floa
     return stat, float(1 - stats.norm.cdf(stat))
 
 
+def daily_ic(df: pd.DataFrame, signal: str, outcome: str, min_assets: int = 5) -> pd.Series:
+    """Cross-sectional Spearman correlation per date (and asset class, if the column is
+    there), for groups of at least `min_assets` with a non-constant signal. Indexed by date;
+    a date appears once per class."""
+    keys = ["date", "asset_class"] if "asset_class" in df.columns else ["date"]
+    dates, ics = [], []
+    for key, g in df.groupby(keys, sort=True):
+        if len(g) >= min_assets and g[signal].nunique() > 1 and g[outcome].nunique() > 1:
+            ic = stats.spearmanr(g[signal], g[outcome]).statistic
+            if np.isfinite(ic):
+                dates.append(key[0] if isinstance(key, tuple) else key)
+                ics.append(float(ic))
+    return pd.Series(ics, index=pd.DatetimeIndex(dates), dtype=float)
+
+
 def information_coefficient(
-    df: pd.DataFrame, signal: str, outcome: str, lags: int
+    df: pd.DataFrame, signal: str, outcome: str, lags: int, min_assets: int = 5
 ) -> tuple[float, float]:
     """Mean cross-sectional Spearman correlation per date and asset class (groups with 5+
     assets), and its Newey-West t-statistic. Within a class: stocks and coins differ in
     level, and mixing them would credit even a constant per-class forecast with skill."""
-    ics = []
-    keys = ["date", "asset_class"] if "asset_class" in df.columns else ["date"]
-    for _, g in df.groupby(keys):
-        if len(g) >= 5 and g[signal].nunique() > 1:
-            ics.append(stats.spearmanr(g[signal], g[outcome]).statistic)
-    ics = np.array([x for x in ics if np.isfinite(x)])
+    ics = daily_ic(df, signal, outcome, min_assets).to_numpy()
     if len(ics) < 10:
         return float("nan"), 0.0
     t = float(np.mean(ics) / np.sqrt(newey_west_var(ics, lags) / len(ics)))
@@ -112,3 +122,135 @@ def holm(p_values: dict[str, float]) -> dict[str, float]:
         running = max(running, min(1.0, (m - i) * p))
         adjusted[k] = running
     return adjusted
+
+
+# A calendar year counts for year-by-year consistency only if its observations span at
+# least this many days: a first year that starts in October would otherwise weigh as much
+# as a full one (ISSUE-031).
+MIN_YEAR_SPAN_DAYS = 182
+
+
+def yearly_means(x: pd.Series, min_span_days: int = MIN_YEAR_SPAN_DAYS) -> pd.Series:
+    """Mean of a date-indexed series per calendar year, full-enough years only."""
+    if x.empty:
+        return pd.Series(dtype=float)
+    idx = pd.DatetimeIndex(x.index)
+    years = idx.year
+    span = pd.Series(idx, index=idx).groupby(years).agg(lambda d: (d.max() - d.min()).days + 1)
+    means = pd.Series(x.to_numpy(dtype=float), index=idx).groupby(years).mean()
+    return means[span.reindex(means.index) >= min_span_days]
+
+
+def year_share(x: pd.Series, min_span_days: int = MIN_YEAR_SPAN_DAYS) -> tuple[float, int]:
+    """Share of (full-enough) calendar years with a positive mean, and how many years."""
+    yearly = yearly_means(x, min_span_days)
+    if yearly.empty:
+        return 0.0, 0
+    return float((yearly > 0).mean()), len(yearly)
+
+
+def mean_test(x: np.ndarray, lags: int) -> tuple[float, float]:
+    """One-sided HAC t-test that the mean of `x` is above zero. (stat, p)."""
+    x = np.asarray(x, dtype=float)
+    return diebold_mariano(x, np.zeros_like(x), lags)
+
+
+def stationary_bootstrap_p(
+    x: np.ndarray, block: float = 20.0, n_boot: int = 2000, seed: int = 0
+) -> float:
+    """One-sided p-value that the mean of `x` is above zero, by the stationary bootstrap
+    (Politis and Romano 1994: blocks of geometric length with mean `block`).
+
+    The series is centred to impose the null, resampled, and the observed mean is compared
+    with the resampled means. Serial dependence within blocks is kept.
+    """
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    if n < 10:
+        return 1.0
+    observed = x.mean()
+    centred = x - observed
+    rng = np.random.default_rng(seed)
+    p_new = 1.0 / block
+    idx = np.empty((n_boot, n), dtype=np.int64)
+    idx[:, 0] = rng.integers(0, n, n_boot)
+    starts = rng.integers(0, n, (n_boot, n))
+    jump = rng.random((n_boot, n)) < p_new
+    for t in range(1, n):
+        idx[:, t] = np.where(jump[:, t], starts[:, t], (idx[:, t - 1] + 1) % n)
+    means = centred[idx].mean(axis=1)
+    return float((1 + (means >= observed).sum()) / (n_boot + 1))
+
+
+def sharpe_difference(r1: np.ndarray, r2: np.ndarray, lags: int) -> tuple[float, float, float]:
+    """Test that the Sharpe ratio of `r1` exceeds that of `r2` (same dates), with the HAC
+    delta-method standard error of Ledoit and Wolf (2008). Returns (difference per period,
+    statistic, one-sided p)."""
+    r1, r2 = np.asarray(r1, dtype=float), np.asarray(r2, dtype=float)
+    n = len(r1)
+    if n < 10 or len(r2) != n:
+        return 0.0, 0.0, 1.0
+    mu1, mu2 = r1.mean(), r2.mean()
+    g1, g2 = (r1**2).mean(), (r2**2).mean()
+    s1, s2 = g1 - mu1**2, g2 - mu2**2
+    if s1 <= 0 or s2 <= 0:
+        return 0.0, 0.0, 1.0
+    diff = mu1 / np.sqrt(s1) - mu2 / np.sqrt(s2)
+    grad = np.array([g1 / s1**1.5, -g2 / s2**1.5, -0.5 * mu1 / s1**1.5, 0.5 * mu2 / s2**1.5])
+    y = np.column_stack([r1 - mu1, r2 - mu2, r1**2 - g1, r2**2 - g2])
+    psi = y.T @ y / n
+    for k in range(1, min(lags, n - 1) + 1):
+        w = 1 - k / (lags + 1)
+        gamma = y[k:].T @ y[:-k] / n
+        psi += w * (gamma + gamma.T)
+    var = float(grad @ psi @ grad) / n
+    if var <= 0:
+        return float(diff), 0.0, 1.0
+    stat = float(diff / np.sqrt(var))
+    return float(diff), stat, float(1 - stats.norm.cdf(stat))
+
+
+def deflated_sharpe(
+    r: np.ndarray, n_trials: int, trial_sharpe_var: float | None = None
+) -> tuple[float, float, float]:
+    """Deflated Sharpe ratio (Bailey and Lopez de Prado 2014) of per-period returns `r`.
+
+    The benchmark Sharpe is the expected maximum of `n_trials` unskilled trials. Without
+    the Sharpe ratios of the other trials, their variance is taken as the sampling variance
+    of this one's estimate. Returns (Sharpe per period, benchmark Sharpe, p-value =
+    1 - DSR: the chance an unskilled best-of-n would look at least this good).
+    """
+    r = np.asarray(r, dtype=float)
+    n = len(r)
+    if n < 10 or r.std() == 0:
+        return 0.0, 0.0, 1.0
+    sr = float(r.mean() / r.std())
+    skew = float(stats.skew(r))
+    kurt = float(stats.kurtosis(r, fisher=False))
+    denom = 1 - skew * sr + (kurt - 1) / 4 * sr**2
+    if denom <= 0:
+        return sr, 0.0, 1.0
+    var = trial_sharpe_var if trial_sharpe_var is not None else denom / (n - 1)
+    if n_trials <= 1:
+        sr0 = 0.0
+    else:
+        gamma = 0.5772156649015329
+        sr0 = float(
+            np.sqrt(var)
+            * (
+                (1 - gamma) * stats.norm.ppf(1 - 1 / n_trials)
+                + gamma * stats.norm.ppf(1 - 1 / (n_trials * np.e))
+            )
+        )
+    z = (sr - sr0) * np.sqrt(n - 1) / np.sqrt(denom)
+    return sr, sr0, float(1 - stats.norm.cdf(z))
+
+
+def wilson_lower(hits: int, n: int, z: float = 1.959963984540054) -> float | None:
+    """Lower end of the Wilson score interval for a hit rate; None without observations."""
+    if n <= 0:
+        return None
+    p = hits / n
+    centre = p + z * z / (2 * n)
+    margin = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return float((centre - margin) / (1 + z * z / n))

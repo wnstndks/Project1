@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -288,3 +288,189 @@ def test_unchanged_history_is_not_refetched(service, provider, clock):
     # Second call only re-downloads the short overlap window, not the whole series.
     _, start, _ = provider.history_calls[-1]
     assert start >= TODAY - timedelta(days=15)
+
+
+# --- finality: a bar is final only if it was downloaded after its session closed ---------
+
+D = date(2026, 10, 15)  # Thursday
+
+
+class IntradayProvider:
+    """Wraps FakeProvider: bar D comes back 10% lower until it has closed (00:00 UTC D+1
+    for coins), like an in-progress session. `drop` lists dates the provider stops sending."""
+
+    def __init__(self, clock) -> None:
+        from app.data.fake_provider import FakeProvider
+
+        self.inner = FakeProvider(today=D + timedelta(days=1))
+        self.clock = clock
+        self.calls = 0
+        self.drop: set[date] = set()
+        self.empty = False
+
+    def get_history(self, symbol, start, end):
+        from dataclasses import replace
+
+        self.calls += 1
+        if self.empty:
+            return []
+        final = self.clock() >= datetime.combine(D + timedelta(days=1), datetime.min.time(), UTC)
+        out = []
+        for b in self.inner.get_history(symbol, start, end):
+            if b.date in self.drop:
+                continue
+            if b.date == D and not final:
+                b = replace(b, close=b.close * 0.9, adj_close=b.adj_close * 0.9)
+            out.append(b)
+        return out
+
+    def get_quote(self, symbol):
+        return self.inner.get_quote(symbol)
+
+
+def _true_close(symbol: str, d: date) -> float:
+    from app.data.fake_provider import FakeProvider
+
+    return FakeProvider(today=d).get_history(symbol, d, d)[0].close
+
+
+def _intraday_service(db, at: datetime):
+    t = {"now": at}
+    provider = IntradayProvider(lambda: t["now"])
+    svc = MarketDataService(
+        db,
+        provider,
+        QuoteCache(),
+        now=lambda: (t["now"] + timedelta(hours=9)).replace(tzinfo=None),  # local KST clock
+        utc_now=lambda: t["now"],
+    )
+    return svc, provider, t
+
+
+@pytest.mark.parametrize(
+    ("synced", "read", "max_age"),
+    [
+        # Inside the 15-minute TTL, but the bar closed in between.
+        (
+            datetime(2026, 10, 15, 23, 55, tzinfo=UTC),
+            datetime(2026, 10, 16, 0, 5, tzinfo=UTC),
+            None,
+        ),
+        # The forecaster's reference path: max_age would otherwise skip the sync.
+        (
+            datetime(2026, 10, 15, 6, 0, tzinfo=UTC),
+            datetime(2026, 10, 16, 0, 40, tzinfo=UTC),
+            timedelta(hours=20),
+        ),
+    ],
+)
+def test_bar_cached_in_progress_is_refetched_once_it_closes(db, synced, read, max_age):
+    svc, provider, t = _intraday_service(db, synced)
+    assert svc.get_history("BTC-USD", date(2026, 9, 1), final_only=True)[-1].date < D
+    t["now"] = read
+    calls = provider.calls
+    bars = svc.get_history("BTC-USD", date(2026, 9, 1), final_only=True, max_age=max_age)
+    assert provider.calls > calls
+    assert bars[-1].date == D
+    assert bars[-1].close == pytest.approx(_true_close("BTC-USD", D))
+
+
+def test_in_progress_bar_is_hidden_until_a_final_version_arrives(db):
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 15, 12, 0, tzinfo=UTC))
+    svc.get_history("BTC-USD", date(2026, 9, 1))
+    # Closed now, but the refresh fails: the stale partial bar must not pass as final.
+    t["now"] = datetime(2026, 10, 16, 1, 0, tzinfo=UTC)
+    provider.empty = True
+    assert svc.get_history("BTC-USD", date(2026, 9, 1), final_only=True)[-1].date < D
+    # Not final_only (display): the cached value is still shown.
+    assert svc.get_history("BTC-USD", date(2026, 9, 1))[-1].date == D
+
+
+def test_empty_refresh_does_not_advance_synced_at(db):
+    from app.db.models import SymbolSync
+
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 15, 12, 0, tzinfo=UTC))
+    svc.get_history("AAPL", date(2026, 9, 1))
+    before = db.get(SymbolSync, "AAPL").synced_at
+    assert before == datetime(2026, 10, 15, 12, 0)  # naive UTC, not the local clock
+    provider.empty = True
+    t["now"] += timedelta(hours=2)
+    svc.get_history("AAPL", date(2026, 9, 1))
+    db.expire_all()
+    assert db.get(SymbolSync, "AAPL").synced_at == before
+
+
+def test_in_progress_bar_the_provider_no_longer_returns_is_deleted(db):
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 15, 12, 0, tzinfo=UTC))
+    svc.get_history("BTC-USD", date(2026, 9, 1))
+    t["now"] = datetime(2026, 10, 16, 1, 0, tzinfo=UTC)
+    # The provider skips D (in progress when cached) and D-2 (final when cached).
+    provider.drop = {D, D - timedelta(days=2)}
+    dates = {b.date for b in svc.get_history("BTC-USD", date(2026, 9, 1))}
+    assert D not in dates
+    assert D - timedelta(days=2) in dates  # a final bar survives a provider hiccup
+
+
+def test_synced_at_in_the_future_is_not_trusted(db):
+    from app.db.models import SymbolSync
+
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 15, 12, 0, tzinfo=UTC))
+    svc.get_history("BTC-USD", date(2026, 9, 1))
+    # A legacy row written in local time (KST, 9 hours ahead) after D had closed in KST.
+    db.get(SymbolSync, "BTC-USD").synced_at = datetime(2026, 10, 16, 9, 30)
+    db.commit()
+    t["now"] = datetime(2026, 10, 15, 12, 5, tzinfo=UTC)
+    calls = provider.calls
+    bars = svc.get_history("BTC-USD", date(2026, 9, 1), final_only=True)
+    assert provider.calls > calls  # refreshed instead of trusting the future timestamp
+    assert bars[-1].date < D
+    db.expire_all()
+    assert db.get(SymbolSync, "BTC-USD").synced_at == datetime(2026, 10, 15, 12, 5)
+
+
+def test_refill_gaps_requests_dates_missing_inside_the_cache(db):
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 16, 12, 0, tzinfo=UTC))
+    hole = {date(2026, 9, 10), date(2026, 9, 11)}
+    provider.drop = set(hole)
+    svc.get_history("BTC-USD", date(2026, 9, 1))
+    provider.drop = {date(2026, 9, 11)}  # one day comes back, the other is still absent
+    assert svc.refill_gaps("BTC-USD") == [date(2026, 9, 11)]
+    dates = {b.date for b in svc.get_history("BTC-USD", date(2026, 9, 1))}
+    assert date(2026, 9, 10) in dates and date(2026, 9, 11) not in dates
+
+
+def test_provider_bars_are_validated_before_caching(db):
+    from dataclasses import replace
+
+    svc, provider, t = _intraday_service(db, datetime(2026, 10, 16, 12, 0, tzinfo=UTC))
+    real = provider.inner.get_history
+
+    def broken(symbol, start, end):
+        out = []
+        for b in real(symbol, start, end):
+            if b.date == date(2026, 9, 2):
+                b = replace(b, close=0.0)
+            if b.date == date(2026, 9, 3):
+                b = replace(b, open=float("nan"), high=0.0, low=0.0)
+            out.append(b)
+        return out
+
+    provider.inner.get_history = broken
+    bars = {b.date: b for b in svc.get_history("^VIX", date(2026, 9, 1))}
+    assert date(2026, 9, 2) not in bars  # no usable close: dropped
+    kept = bars[date(2026, 9, 3)]  # usable close, broken range: kept, open stored as 0
+    assert kept.open == 0.0 and kept.close > 0
+
+
+def test_strict_usd_krw_lookup_raises_instead_of_substituting(db, provider, clock):
+    from app.data.provider import DataUnavailableError
+
+    svc = MarketDataService(db, provider, QuoteCache(), now=clock)
+    lookup = svc.usd_krw_lookup(date(2026, 9, 1), strict=True)
+    assert lookup(date(2026, 9, 5)) > 0
+    with pytest.raises(DataUnavailableError):
+        lookup(date(2026, 8, 1))  # before the loaded history
+    with pytest.raises(DataUnavailableError):
+        lookup(TODAY + timedelta(days=30))  # last known rate is too old
+    # The display lookup keeps falling back.
+    assert svc.usd_krw_lookup(date(2026, 9, 1))(date(2026, 8, 1)) > 0

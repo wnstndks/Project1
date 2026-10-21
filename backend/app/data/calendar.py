@@ -6,11 +6,17 @@ and their daily bars close at 00:00 UTC; the USD/KRW series is treated the same 
 
 from datetime import UTC, date, datetime, time, timedelta
 from functools import lru_cache
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from app.data.assets import FX_USDKRW, trades_every_day
+
+# Which dates a symbol is expected to have a bar on: NYSE sessions (stocks, ETFs, US
+# indices), every day (coins, Upbit markets), or weekdays (Yahoo FX, which also skips some
+# London holidays).
+CalendarKind = Literal["xnys", "daily", "weekdays"]
 
 NEW_YORK = ZoneInfo("America/New_York")
 REGULAR_CLOSE = time(16, 0)
@@ -66,6 +72,37 @@ def bar_is_final(symbol: str, bar_date: date, now_utc: datetime) -> bool:
         return True  # no session that day, so nothing in progress
     # The closing auction print and final volume reach Yahoo a little after the bell.
     return now_utc >= close + SETTLE_DELAY
+
+
+def calendar_kind(symbol: str) -> CalendarKind:
+    if symbol == FX_USDKRW:
+        return "weekdays"
+    return "daily" if trades_every_day(symbol) else "xnys"
+
+
+def expected_dates(symbol: str, start: date, end: date) -> list[date]:
+    """Dates in [start, end] on which `symbol` should have a daily bar."""
+    if end < start:
+        return []
+    days = pd.date_range(start, end, freq="D")
+    kind = calendar_kind(symbol)
+    if kind == "daily":
+        return [d.date() for d in days]
+    if kind == "weekdays":
+        return [d.date() for d in days if d.dayofweek < 5]
+    cal = _nyse()
+    lo, hi = max(days[0], cal.first_session), min(days[-1], cal.last_session)
+    sessions = set(cal.sessions_in_range(lo, hi).tz_localize(None)) if lo <= hi else set()
+    # Outside the calendar's window: weekdays, as in _is_session.
+    return [d.date() for d in days if d in sessions or (not lo <= d <= hi and d.dayofweek < 5)]
+
+
+def last_final_date(symbol: str, on_or_before: date, now_utc: datetime) -> date | None:
+    """The newest date up to `on_or_before` whose bar should exist and be final by now."""
+    for d in reversed(expected_dates(symbol, on_or_before - timedelta(days=14), on_or_before)):
+        if bar_is_final(symbol, d, now_utc):
+            return d
+    return None
 
 
 def next_trading_dates(symbol: str, after: date, n: int) -> list[date]:

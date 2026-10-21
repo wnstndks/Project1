@@ -93,6 +93,25 @@ class PooledGBDT:
     VALIDATION_GAP = pd.Timedelta(days=40)
     PATIENCE = 50
     MIN_TREES = 20
+    # Per-engine settings; n_estimators is passed separately. Part of the config hash.
+    LIGHTGBM_PARAMS = {
+        "learning_rate": 0.02,
+        "num_leaves": 15,
+        "min_child_samples": 500,
+        "subsample": 0.7,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.7,
+        "reg_lambda": 10.0,
+        "random_state": 0,
+    }
+    SKLEARN_PARAMS = {
+        "max_iter_cap": 300,
+        "learning_rate": 0.05,
+        "max_leaf_nodes": 15,
+        "min_samples_leaf": 500,
+        "l2_regularization": 10.0,
+        "random_state": 0,
+    }
 
     def __init__(self, features: list[str], engine: str = "auto", n_estimators: int = 1000) -> None:
         self.features = features
@@ -107,37 +126,38 @@ class PooledGBDT:
         self.engine = engine
         self.trees: dict[str, int] = {}
 
+    def config(self) -> dict:
+        """Everything that changes what this model learns, for the run's config hash."""
+        out: dict = {
+            "engine": self.engine,
+            "n_estimators": self.n_estimators,
+            "quantiles": list(QUANTILES),
+        }
+        if self.engine == "lightgbm":
+            out["params"] = dict(self.LIGHTGBM_PARAMS)
+            out["early_stopping"] = {
+                "validation_share": self.VALIDATION_SHARE,
+                "validation_gap_days": self.VALIDATION_GAP.days,
+                "patience": self.PATIENCE,
+                "min_trees": self.MIN_TREES,
+            }
+        else:
+            out["params"] = dict(self.SKLEARN_PARAMS)
+        return out
+
     def _model(self, kind: str, alpha: float = 0.5, n_estimators: int | None = None):
         n = n_estimators or self.n_estimators
         if self.engine == "lightgbm":
             import lightgbm as lgb
 
-            common = dict(
-                n_estimators=n,
-                learning_rate=0.02,
-                num_leaves=15,
-                min_child_samples=500,
-                subsample=0.7,
-                subsample_freq=1,
-                colsample_bytree=0.7,
-                reg_lambda=10.0,
-                verbose=-1,
-                random_state=0,
-                n_jobs=4,
-            )
+            common = dict(n_estimators=n, verbose=-1, n_jobs=4, **self.LIGHTGBM_PARAMS)
             if kind == "classifier":
                 return lgb.LGBMClassifier(**common)
             return lgb.LGBMRegressor(objective="quantile", alpha=alpha, **common)
         from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
 
-        common = dict(
-            max_iter=min(n, 300),
-            learning_rate=0.05,
-            max_leaf_nodes=15,
-            min_samples_leaf=500,
-            l2_regularization=10.0,
-            random_state=0,
-        )
+        params = dict(self.SKLEARN_PARAMS)
+        common = dict(max_iter=min(n, params.pop("max_iter_cap")), **params)
         if kind == "classifier":
             return HistGradientBoostingClassifier(**common)
         return HistGradientBoostingRegressor(loss="quantile", quantile=alpha, **common)

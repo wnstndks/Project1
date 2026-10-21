@@ -2,7 +2,7 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, Float, Index, String, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, DecimalText
@@ -209,3 +209,84 @@ class SymbolSync(Base):
     symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
     fetched_from: Mapped[date] = mapped_column(Date)
     synced_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class KillSwitchEvent(Base):
+    """Append-only log of the kill switch; the latest row is the current state.
+
+    `action` is "trip" or "reset", `actor` is "system" or "user". Only the user resets.
+    `detail` holds ratios only, never amounts, keys or account details.
+    """
+
+    __tablename__ = "kill_switch_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime)
+    action: Mapped[str] = mapped_column(String(5))
+    reason_code: Mapped[str] = mapped_column(String(20))
+    detail: Mapped[str] = mapped_column(String(200), default="")
+    actor: Mapped[str] = mapped_column(String(6))
+
+
+class PaperSignal(Base):
+    """One strategy signal and what the paper account did with it, scored later.
+
+    Paper trading never writes to `transactions`, so real holdings stay untouched. Only the
+    first signal per (strategy, symbol, as_of) is kept. Prices are in the asset's currency
+    (USD), amounts in KRW at the day's USD/KRW (DECISIONS.md D-014). Fills happen at the
+    next bar's open, never on the signal's own bar.
+    """
+
+    __tablename__ = "paper_signals"
+    __table_args__ = (Index("ix_paper_signals_key", "strategy_id", "symbol", "as_of", unique=True),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    strategy_id: Mapped[str] = mapped_column(String(40))
+    symbol: Mapped[str] = mapped_column(String(20))
+    asset_class: Mapped[str] = mapped_column(String(6))
+    as_of: Mapped[date] = mapped_column(Date)
+    horizon: Mapped[str] = mapped_column(String(4))
+    # buy | sell | hold | no_edge
+    action: Mapped[str] = mapped_column(String(8))
+    # The strategy's own state after this signal (S1: buy -> held, sell/no_edge -> not held,
+    # hold -> unchanged); the next decision day reads it. Not the paper account's position.
+    held_after: Mapped[bool] = mapped_column(Boolean)
+    # high | medium | low (display only, never used by the trading rule)
+    confidence: Mapped[str | None] = mapped_column(String(8))
+    rationale: Mapped[dict] = mapped_column(JSON)
+    # Close of the signal's bar and USD/KRW that day.
+    ref_price: Mapped[float | None] = mapped_column(Float)
+    ref_fx: Mapped[float | None] = mapped_column(Float)
+    target_weight: Mapped[float | None] = mapped_column(Float)
+    # Risk check: none (no order needed) | accepted | clipped | rejected | failed | halted
+    risk_status: Mapped[str] = mapped_column(String(8))
+    risk_reason: Mapped[str | None] = mapped_column(String(200))
+    side: Mapped[str | None] = mapped_column(String(4))
+    # Approved order size at signal time. A buy spends at most this at the fill; a sell's
+    # quantity is fixed at signal time and never exceeds what the paper account holds.
+    notional_krw: Mapped[Decimal | None] = mapped_column(DecimalText)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    # none | pending | filled | expired
+    fill_status: Mapped[str] = mapped_column(String(8))
+    fill_date: Mapped[date | None] = mapped_column(Date)
+    # Why a fill was cut or skipped: cash (not enough after the open gapped) | nothing_held |
+    # no_bar (next bar never arrived) | kill_switch (tripped between approval and fill)
+    fill_note: Mapped[str | None] = mapped_column(String(20))
+    quantity: Mapped[Decimal | None] = mapped_column(DecimalText)
+    # Next bar's open with slippage, in `currency`.
+    fill_price: Mapped[Decimal | None] = mapped_column(DecimalText)
+    fill_fx: Mapped[Decimal | None] = mapped_column(DecimalText)
+    fee_krw: Mapped[Decimal | None] = mapped_column(DecimalText)
+    slippage_bps: Mapped[float | None] = mapped_column(Float)
+    # Scoring once the horizon has passed: total return (dividends net of withholding) from
+    # the close on as_of to the close on target_date, and the class benchmark's over the same
+    # dates (SPY for stocks, BTC for coins).
+    target_date: Mapped[date | None] = mapped_column(Date)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime)
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    signal_return: Mapped[float | None] = mapped_column(Float)
+    benchmark_return: Mapped[float | None] = mapped_column(Float)
+    # Filled orders only: value change of the bought or sold quantity to target_date, in KRW,
+    # after the fee.
+    trade_pnl_krw: Mapped[Decimal | None] = mapped_column(DecimalText)

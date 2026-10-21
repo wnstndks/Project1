@@ -8,14 +8,20 @@ A US stock's D bar closes 16:00 New York; a coin's D bar closes 00:00 UTC the ne
 which is after the US close. So coin rows may use that day's US market data, while stock
 rows only see the previous day's coin data. Every context series declares the lag (in
 calendar days) each asset class must apply; the join is then an as-of join.
+
+Returns and targets are counted in calendar slots, not bars: every series is first laid
+on its expected calendar (NYSE sessions for stocks, every day for coins), so a bar missing
+from the data becomes a gap instead of silently turning a one-day return into two.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 import pandas as pd
+
+from app.data import calendar as market_calendar
 
 AssetClass = Literal["stock", "crypto"]
 
@@ -26,11 +32,22 @@ HORIZONS: dict[str, dict[AssetClass, int]] = {
     "1w": {"stock": 5, "crypto": 7},
     "1m": {"stock": 21, "crypto": 30},
 }
-# Calendar days a horizon spans at most; used to purge training rows near a test block.
-HORIZON_DAYS = {"1d": 4, "1w": 9, "1m": 32}
+# Calendar days a horizon spans at most; used to purge training rows near a test block and
+# to tell when a target is known. The longest spans in the NYSE calendar (unscheduled
+# closures included, e.g. 2006-12-29 -> 2007-01-03 for one session); coins need 1/7/30.
+# tests/test_panel.py checks these against app.data.calendar.
+HORIZON_DAYS = {"1d": 5, "1w": 12, "1m": 35}
 
+# Bump when features or targets are computed differently: it is part of the config hash.
+# 2: calendar-based returns and targets, tolerant volatility scale, filled context gaps,
+#    HORIZON_DAYS as true maximum spans (5/12/35).
+PANEL_VERSION = 2
 MIN_VOL = 1e-4
+# Days of the 20-day window that must be present for the volatility used as a scale.
+MIN_VOL_DAYS = 15
 MIN_RANK_ASSETS = 5
+# How many days a context series (index, rate) carries its last value over missing days.
+CONTEXT_FILL_DAYS = 5
 ASSET_FEATURES = [
     "r1",
     "r5",
@@ -75,6 +92,47 @@ def _dates(index) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(pd.to_datetime(index)).as_unit("ns")
 
 
+Calendar = Literal["xnys", "daily"]
+
+# Market calendars live in app.data.calendar only, which answers per symbol; these symbols
+# stand for each calendar (synthetic test symbols would not map to the right one).
+_CALENDAR_SYMBOL: dict[Calendar, str] = {"xnys": "SPY", "daily": "BTC-USD"}
+# Share of weekend bars above which a context series is taken to trade every day (coins
+# have 2/7; an index or FX series has none or a stray few).
+DAILY_WEEKEND_SHARE = 0.1
+
+
+def xnys_sessions(start, end) -> pd.DatetimeIndex:
+    """NYSE sessions from start to end inclusive (weekdays outside the known calendar)."""
+    days = market_calendar.expected_dates(
+        _CALENDAR_SYMBOL["xnys"], pd.Timestamp(start).date(), pd.Timestamp(end).date()
+    )
+    return _dates(days)
+
+
+def expected_dates(index, calendar: Calendar) -> pd.DatetimeIndex:
+    """Every date a series spanning `index` should have a bar on, plus the ones it has."""
+    have = _dates(index)
+    if have.empty:
+        return have
+    full = market_calendar.expected_dates(
+        _CALENDAR_SYMBOL[calendar], have.min().date(), have.max().date()
+    )
+    return _dates(full).union(have)
+
+
+def regularize(bars: pd.DataFrame, calendar: Calendar) -> pd.DataFrame:
+    """Bars on their full calendar: dates without a bar become rows of NaN."""
+    out = bars.copy()
+    out.index = _dates(out.index)
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    return out.reindex(expected_dates(out.index, calendar))
+
+
+def asset_calendar(asset_class: AssetClass) -> Calendar:
+    return "daily" if asset_class == "crypto" else "xnys"
+
+
 def _log_ret(p: pd.Series, n: int) -> pd.Series:
     return np.log(p) - np.log(p.shift(n))
 
@@ -83,14 +141,15 @@ def asset_features(bars: pd.DataFrame, benchmark: pd.Series | None = None) -> pd
     """Features for one asset. Row t uses bars up to and including t only.
 
     Returns are divided by the asset's own 20-day volatility so one pooled model can learn
-    across a utility stock and a coin.
+    across a utility stock and a coin. Shifts count rows, so `bars` should already be on
+    its calendar (`regularize`): a missing row would stretch every return across it.
     """
     p = bars["adj_close"]
     lr = np.log(p).diff()
     rv5 = lr.rolling(5).std()
     rv20 = lr.rolling(20).std()
     rv60 = lr.rolling(60).std()
-    vol = rv20.clip(lower=MIN_VOL)
+    vol = _scale_vol(lr)
     # RiskMetrics EWMA (lambda 0.94): reacts faster than the 20-day window.
     ewma = np.sqrt((lr**2).ewm(alpha=0.06, adjust=False).mean())
 
@@ -117,8 +176,9 @@ def asset_features(bars: pd.DataFrame, benchmark: pd.Series | None = None) -> pd
     out["volume_z"] = (lv - lv.rolling(60).mean()) / lv.rolling(60).std().replace(0, np.nan)
 
     if benchmark is not None:
-        b = benchmark.reindex(bars.index)
-        blr = np.log(b).diff()
+        b = pd.Series(benchmark.to_numpy(dtype=float), index=_dates(benchmark.index))
+        b = b[~b.index.duplicated(keep="last")].reindex(_dates(bars.index))
+        blr = pd.Series(np.log(b.to_numpy()), index=bars.index).diff()
         cov = lr.rolling(60, min_periods=40).cov(blr)
         beta = cov / blr.rolling(60, min_periods=40).var()
         out["beta60"] = beta
@@ -130,6 +190,12 @@ def asset_features(bars: pd.DataFrame, benchmark: pd.Series | None = None) -> pd
     return out
 
 
+def _scale_vol(lr: pd.Series) -> pd.Series:
+    """20-day volatility used to standardize returns. A missing day or two in the window
+    still gives an estimate, so one gap does not blank out the scale for 20 days."""
+    return lr.rolling(20, min_periods=MIN_VOL_DAYS).std().clip(lower=MIN_VOL)
+
+
 def asset_targets(bars: pd.DataFrame, asset_class: AssetClass) -> pd.DataFrame:
     """Forward targets. These look into the future by design and are never features.
 
@@ -138,7 +204,7 @@ def asset_targets(bars: pd.DataFrame, asset_class: AssetClass) -> pd.DataFrame:
     """
     p = bars["adj_close"]
     log_p = np.log(p)
-    vol = np.log(p).diff().rolling(20).std().clip(lower=MIN_VOL)
+    vol = _scale_vol(log_p.diff())
     out = pd.DataFrame(index=bars.index)
     for name, steps in HORIZONS.items():
         h = steps[asset_class]
@@ -154,8 +220,13 @@ def context_features(context: list[ContextSeries]) -> dict[AssetClass, pd.DataFr
     """Context columns per asset class, already lagged so an as-of join on D is safe."""
     out: dict[AssetClass, list[pd.DataFrame]] = {"stock": [], "crypto": []}
     for c in context:
-        p = c.bars["close"]
-        f = pd.DataFrame(index=c.bars.index)
+        # A series with weekend bars trades every day; everything else follows the NYSE.
+        # Over a missing day the last value carries (briefly), so changes span dates.
+        weekend_share = (_dates(c.bars.index).dayofweek >= 5).mean() if len(c.bars) else 0.0
+        calendar = "daily" if weekend_share > DAILY_WEEKEND_SHARE else "xnys"
+        bars = regularize(c.bars[["close"]], calendar).ffill(limit=CONTEXT_FILL_DAYS)
+        p = bars["close"]
+        f = pd.DataFrame(index=bars.index)
         if c.kind == "level":
             f[c.name] = p
             f[f"{c.name}_chg5"] = np.log(p) - np.log(p.shift(5))
@@ -198,12 +269,13 @@ def build_panel(
     ctx = context_features(list(context))
     frames = []
     for symbol, a in assets.items():
-        bars = a.bars.sort_index()
+        bars = regularize(a.bars, asset_calendar(a.asset_class))
+        has_bar = bars["adj_close"].notna().to_numpy()
         bench = (benchmarks or {}).get(a.asset_class)
         f = asset_features(bars, bench)
         t = asset_targets(bars, a.asset_class)
-        df = pd.concat([f, t], axis=1)
-        df.index = _dates(df.index)
+        # Calendar slots without a bar only served to keep returns aligned to dates.
+        df = pd.concat([f, t], axis=1)[has_bar]
         df = df.reset_index(names="date")
         df["symbol"] = symbol
         df["asset_class"] = a.asset_class
@@ -230,25 +302,36 @@ def feature_columns(panel: pd.DataFrame) -> list[str]:
     ]
 
 
-def latest_ranks(panel: pd.DataFrame, rows: pd.DataFrame, max_age_days: int = 4) -> pd.DataFrame:
+def latest_ranks(
+    panel: pd.DataFrame,
+    rows: pd.DataFrame,
+    max_age_days: int = 4,
+    peers: Collection[str] | None = None,
+) -> pd.DataFrame:
     """Recompute rank features for served rows against every asset's newest row.
 
     At inference the newest date may only have rows for the held symbols (reference assets
     refresh less often), and ranking within that date alone would compare a stock with two
     or three others instead of the ~45 the model learned from. Peers here are each asset's
     latest row in the same class from the last few days.
+
+    `peers` limits the comparison to the symbols the model was trained with (the run's
+    `meta["universe"]`), so a reference list edited after training does not change the
+    rank features the model sees.
     """
     latest = panel.sort_values("date").groupby("symbol").tail(1)
+    if peers is not None:
+        latest = latest[latest["symbol"].isin(set(peers))]
     out = rows.copy()
     for idx, r in rows.iterrows():
-        peers = latest[
+        group = latest[
             (latest["asset_class"] == r["asset_class"])
             & (latest["symbol"] != r["symbol"])
             & (latest["date"] <= r["date"])
             & (latest["date"] >= r["date"] - pd.Timedelta(days=max_age_days))
         ]
         for col in ("r5", "r20", "rv20", "drawdown252"):
-            values = peers[col].dropna().to_numpy()
+            values = group[col].dropna().to_numpy()
             v = r[col]
             if pd.isna(v) or len(values) + 1 < MIN_RANK_ASSETS:
                 out.at[idx, f"rank_{col}"] = np.nan

@@ -32,7 +32,16 @@ class Run:
     offsets: dict
 
     def backtest(self, horizon: str) -> pd.DataFrame:
-        path = self.path / f"oos_{horizon}.csv.gz"
+        """Out-of-sample rows of the held symbols (what the forecast screen shows)."""
+        return self._read(f"oos_{horizon}.csv.gz")
+
+    def universe_oos(self, horizon: str) -> pd.DataFrame:
+        """Out-of-sample rows of every reference symbol, independent of what is held:
+        the input of strategy backtests."""
+        return self._read(f"oos_universe_{horizon}.csv.gz")
+
+    def _read(self, name: str) -> pd.DataFrame:
+        path = self.path / name
         if not path.exists():
             return pd.DataFrame()
         return pd.read_csv(path, parse_dates=["date"])
@@ -45,6 +54,7 @@ def save(
     models: dict,
     offsets: dict,
     backtests: dict[str, pd.DataFrame],
+    universe_oos: dict[str, pd.DataFrame] | None = None,
 ) -> Path:
     base = artifacts_dir / GLOBAL
     run_id = f"{datetime.now():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:8]}"
@@ -55,6 +65,8 @@ def save(
     (run / "report.json").write_text(json.dumps(report, indent=2))
     for horizon, df in backtests.items():
         df.to_csv(run / f"oos_{horizon}.csv.gz", index=False)
+    for horizon, df in (universe_oos or {}).items():
+        df.to_csv(run / f"oos_universe_{horizon}.csv.gz", index=False)
     pointer_tmp = base / f"current.json.{uuid.uuid4().hex}.tmp"
     pointer_tmp.write_text(json.dumps({"run": run_id}))
     os.replace(pointer_tmp, base / "current.json")

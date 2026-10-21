@@ -1,0 +1,3 @@
+{"viewed_at": "2026-10-20T02:25:57+00:00", "scope": "forecast", "config_hash": "06aea83d5b7d", "holdout_start": "2025-10-19", "data_end": "2026-10-19", "configs_tried": 1, "note": "backfilled (ISSUE-005): run 20261020T112557-1629e5bb, logged before the log existed"}
+{"viewed_at": "2026-10-20T04:51:15+00:00", "scope": "forecast", "config_hash": "06aea83d5b7d", "holdout_start": "2025-10-19", "data_end": "2026-10-19", "configs_tried": 2, "note": "backfilled (ISSUE-005): run 20261020T135115-4514d73e; same hash as config 1 because the old hash left out hyperparameters (ISSUE-007)"}
+{"viewed_at": "2026-10-21T07:30:26+00:00", "scope": "forecast", "config_hash": "617b587dcee7", "holdout_start": "2025-10-19", "data_end": "2026-10-20", "configs_tried": 3, "note": ""}

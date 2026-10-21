@@ -55,8 +55,31 @@ def unadjust_dividends(events: list[CorporateEvent]) -> list[CorporateEvent]:
     return out
 
 
+def split_adjusted_dividends(events: list[CorporateEvent]) -> list[CorporateEvent]:
+    """The inverse of `unadjust_dividends`: dividends restated on today's share count, the
+    scale of split-adjusted prices (divide by every later split ratio)."""
+    splits = [(e.date, split_fraction(e.value)) for e in events if e.kind == "split"]
+    out = []
+    for e in events:
+        if e.kind == "dividend":
+            factor = Fraction(1)
+            for d, ratio in splits:
+                if d > e.date:
+                    factor *= ratio
+            if factor != 1:
+                value = Decimal(factor.denominator) * e.value / Decimal(factor.numerator)
+                e = CorporateEvent(e.date, e.kind, value)
+        out.append(e)
+    return out
+
+
 class MarketDataError(Exception):
     """The provider failed (network error, upstream change, rate limit)."""
+
+
+class DataUnavailableError(MarketDataError):
+    """Data a strict consumer (backtest, signals, paper trading) needs is missing, stale or
+    malformed. Raised instead of substituting other values."""
 
 
 class MarketDataProvider(Protocol):
