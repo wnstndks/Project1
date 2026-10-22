@@ -462,7 +462,7 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
     - 테스트: `test_kill_switch_daily_loss_leaves_out_taxes_paid`(backtest), `test_daily_loss_leaves_out_taxes_and_other_cash_flows`·`test_drawdown_still_counts_taxes_paid`(risk). ISSUES.md 검증 줄을 갱신했다(처음에 verifier가 적은 "표시 키 하나만" 문장은 사실과 달라 지웠다).
   - 공개 확인: wave A·B·C 보고의 `kill_switch_count`는 이전 방식으로 센 값이다(참고값, ISSUE-034 영향 줄). 실행 뒤 `backtest.py`가 바뀌었으므로 지금 코드로 assess_s2를 다시 돌리면 킬스위치 참고 필드만 달라지고 성과·판정 수치는 같아야 한다.
   - N-14: waveC_s2.md 6절 원인 3이 2021-08-02 이후 값(S2 0.636, 노출 0.401, SPY 0.667, ① 0.871)으로 바뀌었고 단일 구간 참고치로 표시됐다. 4절 킬스위치 문단도 확인된 원인으로 고쳐졌다.
-  - 비차단 N-17(eval): waveC_s2.md 125행의 경로가 `scratchpaderifier\s2_post2021.py`로 깨져 있다(``가 제어문자로 바뀐 것으로 보임). `scratchpaderifier\s2_post2021.py`로 고쳐야 한다. 4절·8절은 새 방식(세금 제외, S2 0회, 조치 전 JSON)과 맞는 것을 확인했다.
+  - 비차단 N-17(eval): waveC_s2.md 125행의 경로가 `scratchpaderifier\s2_post2021.py`로 깨져 있다(`\v`가 제어문자로 바뀐 것으로 보임). `scratchpad\verifier\s2_post2021.py`로 고쳐야 한다. 4절·8절은 새 방식(세금 제외, S2 0회, 조치 전 JSON)과 맞는 것을 확인했다.
 
 ## 마무리 검증 (2026-10-22, 커밋 전)
 - 판정: **통과. 커밋 가능.** 차단 문제는 없다.
@@ -484,3 +484,4 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
   - N-17(eval): 해결. waveC_s2.md의 경로 제어문자가 0건이다.
   - N-18(risk·리드): TODO_FOR_ME가 기각된 S2의 모의투자를 매일 실행하라고 안내한다. 지금은 '우위 없음'과 노출 0 기록만 쌓이므로 선택 사항으로 표시하기를 권한다.
   - 참고값: waveC·PROGRESS의 기준선 킬스위치 횟수(56 등)는 ISSUE-034 이전 방식으로 센 값이다. ISSUES에 공개돼 있다.
+- 커밋 후 확인(2026-10-22, 3522ef0): 커밋에는 21개 파일(backend 15, docs/dev 6)만 들어갔다. frontend/, `*.db`, `.env`, artifacts, `.claude/`는 없다. 커밋된 이 파일의 N-17 줄에 verifier가 실수로 넣은 제어문자(VT) 2개가 있었다. 작업 트리에서 고쳤으며 후속 커밋이 필요하다. docs/dev의 다른 파일에는 제어문자가 없다.
