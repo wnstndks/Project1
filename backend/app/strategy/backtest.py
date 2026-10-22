@@ -56,7 +56,11 @@ MIN_TRADE_SHARE = 1e-6
 WEIGHT_TOLERANCE = 1e-9
 # Caps that never bind: what baselines run with (leverage and shorts stay impossible).
 NO_LIMITS = RiskLimits(
-    max_drawdown=1.0, daily_loss_limit=1.0, max_order_fraction=1.0, max_position_weight=1.0
+    max_drawdown=1.0,
+    daily_loss_limit=1.0,
+    max_order_fraction=1.0,
+    max_position_weight=1.0,
+    max_index_fund_weight=1.0,
 )
 
 
@@ -161,6 +165,10 @@ class BacktestConfig:
     taxes: TaxModel = field(default_factory=TaxModel)
     fill: Fill = "next_open"
     liquidate_at_end: bool = True
+    # Orders smaller than this share of equity are skipped (a target of 0 still sells in
+    # full). Part of a strategy's rules when it trades daily (S2: 0.02, the paper trader's
+    # min_order_share); the default only drops rounding dust.
+    min_trade_share: float = MIN_TRADE_SHARE
 
 
 @dataclass(frozen=True)
@@ -185,6 +193,8 @@ class BacktestResult:
     withholding_krw: float = 0.0  # dividend tax withheld
     dividends_krw: float = 0.0  # dividends received, net
     tax_by_year: dict = field(default_factory=dict)
+    # KRW of capital gains tax paid out of the account, by the day it was paid.
+    tax_paid: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     untaxed_crypto_gains_krw: float = 0.0  # realized before crypto_tax_start
 
     @property
@@ -312,6 +322,7 @@ def run_backtest(
     trades: list[dict] = []
     totals = defaultdict(float)
     tax_by_year: dict[int, float] = {}
+    tax_paid: dict[pd.Timestamp, float] = {}
 
     def equity_now() -> float:
         return cash + sum(shares[s] * marks[s] for s in shares if shares[s] > 0)
@@ -348,7 +359,7 @@ def run_backtest(
             target,
             lim,
             fee_rate=rate_of,
-            min_notional=MIN_TRADE_SHARE * equity,
+            min_notional=config.min_trade_share * equity,
             trade_only=targets,
         )
         for d in checked:
@@ -440,6 +451,7 @@ def run_backtest(
         paid = min(due, max(cash, 0.0)) if not final else due
         cash -= paid
         totals["taxes"] += paid
+        tax_paid[t] = tax_paid.get(t, 0.0) + paid
 
     equity_rows, pos_rows = [], []
     last = days[-1]
@@ -505,6 +517,7 @@ def run_backtest(
         withholding_krw=totals["withholding"],
         dividends_krw=totals["dividends"],
         tax_by_year=tax_by_year,
+        tax_paid=pd.Series(tax_paid, dtype=float),
         untaxed_crypto_gains_krw=totals["untaxed"],
     )
 
@@ -547,6 +560,18 @@ def cost_share(result: BacktestResult) -> float:
     return paid / gross if gross > 0 else math.inf
 
 
+def settlement_days(result: BacktestResult) -> set[date]:
+    """Days on which taxes were paid out of the equity: the last day of each year with
+    tax due, and the final day (liquidation and its tax)."""
+    eq = result.equity
+    if eq.empty:
+        return set()
+    last_of_year = eq.groupby(eq.index.year).apply(lambda g: g.index[-1].date())
+    days = {d for y, d in last_of_year.items() if result.tax_by_year.get(int(y), 0.0) > 0}
+    days.add(eq.index[-1].date())
+    return days
+
+
 def summarize(
     result: BacktestResult,
     baselines: Mapping[str, BacktestResult] | None = None,
@@ -560,7 +585,9 @@ def summarize(
     """
     eq = result.equity
     r = result.returns
-    triggers = kill_switch_triggers(eq, limits)
+    # Taxes paid are cash leaving the account, not a market loss: the daily-loss rule
+    # leaves them out (ISSUE-034); the drawdown rule still counts them.
+    triggers = kill_switch_triggers(eq, limits, flows=-result.tax_paid)
     out = {
         "start": str(eq.index[0].date()),
         "end": str(eq.index[-1].date()),
@@ -580,6 +607,12 @@ def summarize(
         "cost_share": cost_share(result),
         "kill_switch_first": str(triggers[0].date) if triggers else None,
         "kill_switch_count": len(triggers),
+        # Triggers on a day taxes were paid (the year's last day) or the final sale: the
+        # curve fell by a payment, not by the market (ISSUE-034). Reference only, as the
+        # kill switch is off in adoption backtests (D-003).
+        "kill_switch_on_settlement_days": [
+            str(t.date) for t in triggers if t.date in settlement_days(result)
+        ],
     }
     for name, base in (baselines or {}).items():
         br = base.returns

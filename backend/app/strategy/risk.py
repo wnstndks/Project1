@@ -5,7 +5,8 @@ equity. The backtest imports these functions as they are, so the order-level rul
 simulates are exactly the ones paper trading (and, one day, real orders) obey:
 
 - no leverage and no short selling (fixed rules, not settings),
-- a cap on each buy order and on each symbol's weight,
+- a cap on each buy order and on each symbol's weight (broad index funds have their own,
+  D-025),
 - a drawdown limit for adopting a strategy, and drawdown/daily-loss triggers for the kill
   switch.
 
@@ -33,6 +34,11 @@ Side = Literal["buy", "sell"]
 OrderStatus = Literal["accepted", "clipped", "rejected"]
 BreachCode = Literal["max_drawdown", "daily_loss"]
 
+# Broad-market index funds whose weight is capped by `max_index_fund_weight` instead of the
+# single-symbol cap (D-025): the symbol cap guards against one issuer's events, and a
+# 500-stock fund carries no such risk. Widening the list needs a new decision.
+INDEX_FUNDS = frozenset({"SPY"})
+
 
 @dataclass(frozen=True)
 class RiskLimits:
@@ -41,6 +47,7 @@ class RiskLimits:
     max_order_fraction: float = 0.05
     max_order_krw: float | None = None
     max_position_weight: float = 0.20
+    max_index_fund_weight: float = 0.80
 
     @classmethod
     def from_settings(cls, settings: "Settings") -> "RiskLimits":
@@ -51,7 +58,16 @@ class RiskLimits:
             max_order_fraction=float(settings.risk_max_order_fraction),
             max_order_krw=float(cap) if cap is not None else None,
             max_position_weight=float(settings.risk_max_position_weight),
+            max_index_fund_weight=float(settings.risk_max_index_fund_weight),
         )
+
+    def symbol_cap(self, symbol: str) -> float:
+        """Largest weight `symbol` may reach: for INDEX_FUNDS the index fund cap alone,
+        independent of the symbol cap, so tightening it always binds (D-025); the symbol cap
+        for everything else."""
+        if symbol in INDEX_FUNDS:
+            return self.max_index_fund_weight
+        return self.max_position_weight
 
 
 @dataclass(frozen=True)
@@ -105,12 +121,12 @@ def _finite(x: float) -> bool:
 
 
 def cap_weights(target: Mapping[str, float], limits: RiskLimits) -> dict[str, float]:
-    """Target weights within the limits: no shorts, each at most the symbol cap, total at
+    """Target weights within the limits: no shorts, each at most its symbol cap, total at
     most 1 (scaled down proportionally). Missing or infinite weights raise ValueError."""
     for symbol, w in target.items():
         if not _finite(w):
             raise ValueError(f"Target weight for {symbol} is not a finite number")
-    out = {s: min(max(float(w), 0.0), limits.max_position_weight) for s, w in target.items()}
+    out = {s: min(max(float(w), 0.0), limits.symbol_cap(s)) for s, w in target.items()}
     total = sum(out.values())
     if total > 1.0:
         out = {s: w / total for s, w in out.items()}
@@ -122,6 +138,16 @@ def budgets_from_settings(settings: "Settings") -> dict[str, float]:
         "stock": float(settings.strategy_budget_stock),
         "crypto": float(settings.strategy_budget_crypto),
     }
+
+
+def _checked_budgets(budgets: Mapping[str, float]) -> dict[str, float]:
+    budgets = dict(budgets)
+    for cls, b in budgets.items():
+        if not _finite(b) or b < 0:
+            raise ValueError(f"Budget for {cls} must be a non-negative number")
+    if sum(budgets.values()) > 1.0 + EPS:
+        raise ValueError("Asset class budgets add up to more than 1 (leverage)")
+    return budgets
 
 
 class Sized(Protocol):
@@ -142,12 +168,7 @@ def target_weights(
     is left stays in cash. Symbols not held get weight 0, so they are sold. A class with no
     budget, or one missing from `budgets`, gets nothing (fail closed).
     """
-    budgets = dict(budgets)
-    for cls, b in budgets.items():
-        if not _finite(b) or b < 0:
-            raise ValueError(f"Budget for {cls} must be a non-negative number")
-    if sum(budgets.values()) > 1.0 + EPS:
-        raise ValueError("Asset class budgets add up to more than 1 (leverage)")
+    budgets = _checked_budgets(budgets)
     held: dict[str, list[str]] = {}
     out: dict[str, float] = {}
     for s in signals:
@@ -160,6 +181,44 @@ def target_weights(
         share = budgets.get(cls, 0.0) / len(symbols)
         for symbol in symbols:
             out[symbol] = share
+    return cap_weights(out, limits)
+
+
+class Exposed(Protocol):
+    """What exposure sizing reads from a signal: the share of its class budget to hold."""
+
+    symbol: str
+    asset_class: str
+    target_exposure: float
+
+
+def exposure_weights(
+    signals: Iterable[Exposed], budgets: Mapping[str, float], limits: RiskLimits
+) -> dict[str, float]:
+    """Target weights from one decision day's exposure signals (STRATEGIES.md S2, 비중).
+
+    A symbol gets its class budget times its target exposure, divided by the number of the
+    class's symbols that day, then `cap_weights` applies the symbol caps (index funds:
+    D-025) and the no-short, no-leverage rules. An exposure outside [0, 1] or not a number
+    raises ValueError: it would borrow or sell short. A class missing from `budgets` gets
+    nothing (fail closed).
+    """
+    budgets = _checked_budgets(budgets)
+    signals = list(signals)
+    count: dict[str, int] = {}
+    seen: set[str] = set()
+    for s in signals:
+        if s.symbol in seen:
+            raise ValueError(f"Two signals for {s.symbol} on one day")
+        seen.add(s.symbol)
+        k = s.target_exposure
+        if not _finite(k) or not 0.0 <= float(k) <= 1.0:
+            raise ValueError(f"Target exposure for {s.symbol} must be a number in [0, 1]")
+        count[s.asset_class] = count.get(s.asset_class, 0) + 1
+    out = {
+        s.symbol: budgets.get(s.asset_class, 0.0) * float(s.target_exposure) / count[s.asset_class]
+        for s in signals
+    }
     return cap_weights(out, limits)
 
 
@@ -200,8 +259,9 @@ def check_order(
     caps = [(limits.max_order_fraction * equity, "max_order_fraction")]
     if limits.max_order_krw is not None:
         caps.append((limits.max_order_krw, "max_order_krw"))
+    weight_cap = "max_index_fund_weight" if order.symbol in INDEX_FUNDS else "max_position_weight"
     caps += [
-        (limits.max_position_weight * equity - held, "max_position_weight"),
+        (limits.symbol_cap(order.symbol) * equity - held, weight_cap),
         (book.cash / (1 + fee_rate), "cash"),
     ]
     allowed, reasons = order.notional, []
@@ -313,22 +373,41 @@ def adopt_strategy(max_drawdown: float, limits: RiskLimits | None = None) -> Ver
     return Verdict(True, f"MDD {dd:.1%} ≤ 한도 {limit:.0%}", dd, limit)
 
 
-def _daily_loss(prev: float, cur: float) -> float:
-    return 1 - cur / prev if prev > 0 else 0.0
+def _daily_loss(prev: float, cur: float, flow: float = 0.0) -> float:
+    """Market loss of one day as a share of the day before: the change in equity less the
+    cash that left or entered the account that day (`flow`, negative when paid out)."""
+    return 1 - (cur - flow) / prev if prev > 0 else 0.0
 
 
-def kill_switch_triggers(equity_curve: pd.Series, limits: RiskLimits) -> list[Trigger]:
+def _aligned_flows(curve: pd.Series, flows: pd.Series | None) -> np.ndarray:
+    """External cash flows per day of `curve` (0 where none). These are payments that are
+    not market results: taxes paid out of the account, deposits and withdrawals."""
+    if flows is None:
+        return np.zeros(len(curve))
+    out = flows.astype(float).reindex(curve.index).fillna(0.0).to_numpy()
+    if not np.isfinite(out).all():
+        raise ValueError("Cash flows have infinite values")
+    return out
+
+
+def kill_switch_triggers(
+    equity_curve: pd.Series, limits: RiskLimits, *, flows: pd.Series | None = None
+) -> list[Trigger]:
     """Dates on which the kill switch would have tripped, for backtest reports.
 
-    Drawdown: the first day past the limit; watching resumes once equity is back at its
-    peak. Daily loss: every day that lost more than the limit against the day before.
+    Drawdown: the first day past the limit, on the curve as it is (taxes paid are a real
+    cost, the same curve the adoption MDD uses); watching resumes once equity is back at
+    its peak. Daily loss: every day whose market loss, with that day's `flows` (taxes paid
+    out, deposits, withdrawals) taken out, was more than the limit against the day before
+    (ISSUE-034: a year-end tax payment is not a loss to halt trading for).
     """
     curve = equity_curve.astype(float)
     if not np.isfinite(curve.to_numpy()).all():
         raise ValueError("Equity curve has missing or infinite values")
+    flow = _aligned_flows(curve, flows)
     out: list[Trigger] = []
     peak, in_breach, prev = -math.inf, False, None
-    for day, value in curve.items():
+    for i, (day, value) in enumerate(curve.items()):
         when = day.date() if isinstance(day, pd.Timestamp) else day
         if value >= peak:
             peak, in_breach = value, False
@@ -337,15 +416,18 @@ def kill_switch_triggers(equity_curve: pd.Series, limits: RiskLimits) -> list[Tr
             out.append(Trigger(when, "max_drawdown", dd))
             in_breach = True
         if prev is not None:
-            loss = _daily_loss(prev, value)
+            loss = _daily_loss(prev, value, flow[i])
             if loss > limits.daily_loss_limit + EPS:
                 out.append(Trigger(when, "daily_loss", loss))
         prev = value
     return out
 
 
-def portfolio_breach(equity_curve: pd.Series, limits: RiskLimits) -> Trigger | None:
-    """The limit the latest point breaks, if any; drawdown is checked first.
+def portfolio_breach(
+    equity_curve: pd.Series, limits: RiskLimits, *, flows: pd.Series | None = None
+) -> Trigger | None:
+    """The limit the latest point breaks, if any; drawdown is checked first. The daily loss
+    leaves out the latest day's `flows`, as in `kill_switch_triggers`.
 
     In operation the curve starts at the last kill switch reset, so a drawdown the user has
     already acknowledged does not trip it again until equity falls further.
@@ -355,6 +437,7 @@ def portfolio_breach(equity_curve: pd.Series, limits: RiskLimits) -> Trigger | N
         return None
     if not np.isfinite(curve.to_numpy()).all():
         raise ValueError("Equity curve has missing or infinite values")
+    flow = _aligned_flows(curve, flows)
     last_day = curve.index[-1]
     when = last_day.date() if isinstance(last_day, pd.Timestamp) else last_day
     last, peak = curve.iloc[-1], curve.max()
@@ -362,7 +445,7 @@ def portfolio_breach(equity_curve: pd.Series, limits: RiskLimits) -> Trigger | N
     if dd > limits.max_drawdown + EPS:
         return Trigger(when, "max_drawdown", dd)
     if len(curve) >= 2:
-        loss = _daily_loss(curve.iloc[-2], last)
+        loss = _daily_loss(curve.iloc[-2], last, flow[-1])
         if loss > limits.daily_loss_limit + EPS:
             return Trigger(when, "daily_loss", loss)
     return None

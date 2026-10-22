@@ -6,18 +6,22 @@ An "edge" is claimed only when all of these hold, otherwise the UI says there is
 - the advantage has the same sign in at least two thirds of (full-enough) calendar years,
 - the untouched holdout agrees (mean improvement > 0 and p < 0.10).
 Direction is judged by the Brier score against the base rate of up moves; the range by
-the mean pinball loss against the EWMA Student-t volatility baseline; the ranking (what a
-cross-sectional signal uses) by the daily within-class rank correlation (IC) against zero.
+the mean pinball loss against the EWMA Student-t volatility baseline; the volatility (the
+width of the 10-90% range alone, what S2 sizes with) by QLIKE against the same baseline;
+the ranking (what a cross-sectional signal uses) by the daily within-class rank
+correlation (IC) against zero.
 
-The unit is asset class x horizon (D-005): 3 horizons x 2 classes x 3 kinds = 18
+The unit is asset class x horizon (D-005): 3 horizons x 2 classes x 4 kinds = 24
 comparisons in one Holm family. `compare_losses` takes any two per-date loss series.
 
 Two edges are not read from the report:
-- `PointInTimeEdge.edge_at` (backtests): the same tests on an expanding window of the
+- `PointInTimeEdge.status` (backtests): the same tests on an expanding window of the
   walk-forward rows whose targets were known by the decision date, so a 2018 signal is
   never switched on by what happened in 2022 (D-005).
-- `live_edge_at` (the live service): a rank edge stays False until a pre-registered
-  forward paper test confirms it (`FORWARD_CONFIRMED`, D-006); its holdout was seen.
+- `live_edge_at` (the live service): a rank, range or vol edge stays False until a
+  pre-registered forward paper test confirms it (`FORWARD_CONFIRMED`, D-006); the
+  strategies using them were written down after their walk-forward results (and the
+  range holdout) were seen.
 """
 
 import math
@@ -42,6 +46,8 @@ ALPHA = 0.05
 #    asset class with the rank comparison, partial years left out (D-004, D-005, D-006).
 # The old per-symbol LSTM (app/ml) is not counted: it forecast prices of single symbols on
 # another target and never produced a pooled report (D-018).
+# The vol comparison (QLIKE, for S2) added comparisons, not a model: it raised the Holm
+# family from 18 to 24 and left this at 3.
 CONFIGS_TRIED = 3
 HOLDOUT_ALPHA = 0.10
 MIN_YEAR_SHARE = 2 / 3
@@ -51,18 +57,23 @@ MIN_EDGE_YEARS = 2
 MIN_RANK_ASSETS = 3
 
 ASSET_CLASSES = ("stock", "crypto")
-KINDS = ("direction", "range", "rank")
+KINDS = ("direction", "range", "rank", "vol")
 # Comparisons in one Holm family: every horizon, class and kind, whether computed or not.
+# 24 since "vol" joined for S2 (was 18); a larger family only makes each test stricter.
 FAMILY_SIZE = len(HORIZONS) * len(ASSET_CLASSES) * len(KINDS)
 # (kind, candidate, baseline, metric)
 COMPARISON_SPECS = (
     ("direction", "gbdt", "climatology", "brier"),
     ("range", "gbdt", "ewma_t", "interval"),
     ("rank", "gbdt", "zero", "ic"),
+    ("vol", "gbdt", "ewma_t", "qlike"),
 )
-# (asset class, horizon) whose rank edge a pre-registered forward paper test has confirmed
-# (D-006, D-015 ③). Empty: no live rank signal. Adding one needs a DECISIONS.md entry.
-FORWARD_CONFIRMED: frozenset[tuple[str, str]] = frozenset()
+# Kinds a strategy trades on whose live edge waits for a forward paper test.
+FORWARD_TEST_KINDS = ("rank", "range", "vol")
+# (asset class, horizon, kind) whose edge a pre-registered forward paper test has confirmed
+# (D-006, D-015 ③). Empty: no live signal of those kinds. Adding one needs a DECISIONS.md
+# entry.
+FORWARD_CONFIRMED: frozenset[tuple[str, str, str]] = frozenset()
 
 
 @dataclass
@@ -122,6 +133,9 @@ def _losses(oos: pd.DataFrame, model: str, metric: str) -> pd.Series:
     y = oos["y"].to_numpy()
     if metric == "brier":
         loss = metrics.brier((y > 0).astype(float), oos[f"{model}_p_up"].to_numpy())
+    elif metric == "qlike":
+        q10, q90 = (oos[f"{model}_{c}"].to_numpy() for c in ("q10", "q90"))
+        loss = metrics.qlike(y, metrics.implied_sigma(q10, q90))
     else:
         loss = metrics.interval_loss(
             y, *(oos[f"{model}_{c}"].to_numpy() for c in ("q10", "q50", "q90"))
@@ -284,8 +298,9 @@ class EdgeStatus:
     # edge | no_data | insufficient_history | not_significant | inconsistent_years |
     # forward_test_pending
     reason: str
-    # Display only (S1 confidence): Wilson 95% lower bound of the share of top-third rows
-    # whose return beat the same-date class mean, over rows with known outcomes.
+    # Display only (confidence), over outcomes known by then, Wilson 95% lower bound of:
+    # rank, the share of top-third rows whose return beat the same-date class mean; other
+    # kinds, the share of dates on which the model's loss was below the baseline's.
     hit_rate_lower: float | None = None
     n: int = 0  # out-of-sample dates with a known outcome
     # ic (mean gain: IC for rank, loss reduction otherwise), t_stat, p_adjusted, year_share
@@ -334,7 +349,7 @@ class PointInTimeEdge:
     On `as_of` a row counts if its target was known: the bar its target ends on (h NYSE
     sessions later for stocks, h days for coins, `target_end_dates`) is on or before
     `as_of`. A calendar-day bound would not do: 5 sessions span up to 11 days. All
-    18 comparisons are re-tested on that expanding window, Holm-adjusted together (missing
+    24 comparisons are re-tested on that expanding window, Holm-adjusted together (missing
     ones count as p = 1) and multiplied by `configs_tried`; an edge also needs two thirds
     of at least `min_years` full-enough years to agree. There is no holdout check: on a
     past date the holdout lies in the future (D-006 reports it separately).
@@ -403,10 +418,13 @@ class PointInTimeEdge:
             else:
                 reason = "edge"
             hit_lower = None
-            counts = self._known(self._hit_counts.get((h, cls), pd.DataFrame()), h, cls, as_of)
-            if kind == "rank" and len(counts):
-                last = counts.iloc[-1]
-                hit_lower = metrics.wilson_lower(int(last["hits"]), int(last["n"]))
+            if kind == "rank":
+                counts = self._known(self._hit_counts.get((h, cls), pd.DataFrame()), h, cls, as_of)
+                if len(counts):
+                    last = counts.iloc[-1]
+                    hit_lower = metrics.wilson_lower(int(last["hits"]), int(last["n"]))
+            else:
+                hit_lower = metrics.wilson_lower(int((g > 0).sum()), len(g))
             out[key] = EdgeStatus(
                 edge=reason == "edge",
                 reason=reason,
@@ -434,12 +452,23 @@ class PointInTimeEdge:
         """The rank edge (what S1 trades on); the callback signals.py receives."""
         return self.status(as_of, asset_class, horizon, "rank")
 
+    def lookup(self, kind: str) -> EdgeLookup:
+        """`edge_at` for another kind: S2 sizes with the vol edge (`lookup("vol")`)."""
+        if kind not in KINDS:
+            raise ValueError(f"unknown comparison kind {kind!r}")
+
+        def edge(as_of: date, asset_class: str, horizon: str) -> EdgeStatus:
+            return self.status(as_of, asset_class, horizon, kind)
+
+        return edge
+
 
 def live_edge_at(report: Mapping, kind: str = "rank") -> EdgeLookup:
     """Edge callback for the live service, read from a saved report.
 
-    A rank edge is withheld until FORWARD_CONFIRMED lists the class and horizon: its
-    walk-forward IC was looked at before the hypothesis was written down (D-006).
+    A rank, range or vol edge is withheld until FORWARD_CONFIRMED lists the class, horizon
+    and kind: the strategies trading on them were written down after their walk-forward
+    results were seen (D-006), and the range holdout too.
     """
 
     def lookup(as_of: date, asset_class: str, horizon: str) -> EdgeStatus:
@@ -456,7 +485,7 @@ def live_edge_at(report: Mapping, kind: str = "rank") -> EdgeLookup:
                 "year_share": float(comp.get("year_share") or 0.0),
             },
         )
-        if kind == "rank" and (asset_class, horizon) not in FORWARD_CONFIRMED:
+        if kind in FORWARD_TEST_KINDS and (asset_class, horizon, kind) not in FORWARD_CONFIRMED:
             return EdgeStatus(False, "forward_test_pending", **common)
         if comp.get("edge"):
             return EdgeStatus(True, "edge", **common)

@@ -4,6 +4,10 @@ orders, fills them at the next bar's open and scores every signal once its horiz
     python -m app.strategy.paper run     # signals and orders on the newest final bars
     python -m app.strategy.paper fill    # fill pending orders once the next bar is final
     python -m app.strategy.paper score   # score signals whose target date has passed
+    python -m app.strategy.paper gaps    # decision days the runner missed, per class
+
+`--strategy s2` runs S2-1d (exposure by forecast volatility) instead of S1-1w; each
+strategy keeps its own records (strategy_id) in the same paper tables.
 
 Nothing here writes to `transactions`: the paper account starts from
 AM_PAPER_INITIAL_CAPITAL_KRW and exists only as rows of `paper_signals` (D-009), so real
@@ -19,6 +23,11 @@ needed to value it are missing (fail closed). While tripped, signals are still r
 
 The arithmetic (fills, account, equity curve, scores) is pure functions at the top of the
 file; `PaperTrader` does the I/O.
+
+Two kinds of strategy plug in: held/not-held signals sized by equal shares of the class
+budget (S1, `SignalStrategy`), and exposure signals sized by budget times target exposure
+(S2, `ExposureStrategy`). An exposure strategy keeps its class state (allowed and committed
+exposure) in each record's rationale, so the next run reads it back without a schema change.
 """
 
 import argparse
@@ -57,6 +66,7 @@ from app.strategy.risk import (
     RiskLimits,
     apply_decision,
     budgets_from_settings,
+    exposure_weights,
     kill_switch_triggers,
     plan_rebalance,
     target_weights,
@@ -298,19 +308,30 @@ class Signal(Protocol):
     held_after: bool
     confidence: str | None
     rationale: Mapping[str, Any]
+    # Exposure strategies only: the share of the class budget to hold, in [0, 1].
+    target_exposure: float | None
+
+
+Sizing = Literal["equal", "exposure"]
 
 
 class PaperStrategy(Protocol):
     strategy_id: str
     horizon: str
+    # Optional attributes, read with defaults: `universe` (symbol -> class, default the
+    # S1 strategy universe), `sizing` ("equal") and `min_order_share` (the trader's).
 
     def is_decision_day(self, asset_class: str, day: date) -> bool: ...
 
     def signals(
-        self, rows: pd.DataFrame, as_of: Mapping[str, date], held: Mapping[str, bool]
+        self,
+        rows: pd.DataFrame,
+        as_of: Mapping[str, date],
+        held: Mapping[str, bool],
+        last: Mapping[str, Mapping[str, Any]],
     ) -> Sequence[Signal]:
         """Signals of the classes in `as_of` (class -> decision day) from that day's
-        inference rows, given each symbol's held state."""
+        inference rows, given each symbol's held state and its latest recorded rationale."""
         ...
 
 
@@ -339,6 +360,45 @@ class RunReport:
     tripped: str | None = None
     # Fixed text when no signals could be made (never an exception message).
     skipped: str | None = None
+    # Per class: decision days between the last record and today's that the runner missed.
+    missed: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DecisionGaps:
+    """One class's decision days from its first record through the newest final bar: which
+    have a record and which the runner missed (a day it did not run, or one it skipped for
+    missing data). A missed weekly day delays an exposure increase by a week, which the
+    backtest (replaying every day) never sees (verifier N-13). `generated_share` is the
+    forward test's success criterion 3 (signals made on at least half the decision days)."""
+
+    asset_class: str
+    first: date | None
+    through: date | None
+    expected: int
+    recorded: int
+    missed: tuple[date, ...] = ()
+    weekly_missed: tuple[date, ...] = ()
+
+    @property
+    def generated_share(self) -> float | None:
+        return self.recorded / self.expected if self.expected else None
+
+
+def format_gaps(gaps: Mapping[str, DecisionGaps]) -> str:
+    """One line per class for the CLI; dates only, never amounts."""
+    if not gaps:
+        return "no decision calendar for this strategy"
+    lines = []
+    for cls, g in sorted(gaps.items()):
+        share = "n/a" if g.generated_share is None else f"{g.generated_share:.1%}"
+        weekly = ",".join(d.isoformat() for d in g.weekly_missed) or "-"
+        lines.append(
+            f"{cls}: {g.first}..{g.through} expected={g.expected} recorded={g.recorded} "
+            f"missed={len(g.missed)} weekly_missed={len(g.weekly_missed)} ({weekly}) "
+            f"generated={share}"
+        )
+    return "\n".join(lines)
 
 
 def _utcnow() -> datetime:
@@ -373,13 +433,16 @@ class PaperTrader:
         self.costs = costs
         self.live_factory = live_factory
         # Rebalancing changes up to this share of equity are skipped (exits never are), as
-        # in the backtest.
-        self.min_order_share = min_order_share
+        # in the backtest. A strategy that registered its own tolerance (S2) brings it.
+        self.min_order_share = getattr(strategy, "min_order_share", min_order_share)
         self.clock = clock
         self.limits = RiskLimits.from_settings(settings)
         self.initial_cash = float(settings.paper_initial_capital_krw)
         self.kill = KillSwitch(db, clock=clock)
-        self.universe = strategy_symbols()
+        self.universe = dict(getattr(strategy, "universe", None) or strategy_symbols())
+        self.sizing: Sizing = getattr(strategy, "sizing", "equal")
+        if self.sizing not in ("equal", "exposure"):
+            raise ValueError(f"Unknown sizing '{self.sizing}'")
 
     # --- records -------------------------------------------------------------------------
 
@@ -406,6 +469,58 @@ class PaperTrader:
     def held_state(self) -> dict[str, bool]:
         """Each symbol's held state after its latest signal (S1 state, not account state)."""
         return {r.symbol: r.held_after for r in self._rows()}
+
+    def last_rationale(self) -> dict[str, dict]:
+        """Each symbol's rationale as recorded with its latest signal (where an exposure
+        strategy keeps its state)."""
+        return {r.symbol: dict(r.rationale or {}) for r in self._rows()}
+
+    # --- missed decision days (verifier N-13) ----------------------------------------------
+
+    def _calendar(self) -> tuple[Callable, Callable] | None:
+        dates = getattr(self.strategy, "decision_dates", None)
+        weekly = getattr(self.strategy, "is_weekly_day", None)
+        return (dates, weekly) if dates is not None and weekly is not None else None
+
+    def _missed_between(self, asset_class: str, after: date, before: date) -> tuple[list, list]:
+        """Decision days strictly between two dates, all of them missed, and the weekly ones."""
+        calendar = self._calendar()
+        start, end = after + timedelta(days=1), before - timedelta(days=1)
+        if calendar is None or start > end:
+            return [], []
+        dates, weekly = calendar
+        missed = list(dates(asset_class, start, end))
+        return missed, [d for d in missed if weekly(asset_class, d)]
+
+    def missed_decisions(self, today: date | None = None) -> dict[str, DecisionGaps]:
+        """Each class's record coverage of its decision calendar (read only). Empty for a
+        strategy without one (S1 decides weekly by definition)."""
+        calendar = self._calendar()
+        if calendar is None:
+            return {}
+        dates, weekly = calendar
+        now = self.market.utc_now()
+        today = today or self.market.now().date()
+        out: dict[str, DecisionGaps] = {}
+        for cls in sorted(set(self.universe.values())):
+            recorded = {r.as_of for r in self._rows(PaperSignal.asset_class == cls)}
+            through = last_final_date(BENCHMARKS[cls], today, now)
+            if not recorded or through is None:
+                out[cls] = DecisionGaps(cls, None, through, 0, 0)
+                continue
+            first = min(recorded)
+            expected = list(dates(cls, first, through)) if first <= through else []
+            missed = tuple(d for d in expected if d not in recorded)
+            out[cls] = DecisionGaps(
+                cls,
+                first,
+                through,
+                len(expected),
+                len(expected) - len(missed),
+                missed,
+                tuple(d for d in missed if weekly(cls, d)),
+            )
+        return out
 
     # --- prices --------------------------------------------------------------------------
 
@@ -449,6 +564,8 @@ class PaperTrader:
             closes = self._closes({t.symbol for t in trades}, lookback, today)
             fx = self._fx(lookback, today)
             curve = equity_curve(self.initial_cash, trades, closes, fx, start, today)
+            # No external flows: the paper account pays no taxes and takes no deposits or
+            # withdrawals, so every change in its equity is a market result (ISSUE-034).
             triggers = kill_switch_triggers(curve, self.limits)
         except (DataUnavailableError, ValueError) as exc:
             log.warning("Paper account cannot be valued (%s)", type(exc).__name__)
@@ -482,6 +599,29 @@ class PaperTrader:
         if not decided:
             return report
 
+        # Days the runner missed since each class's last record: the rule is not changed
+        # (a missed weekly day just delays an increase), but it is logged and recorded.
+        notes: dict[str, dict] = {}
+        for cls, day in decided.items():
+            previous = [r.as_of for r in self._rows(PaperSignal.asset_class == cls)]
+            if not previous:
+                continue
+            missed, weekly = self._missed_between(cls, max(previous), day)
+            if missed:
+                log.warning(
+                    "%s %s: %d decision day(s) missed before %s, %d weekly",
+                    self.strategy.strategy_id,
+                    cls,
+                    len(missed),
+                    day,
+                    len(weekly),
+                )
+                report.missed[cls] = len(missed)
+                notes[cls] = {
+                    "missed_decision_days": [d.isoformat() for d in missed],
+                    "missed_weekly_days": [d.isoformat() for d in weekly],
+                }
+
         symbols = sorted(s for s, cls in self.universe.items() if cls in decided)
         cash, qty = account(self.initial_cash, self._trades())
         first = min(decided.values()) - timedelta(days=LOOKBACK_DAYS)
@@ -505,11 +645,11 @@ class PaperTrader:
         rows = rows[on_day]
         signals = [
             s
-            for s in self.strategy.signals(rows, decided, self.held_state())
+            for s in self.strategy.signals(rows, decided, self.held_state(), self.last_rationale())
             if s.asset_class in decided
         ]
         inputs = {r["symbol"]: _inputs_of(r) for r in rows.to_dict("records")}
-        self._decide(signals, decided, cash, qty, closes, fx, inputs, report)
+        self._decide(signals, decided, cash, qty, closes, fx, inputs, report, notes)
         return report
 
     def _decide(
@@ -522,7 +662,9 @@ class PaperTrader:
         fx: pd.Series,
         inputs: Mapping[str, dict],
         report: RunReport,
+        notes: Mapping[str, dict] | None = None,
     ) -> None:
+        notes = notes or {}
         valued_on = max(decided.values())
 
         def krw(symbol: str, day: date) -> float:
@@ -534,7 +676,10 @@ class PaperTrader:
             raise DataUnavailableError("A paper position has no price")
 
         budgets = {c: b for c, b in budgets_from_settings(self.settings).items() if c in decided}
-        target = target_weights(signals, budgets, self.limits)
+        if self.sizing == "exposure":
+            target = exposure_weights(signals, budgets, self.limits)
+        else:
+            target = target_weights(signals, budgets, self.limits)
         # Classes not deciding today keep their positions as they drifted.
         others = {
             s: v / equity if equity > 0 else 0.0
@@ -586,6 +731,7 @@ class PaperTrader:
                 rationale={
                     **_jsonable(s.rationale),
                     **_provenance(inputs.get(s.symbol, {})),
+                    **notes.get(s.asset_class, {}),
                 },
                 ref_price=_finite_or_none(_last_on(closes.get(s.symbol), as_of)),
                 ref_fx=_finite_or_none(_last_on(fx, as_of)),
@@ -781,7 +927,16 @@ def _finite_or_none(x: float) -> float | None:
 
 
 # Forecast inputs recorded with each signal, so it can be audited and scored later.
-RECORDED_INPUTS = ("scale", "gbdt_q10", "gbdt_q50", "gbdt_q90", "gbdt_p_up", "climatology_p_up")
+RECORDED_INPUTS = (
+    "scale",
+    "gbdt_q10",
+    "gbdt_q50",
+    "gbdt_q90",
+    "gbdt_p_up",
+    "climatology_p_up",
+    "ewma_t_q10",
+    "ewma_t_q90",
+)
 
 
 def _inputs_of(row: Mapping[str, Any]) -> dict:
@@ -891,9 +1046,10 @@ def make_predictor(market: "MarketDataService", artifacts_dir: Path, horizon: st
     return predict
 
 
-def no_live_edge(as_of: date, asset_class: str, horizon: str):
-    """Live rank edge stays off until the strategy is a candidate (D-006, D-015): every
-    paper signal is 'no edge' and no position is opened."""
+def no_live_edge(as_of: date, asset_class: str, horizon: str, *_metric):
+    """Live edge stays off until the strategy is a candidate (D-006, D-015, D-024): every
+    paper signal is 'no edge' and no position is opened. An extra argument (the compared
+    metric, "vol" for S2) does not change that."""
     from app.strategy.signals import EdgeStatus
 
     return EdgeStatus(False, "not_candidate")
@@ -909,6 +1065,7 @@ class _Recorded:
     held_after: bool
     confidence: str | None
     rationale: Mapping[str, Any]
+    target_exposure: float | None = None
 
 
 class SignalStrategy:
@@ -925,7 +1082,7 @@ class SignalStrategy:
 
         return day in decision_dates(self.config.schedule, asset_class, day, day)
 
-    def signals(self, rows, as_of, held):
+    def signals(self, rows, as_of, held, last=None):
         from app.strategy.signals import decide
 
         held_set = {s for s, h in held.items() if h is True}
@@ -941,21 +1098,152 @@ class SignalStrategy:
         return out
 
 
+# Rationale keys where an exposure strategy keeps its class state between runs.
+STATE_KEYS = ("e", "R")
+# Rationale flag of a decision that started from zero because the stored state was unreadable.
+STATE_RESET = "state_reset"
+
+
+class ExposureDecide(Protocol):
+    """The exposure rule (quant's signal code) for one class on `as_of`, from that day's rows
+    and the class's previous state ({"e": ..., "R": ...}, empty at the start). Each signal
+    carries `target_exposure` (the new committed exposure) and, in `reasons`, the "e" and
+    "R" the next decision starts from."""
+
+    def __call__(
+        self,
+        rows: pd.DataFrame,
+        as_of: date,
+        prev: Mapping[str, float],
+        edge_at: Callable[..., Any],
+        config: Any,
+        asset_class: str,
+    ) -> Sequence[Any]: ...
+
+
+class ExposureStrategy:
+    """An exposure rule (S2-1d) as a paper strategy: decides on every final bar, sizes with
+    `risk.exposure_weights` and trades only changes above the registered tolerance
+    (`config.min_trade_share` of equity, the same value the backtest uses).
+
+    The class state comes back from the latest record of the class's symbols, so a day the
+    runner missed leaves it where it was. A malformed state starts from zero exposure (fail
+    closed: the rule then needs a weekly decision day to raise it again); that is logged
+    and marked `state_reset` in the day's records, never silent.
+    """
+
+    sizing: Sizing = "exposure"
+
+    def __init__(self, config, decide: ExposureDecide, edge_at=no_live_edge) -> None:
+        self.config = config
+        self.decide = decide
+        self.edge_at = edge_at
+        self.strategy_id = config.name
+        self.horizon = config.horizon
+        self.universe = dict(config.universe)
+        tolerance = config.min_trade_share
+        if not (isinstance(tolerance, int | float) and 0.0 <= tolerance < 1.0):
+            raise ValueError("min_trade_share must be a share of equity in [0, 1)")
+        # The single registered value (s2.S2Config), read rather than copied (verifier N-10).
+        self.min_order_share = float(tolerance)
+
+    def is_decision_day(self, asset_class: str, day: date) -> bool:
+        # The runner offers only final bars: every XNYS session for stocks, every day for
+        # coins, which is S2's calendar.
+        return asset_class in set(self.universe.values())
+
+    def decision_dates(self, asset_class: str, start: date, end: date) -> list[date]:
+        """The calendar a missed day is counted against (s2.daily_dates)."""
+        from app.strategy.s2 import daily_dates
+
+        return daily_dates(asset_class, start, end)
+
+    def is_weekly_day(self, asset_class: str, day: date) -> bool:
+        """Whether `day` may raise exposure; missing one delays an increase by a week."""
+        from app.strategy.s2 import is_weekly_day
+
+        return is_weekly_day(asset_class, day)
+
+    def state(
+        self, asset_class: str, last: Mapping[str, Mapping[str, Any]]
+    ) -> tuple[dict[str, float], bool]:
+        """The class's stored state and whether it had to be reset: ({}, False) before the
+        first decision, ({}, True) when the latest record holds no usable state."""
+        for symbol in sorted(s for s, c in self.universe.items() if c == asset_class):
+            r = last.get(symbol)
+            if r is None:
+                continue
+            values = [r.get(k) for k in STATE_KEYS]
+            if all(
+                isinstance(v, int | float)
+                and not isinstance(v, bool)
+                and math.isfinite(v)
+                and 0.0 <= v <= 1.0
+                for v in values
+            ):
+                return {k: float(v) for k, v in zip(STATE_KEYS, values, strict=True)}, False
+            log.warning(
+                "Unreadable %s state for %s; starting from zero exposure",
+                self.strategy_id,
+                asset_class,
+            )
+            return {}, True
+        return {}, False
+
+    def signals(self, rows, as_of, held, last=None):
+        last = last or {}
+        out = []
+        for cls, day in as_of.items():
+            prev, reset = self.state(cls, last)
+            for s in self.decide(rows, day, prev, self.edge_at, self.config, cls):
+                reasons = {**s.reasons, "confidence_value": getattr(s, "confidence_value", None)}
+                if reset:
+                    reasons[STATE_RESET] = True
+                missing = [k for k in STATE_KEYS if k not in reasons]
+                if missing:
+                    raise ValueError(f"{s.symbol}: exposure signal without state {missing}")
+                out.append(
+                    _Recorded(
+                        s.symbol,
+                        s.asset_class,
+                        s.action,
+                        bool(s.held_after),
+                        s.confidence,
+                        reasons,
+                        float(s.target_exposure),
+                    )
+                )
+        return out
+
+
+def make_strategy(name: str, settings: "Settings", costs: CostModel) -> PaperStrategy:
+    """The registered paper strategies, with the live edge off (D-006, D-024)."""
+    if name == "s1":
+        from app.strategy.s1 import round_trip_costs, s1_1w
+
+        return SignalStrategy(s1_1w(round_trip_costs(costs)))
+    if name == "s2":
+        from app.strategy.s2 import paper_decider, s2_1d
+
+        return ExposureStrategy(s2_1d(), paper_decider(budgets_from_settings(settings)))
+    raise ValueError(f"Unknown strategy '{name}'")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     from app.config import get_settings
     from app.db.session import SessionLocal
     from app.deps import get_provider, get_quote_cache
     from app.services.market_data import MarketDataService
-    from app.strategy.s1 import round_trip_costs, s1_1w
 
     parser = argparse.ArgumentParser(description="Paper trading (never sends real orders)")
-    parser.add_argument("command", choices=["run", "fill", "score"])
+    parser.add_argument("command", choices=["run", "fill", "score", "gaps"])
+    parser.add_argument("--strategy", choices=["s1", "s2"], default="s1")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     settings = get_settings()
     costs = CostModel()
-    strategy = SignalStrategy(s1_1w(round_trip_costs(costs)))
+    strategy = make_strategy(args.strategy, settings, costs)
     with SessionLocal() as db:
         market = MarketDataService(db, get_provider(), get_quote_cache())
         trader = PaperTrader(
@@ -971,10 +1259,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             decided = {c: str(d) for c, d in r.decided.items()}
             print(
                 f"decided={decided} recorded={r.recorded} orders={r.orders} "
-                f"tripped={r.tripped} skipped={r.skipped}"
+                f"tripped={r.tripped} skipped={r.skipped} missed={r.missed}"
             )
         elif args.command == "fill":
             print(f"filled={trader.fill()}")
+        elif args.command == "gaps":
+            print(format_gaps(trader.missed_decisions()))
         else:
             print(f"scored={trader.score()}")
 

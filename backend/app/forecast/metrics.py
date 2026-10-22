@@ -25,6 +25,26 @@ def brier(up: np.ndarray, p_up: np.ndarray) -> np.ndarray:
     return (p_up - up) ** 2
 
 
+# A 10-90% range of a normal spans 2 x 1.2816 standard deviations.
+RANGE_TO_SIGMA = float(2 * stats.norm.ppf(0.9))
+MIN_SIGMA = 1e-3
+
+
+def implied_sigma(q10: np.ndarray, q90: np.ndarray, floor: float = MIN_SIGMA) -> np.ndarray:
+    """The volatility a 10-90% range implies: its width over 2.5631, at least `floor`.
+    Every model goes through the same conversion, so only the widths are compared."""
+    width = np.asarray(q90, dtype=float) - np.asarray(q10, dtype=float)
+    return np.maximum(width / RANGE_TO_SIGMA, floor)
+
+
+def qlike(y: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """QLIKE loss of a volatility forecast per row: y^2 / sigma^2 + log sigma^2. With the
+    noisy proxy y^2 it still ranks variance forecasts correctly (Patton 2011), and it does
+    not score the location (q50) at all."""
+    var = np.asarray(sigma, dtype=float) ** 2
+    return np.asarray(y, dtype=float) ** 2 / var + np.log(var)
+
+
 def newey_west_var(x: np.ndarray, lags: int) -> float:
     """HAC long-run variance of a series' mean component (Bartlett kernel)."""
     x = np.asarray(x, dtype=float) - np.mean(x)

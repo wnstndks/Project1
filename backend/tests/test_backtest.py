@@ -6,6 +6,7 @@ baseline's weights is the baseline; taxes net gains within a year with the deduc
 no loss carry-forward; leverage and short sales are refused.
 """
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -13,6 +14,7 @@ import pandas as pd
 import pytest
 
 from app.data.calendar import expected_dates
+from app.forecast.report import EdgeStatus
 from app.strategy import baselines as bl
 from app.strategy.backtest import (
     BacktestConfig,
@@ -500,3 +502,134 @@ def test_s1_decisions_size_held_symbols_with_the_risk_rules():
     assert w["C"] == 0.0
     # 0.8 / 3 = 0.267 is above the 20% symbol cap, so each held symbol gets 0.2.
     assert w[["A", "B", "D"]].tolist() == pytest.approx([0.2, 0.2, 0.2])
+
+
+def test_min_trade_share_skips_small_rebalances_but_always_sells_out():
+    inputs = market()
+    days = pd.DatetimeIndex(expected_dates("SPY", date(2020, 1, 2), date(2020, 6, 30)))
+    dec = pd.DataFrame({"date": days, "symbol": "SPY", "weight": 0.5})
+    dec.loc[dec.index[-1], "weight"] = 0.0
+    cfg = BacktestConfig(costs=FREE, taxes=NO_TAX, liquidate_at_end=False)
+    every = run_backtest(dec, inputs, cfg, start=START, end=END)
+    banded = run_backtest(
+        dec, inputs, BacktestConfig(costs=FREE, taxes=NO_TAX, liquidate_at_end=False,
+                                    min_trade_share=0.02),
+        start=START, end=END,
+    )  # fmt: skip
+    # The default (rounding dust only) trades the daily drift back; 2% skips most of it.
+    assert len(banded.trades) < len(every.trades) / 3
+    middle = banded.trades.iloc[1:-1]
+    assert (middle["requested"] > 0.02 * middle["equity"]).all()
+    # A target of 0 sells the whole position, however small the order.
+    last = banded.trades.iloc[-1]
+    assert last["side"] == "sell" and banded.positions["SPY"].iloc[-1] == 0
+    assert BacktestConfig().min_trade_share == pytest.approx(1e-6)
+
+
+def test_index_fund_cap_binds_only_with_the_strategy_limits():
+    inputs = market()
+    dec = pd.DataFrame({"date": [pd.Timestamp("2020-03-06")], "symbol": ["SPY"], "weight": [0.9]})
+    cfg = BacktestConfig(costs=FREE, taxes=NO_TAX, liquidate_at_end=False)
+    free = run_backtest(dec, inputs, cfg, start=START, end=END)  # baselines: no caps
+    assert free.weights.loc["2020-03-09", "SPY"] == pytest.approx(0.9, abs=0.02)
+    capped = run_backtest(
+        dec, inputs, cfg, limits=RiskLimits(max_order_fraction=1.0), start=START, end=END
+    )
+    assert capped.weights.loc["2020-03-09", "SPY"] == pytest.approx(0.8, abs=0.02)
+
+
+def test_registered_extra_conditions_only_make_the_gate_stricter():
+    inputs = market()
+    cfg = BacktestConfig()
+    base = bl.run_buy_and_hold(bl.BASELINE_1, inputs, cfg, START, END)
+    half = bl.run_buy_and_hold({"SPY": 0.4, "BTC-USD": 0.1}, inputs, cfg, START, END)
+    common = dict(edge_share=1.0, limits=RiskLimits())
+    plain = adoption_gate(base, base, base, base, **common)
+    assert "7_beats_ablation" not in plain.checks and "8_traded_symbol_dm" not in plain.checks
+    tied = adoption_gate(base, base, base, base, ablation=base, symbol_dm={"SPY": 1.0}, **common)
+    assert tied.checks["7_beats_ablation"] is False  # equal Sharpe is not better
+    assert tied.checks["8_traded_symbol_dm"] is True
+    neg = adoption_gate(half, base, base, base, symbol_dm={"SPY": 1.0, "BTC-USD": -0.1}, **common)
+    assert neg.checks["8_traded_symbol_dm"] is False and "8_traded_symbol_dm" in neg.reasons
+    nan = adoption_gate(half, base, base, base, symbol_dm={"SPY": float("nan")}, **common)
+    assert nan.checks["8_traded_symbol_dm"] is False
+
+
+def test_symbol_dm_ignores_holdout_rows():
+    from app.strategy.evaluation import symbol_dm
+
+    rng = np.random.default_rng(0)
+    dates = pd.date_range("2017-01-01", "2020-12-31", freq="D")
+    y = rng.standard_normal(len(dates))
+    oos = pd.DataFrame(
+        {
+            "date": dates, "symbol": "SPY", "asset_class": "stock", "y": y,
+            "gbdt_q10": -1.28, "gbdt_q50": 0.0, "gbdt_q90": 1.28,
+            "ewma_t_q10": -1.0, "ewma_t_q50": 0.0, "ewma_t_q90": 1.0,
+            "segment": np.where(dates >= "2020-01-01", "holdout", "walk_forward"),
+        }
+    )  # fmt: skip
+    before = symbol_dm(oos, "SPY")
+    tampered = oos.copy()
+    tampered.loc[tampered["segment"] == "holdout", "y"] *= 10
+    assert symbol_dm(tampered, "SPY") == before
+    assert np.isnan(symbol_dm(oos, "BTC-USD"))
+
+
+def test_s2_assessment_helpers():
+    from app.strategy import assess_s2 as a2
+
+    # One lookup per class and S2 decision date (sessions for stocks, every day for coins).
+    looks = a2.edge_lookups(lambda d, c, h: EdgeStatus(c == "stock", "x"), date(2020, 3, 2),
+                            date(2020, 3, 8))  # fmt: skip
+    assert sum(c == "stock" for c, _, _ in looks) == 5
+    assert sum(c == "crypto" for c, _, _ in looks) == 7
+    summary = a2.edge_summary(looks)
+    assert summary["stock"]["with_edge"] == 5 and summary["crypto"]["with_edge"] == 0
+
+    assert a2.fixed_exposure_weights({"SPY": 0.8, "BTC-USD": 0.2}, 0.5) == {
+        "SPY": 0.4, "BTC-USD": 0.1,
+    }  # fmt: skip
+    assert a2.fixed_exposure_weights({"SPY": 0.8}, 1.7) == {"SPY": 0.8}
+
+    days = pd.date_range("2020-01-01", periods=400, freq="D")
+    up = pd.Series(0.001, index=days)
+    assert a2.bootstrap_mdd_exceedance(up, 0.2, n_boot=50) == 0.0
+    crash = pd.Series(np.r_[np.full(200, 0.001), np.full(10, -0.05), np.full(190, 0.001)], days)
+    assert a2.bootstrap_mdd_exceedance(crash, 0.2, n_boot=50, block=50) > 0.3
+
+    inputs = market()
+    dec = pd.DataFrame({"date": [pd.Timestamp("2020-03-06")], "symbol": ["SPY"], "weight": [0.5]})
+    res = run_backtest(dec, inputs, BacktestConfig(costs=FREE, taxes=NO_TAX), start=START, end=END)
+    frame = pd.DataFrame({"as_of": [pd.Timestamp("2020-03-06")], "symbol": ["SPY"],
+                          "target_weight": [0.9]})  # fmt: skip
+    under = a2.underfilled_days(res, frame)["SPY"]
+    assert under["days_with_target"] > 0 and under["days_under_target"] == under["days_with_target"]
+    dd = a2.drawdowns(res)
+    assert set(dd["episodes"]) == {"2018", "2020_covid", "2022"}
+    assert dd["episodes"]["2018"] is None and "2020" in dd["by_year"]
+
+
+def test_kill_switch_daily_loss_leaves_out_taxes_paid():
+    """ISSUE-034: a year-end tax payment lowers the curve by more than the daily-loss
+    limit; it is not a market loss, so it must not count as a trigger."""
+    inputs = _one_stock({"2020-01-02": 100, "2020-06-01": 200})
+    dec = pd.DataFrame(
+        {"date": pd.to_datetime(["2019-12-31", "2020-05-29"]), "symbol": ["SPY"] * 2,
+         "weight": [1.0, 0.0]}
+    )  # fmt: skip
+    cfg = BacktestConfig(costs=FREE, liquidate_at_end=False)
+    res = run_backtest(dec, inputs, cfg, start=date(2019, 12, 1), end=date(2021, 3, 31))
+    paid = res.tax_by_year[2020]
+    day = pd.Timestamp("2020-12-31")
+    assert paid > 0 and res.tax_paid[day] == pytest.approx(paid)
+    before = res.equity.shift(1)[day]
+    assert 1 - res.equity[day] / before > 0.03  # the curve itself fell past the limit
+    s = summarize(res, limits=RiskLimits())
+    assert s["kill_switch_count"] == 0
+    assert s["kill_switch_on_settlement_days"] == []
+    # Only the kill switch reference changes: every other figure is the same without flows.
+    plain = summarize(replace(res, tax_paid=pd.Series(dtype=float)), limits=RiskLimits())
+    assert plain["kill_switch_count"] >= 1
+    other = [k for k in s if not k.startswith("kill_switch")]
+    assert {k: s[k] for k in other} == {k: plain[k] for k in other}

@@ -27,6 +27,7 @@ from app.services.market_data import MarketDataService, QuoteCache
 from app.strategy.backtest import CostModel
 from app.strategy.paper import (
     Costs,
+    ExposureStrategy,
     PaperTrader,
     PendingOrder,
     SignalStrategy,
@@ -35,6 +36,8 @@ from app.strategy.paper import (
     equity_curve,
     fill_orders,
     fill_price,
+    format_gaps,
+    no_live_edge,
     order_costs,
     period_return,
     trade_pnl_krw,
@@ -270,7 +273,7 @@ class StubStrategy:
     def is_decision_day(self, asset_class, day):
         return self.decides(asset_class, day)
 
-    def signals(self, rows, as_of, held):
+    def signals(self, rows, as_of, held, last):
         self.seen_held.append(dict(held))
         out = []
         for r in rows.itertuples(index=False):
@@ -338,13 +341,17 @@ def test_run_fill_score_end_to_end_without_real_orders(world):
     assert (report.orders, report.tripped, report.skipped) == (3, None, None)
     rows = {r.symbol: r for r in db.scalars(select(PaperSignal))}
     spy, btc, iwm = rows["SPY"], rows["BTC-USD"], rows["IWM"]
-    # Target 20% each, but one order is capped at 5% of the 10,000,000 virtual capital.
+    # SPY and QQQ share the stock budget (0.4 each asked). QQQ stops at the 20% symbol cap,
+    # SPY as a broad index fund does not (D-025); BTC gets its 20% class budget. One order is
+    # still capped at 5% of the 10,000,000 virtual capital.
     assert (spy.action, spy.side, spy.risk_status, spy.fill_status) == (
         "buy", "buy", "clipped", "pending",
     )  # fmt: skip
     # (5% of equity after the fees of the orders checked before it)
     assert float(spy.notional_krw) == pytest.approx(500_000, rel=1e-3)
-    assert spy.target_weight == pytest.approx(0.2)
+    assert spy.target_weight == pytest.approx(0.4)
+    assert rows["QQQ"].target_weight == pytest.approx(0.2)
+    assert btc.target_weight == pytest.approx(0.2)
     assert spy.ref_price == pytest.approx(_bar(provider, "SPY", date(2026, 10, 16)).close)
     assert spy.target_date == date(2026, 10, 23)  # five sessions later
     assert btc.target_date == date(2026, 10, 23)  # seven coin days later
@@ -694,3 +701,312 @@ def test_unreadable_trip_history_cancels_pending_orders(world, monkeypatch):
     world["clock"].at(datetime(2026, 10, 20, 1, 0, tzinfo=UTC))
     assert trader.fill() == 0
     assert _fill_states(world["db"]) == {("expired", "kill_switch", "halted")}
+
+
+# --- the S2 exposure adapter ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class S2Config:
+    name: str = "test-s2"
+    horizon: str = "1d"
+    min_trade_share: float = 0.02
+    universe: dict = field(default_factory=lambda: {"SPY": "stock", "BTC-USD": "crypto"})
+    exposure: dict = field(default_factory=lambda: {"stock": 1.0, "crypto": 1.0})
+
+
+@dataclass
+class ExpSig:
+    symbol: str
+    asset_class: str
+    action: str
+    held_after: bool
+    confidence: str | None
+    reasons: dict
+    target_exposure: float
+
+
+class FakeDecide:
+    """Stands in for the S2 rule: sets the configured exposure, remembers what it saw."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def __call__(self, rows, as_of, prev, edge_at, config, asset_class):
+        self.calls.append(
+            (asset_class, as_of, dict(prev), edge_at(as_of, asset_class, "1d", "vol"))
+        )
+        k = config.exposure[asset_class]
+        out = []
+        for r in rows[rows["asset_class"] == asset_class].itertuples(index=False):
+            action = "buy" if k > prev.get("R", 0.0) else "hold"
+            reasons = {"sigma_hat": 0.16, "sigma_source": "gbdt", "e": k, "R": k, "scale": r.scale}
+            out.append(ExpSig(r.symbol, asset_class, action, k > 0, "low", reasons, k))
+        return out
+
+
+def test_s2_adapter_sizes_by_exposure_with_the_index_cap_and_never_goes_live(world):
+    db = world["db"]
+    decide = FakeDecide()
+    trader = world["trader"](ExposureStrategy(S2Config(), decide))
+    assert trader.min_order_share == 0.02  # the config's registered tolerance
+
+    report = trader.run()
+    assert report.decided == {"stock": date(2026, 10, 16), "crypto": date(2026, 10, 16)}
+    assert report.recorded == 2 and report.orders == 2
+    rows = {r.symbol: r for r in db.scalars(select(PaperSignal))}
+    assert set(rows) == {"SPY", "BTC-USD"}  # only the strategy's own universe
+    spy, btc = rows["SPY"], rows["BTC-USD"]
+    # Budget x exposure: SPY may reach the whole stock budget under the index fund cap.
+    assert spy.target_weight == pytest.approx(0.8)
+    assert btc.target_weight == pytest.approx(0.2)
+    # Each buy is still cut to one order's 5% of equity: exposure is built over days.
+    assert spy.risk_status == btc.risk_status == "clipped"
+    assert float(spy.notional_krw) == pytest.approx(500_000, rel=1e-2)
+    # The state the next decision starts from, and the 1d horizon's target date.
+    assert (spy.rationale["e"], spy.rationale["R"]) == (1.0, 1.0)
+    assert spy.target_date == date(2026, 10, 19) and btc.target_date == date(2026, 10, 17)
+    assert decide.calls[0][2] == {}  # first decision starts from no state
+    world["live"].assert_not_called()
+
+    # Sunday: only the coin bar of Saturday is new; the coin class reads its own state back.
+    world["clock"].at(datetime(2026, 10, 18, 1, 0, tzinfo=UTC))
+    again = trader.run()
+    assert again.decided == {"crypto": date(2026, 10, 17)}
+    assert decide.calls[-1][:3] == ("crypto", date(2026, 10, 17), {"e": 1.0, "R": 1.0})
+    world["live"].assert_not_called()
+    assert db.scalar(select(func.count()).select_from(Transaction)) == 0
+
+
+def test_s2_changes_within_the_tolerance_are_not_traded(world):
+    # Coin exposure 0.05 -> weight 0.01 of equity, inside the 2% tolerance: no order.
+    config = S2Config(exposure={"stock": 0.0, "crypto": 0.05})
+    world["trader"](ExposureStrategy(config, FakeDecide())).run()
+    rows = {r.symbol: r for r in world["db"].scalars(select(PaperSignal))}
+    assert rows["BTC-USD"].target_weight == pytest.approx(0.01)
+    assert (rows["BTC-USD"].side, rows["BTC-USD"].risk_status) == (None, "none")
+    assert (rows["SPY"].side, rows["SPY"].target_weight) == (None, 0.0)
+
+
+def test_s2_state_that_cannot_be_read_starts_from_zero_and_says_so(caplog):
+    strategy = ExposureStrategy(S2Config(), FakeDecide())
+    ok = {"SPY": {"e": 0.6, "R": 0.5}}
+    assert strategy.state("stock", ok) == ({"e": 0.6, "R": 0.5}, False)
+    assert strategy.state("stock", {}) == ({}, False)  # first decision: nothing to reset
+    assert strategy.state("crypto", ok) == ({}, False)  # another class's state is never used
+    bad_states = (
+        {"e": 0.6},
+        {"e": "0.6", "R": 0.5},
+        {"e": 1.5, "R": 0.5},
+        {"e": True, "R": 0.5},
+        {"e": float("nan"), "R": 0.5},
+    )
+    for bad in bad_states:
+        caplog.clear()
+        assert strategy.state("stock", {"SPY": bad}) == ({}, True)
+        assert "starting from zero" in caplog.text
+
+    # The reset reaches the records: every signal of that class carries the flag.
+    day = date(2026, 10, 16)
+    rows = stub_predict(["SPY", "BTC-USD"], {"stock": day, "crypto": day})
+    last = {"SPY": {"e": None, "R": 0.5}, "BTC-USD": {"e": 0.2, "R": 0.2}}
+    signals = {s.symbol: s for s in strategy.signals(rows, {"stock": day, "crypto": day}, {}, last)}
+    assert signals["SPY"].rationale["state_reset"] is True
+    assert "state_reset" not in signals["BTC-USD"].rationale
+
+
+def test_s2_reset_is_recorded_in_the_paper_signals(world, caplog):
+    db = world["db"]
+    trader = world["trader"](ExposureStrategy(S2Config(), FakeDecide()))
+    trader.run()
+    # Corrupt the stored coin state, then decide the next coin day.
+    btc = db.scalars(select(PaperSignal).where(PaperSignal.symbol == "BTC-USD")).one()
+    btc.rationale = {**btc.rationale, "R": "broken"}
+    db.commit()
+    world["clock"].at(datetime(2026, 10, 18, 1, 0, tzinfo=UTC))
+    trader.run()
+    new = db.scalars(
+        select(PaperSignal).where(
+            PaperSignal.symbol == "BTC-USD", PaperSignal.as_of == date(2026, 10, 17)
+        )
+    ).one()
+    assert new.rationale["state_reset"] is True
+    assert "starting from zero" in caplog.text
+    world["live"].assert_not_called()
+
+
+def test_s2_signal_without_state_is_refused():
+    def stateless(rows, as_of, prev, edge_at, config, asset_class):
+        return [ExpSig("SPY", "stock", "buy", True, None, {"sigma_hat": 0.1}, 1.0)]
+
+    strategy = ExposureStrategy(S2Config(), stateless)
+    day = date(2026, 10, 16)
+    with pytest.raises(ValueError):
+        strategy.signals(
+            stub_predict(["SPY"], {"stock": day, "crypto": day}), {"stock": day}, {}, {}
+        )
+
+
+def test_s2_paper_edge_is_off_until_the_forward_test():
+    status = no_live_edge(date(2026, 10, 16), "stock", "1d", "vol")
+    assert (status.edge, status.reason) == (False, "not_candidate")
+    strategy = ExposureStrategy(S2Config(), FakeDecide())
+    assert strategy.edge_at is no_live_edge
+    assert strategy.is_decision_day("stock", date(2026, 10, 15))  # every final session
+    assert strategy.is_decision_day("crypto", date(2026, 10, 15))
+
+
+# --- S2 with the real rule (s2.py) ----------------------------------------------------------
+
+
+def _always_edge(as_of, asset_class, horizon, *_):
+    from app.forecast.report import EdgeStatus
+
+    return EdgeStatus(True, "edge", 0.6, 500)
+
+
+def s2_predict(symbols, as_of):
+    rows = stub_predict(symbols, as_of)
+    # Standardized 80% range of width 2.5632 x 0.01 per day: sigma 0.01 a bar.
+    return rows.assign(
+        scale=0.01, gbdt_q10=-1.2816, gbdt_q90=1.2816, ewma_t_q10=-2.0, ewma_t_q90=2.0
+    )
+
+
+def test_s2_cli_strategy_is_the_registered_rule_with_the_live_edge_off(settings):
+    from app.strategy.paper import make_strategy
+
+    strategy = make_strategy("s2", settings, CostModel())
+    assert (strategy.strategy_id, strategy.horizon) == ("S2-1d", "1d")
+    assert strategy.universe == {"SPY": "stock", "BTC-USD": "crypto"}
+    assert strategy.edge_at is no_live_edge
+    from app.strategy.s2 import s2_1d
+
+    # One registered tolerance (s2.S2Config), read by paper trading (verifier N-10).
+    assert strategy.min_order_share == s2_1d().min_trade_share == 0.02
+    assert make_strategy("s1", settings, CostModel()).strategy_id == "S1-1w"
+    with pytest.raises(ValueError):
+        make_strategy("s3", settings, CostModel())
+
+
+def test_s2_rule_without_live_edge_records_no_edge_and_trades_nothing(world, settings):
+    from app.strategy.paper import make_strategy
+
+    trader = world["trader"](make_strategy("s2", settings, CostModel()), predict=s2_predict)
+    report = trader.run()
+    assert (report.recorded, report.orders) == (2, 0)
+    for r in world["db"].scalars(select(PaperSignal)):
+        assert (r.action, r.held_after, r.target_weight, r.side) == ("no_edge", False, 0.0, None)
+        assert (r.rationale["e"], r.rationale["R"]) == (0.0, 0.0)
+    world["live"].assert_not_called()
+
+
+def test_s2_rule_end_to_end_ratchets_state_through_the_records(world):
+    from app.strategy.s2 import paper_decider, s2_1d
+
+    db, clock = world["db"], world["clock"]
+    strategy = ExposureStrategy(s2_1d(), paper_decider(BUDGETS), edge_at=_always_edge)
+    trader = world["trader"](strategy, predict=s2_predict)
+
+    # Friday 10-16: the stock week's last session (a weekly date), not the coin's.
+    trader.run()
+    rows = {r.symbol: r for r in db.scalars(select(PaperSignal))}
+    spy, btc = rows["SPY"], rows["BTC-USD"]
+    sigma = spy.rationale["sigma"]
+    assert sigma == pytest.approx(0.01 * math.sqrt(252), rel=1e-3)
+    k = min(1.0, 0.06 / (0.8 * sigma))
+    assert (spy.action, spy.rationale["R"]) == ("buy", pytest.approx(k))
+    assert spy.target_weight == pytest.approx(0.8 * k)  # above 0.20: the index fund cap
+    assert (spy.side, spy.risk_status) == ("buy", "clipped")  # 5% of equity per order
+    # The coin's allowed exposure starts at 0 and only a Sunday may raise it.
+    assert (btc.action, btc.rationale["R"], btc.side) == ("hold", 0.0, None)
+
+    # Monday 10-19 01:00 UTC: Sunday's coin bar is final, a weekly coin date.
+    clock.at(datetime(2026, 10, 19, 1, 0, tzinfo=UTC))
+    assert trader.run().decided == {"crypto": date(2026, 10, 18)}
+    btc = db.scalars(
+        select(PaperSignal).where(
+            PaperSignal.symbol == "BTC-USD", PaperSignal.as_of == date(2026, 10, 18)
+        )
+    ).one()
+    sigma_c = 0.01 * math.sqrt(365)
+    k_c = min(1.0, 0.06 / (0.2 * sigma_c))
+    assert (btc.action, btc.rationale["R"]) == ("buy", pytest.approx(k_c, rel=1e-3))
+    assert btc.target_weight == pytest.approx(0.2 * k_c, rel=1e-3)
+    assert btc.rationale["exposure_before"] == 0.0  # state read back from Friday's record
+    world["live"].assert_not_called()
+    assert db.scalar(select(func.count()).select_from(Transaction)) == 0
+
+
+@pytest.mark.parametrize("bad", [-0.01, 1.0, float("nan"), "0.02", None])
+def test_s2_tolerance_outside_a_share_of_equity_is_refused(bad):
+    with pytest.raises(ValueError):
+        ExposureStrategy(S2Config(min_trade_share=bad), FakeDecide())
+
+
+# --- missed decision days (verifier N-13) ----------------------------------------------------
+
+
+def test_missed_decision_days_are_logged_recorded_and_counted(world, caplog):
+    db, clock = world["db"], world["clock"]
+    decide = FakeDecide()
+    trader = world["trader"](ExposureStrategy(S2Config(), decide))
+    trader.run()  # Friday 10-16 for both classes (the stock week's weekly day)
+    assert trader.run().missed == {}  # nothing new, nothing missed
+
+    # The runner next runs on Wednesday 10-21: Tuesday's bars are final for both classes.
+    clock.at(datetime(2026, 10, 21, 1, 0, tzinfo=UTC))
+    report = trader.run()
+    assert report.decided == {"stock": date(2026, 10, 20), "crypto": date(2026, 10, 20)}
+    # Stocks missed Monday; coins missed Saturday to Monday, Sunday being a weekly day.
+    assert report.missed == {"stock": 1, "crypto": 3}
+    assert "decision day(s) missed" in caplog.text
+    new = {
+        r.symbol: r
+        for r in db.scalars(select(PaperSignal).where(PaperSignal.as_of == date(2026, 10, 20)))
+    }
+    assert new["SPY"].rationale["missed_decision_days"] == ["2026-10-19"]
+    assert new["SPY"].rationale["missed_weekly_days"] == []
+    assert new["BTC-USD"].rationale["missed_decision_days"] == [
+        "2026-10-17",
+        "2026-10-18",
+        "2026-10-19",
+    ]
+    assert new["BTC-USD"].rationale["missed_weekly_days"] == ["2026-10-18"]
+    # The rule itself is unchanged: the coin state carried over from Friday's record.
+    assert decide.calls[-1][2] == {"e": 1.0, "R": 1.0}
+
+    gaps = trader.missed_decisions()
+    stock, coin = gaps["stock"], gaps["crypto"]
+    assert (stock.first, stock.through) == (date(2026, 10, 16), date(2026, 10, 20))
+    assert (stock.expected, stock.recorded, stock.missed) == (3, 2, (date(2026, 10, 19),))
+    assert stock.weekly_missed == () and stock.generated_share == pytest.approx(2 / 3)
+    assert (coin.expected, coin.recorded, len(coin.missed)) == (5, 2, 3)
+    assert coin.weekly_missed == (date(2026, 10, 18),)
+    assert coin.generated_share == pytest.approx(0.4)  # below half: criterion 3 would fail
+    text = format_gaps(gaps)
+    assert "crypto: 2026-10-16..2026-10-20 expected=5 recorded=2 missed=3" in text
+    assert "weekly_missed=1 (2026-10-18)" in text
+    world["live"].assert_not_called()
+
+
+def test_a_skipped_day_counts_as_missed(world):
+    trader = world["trader"](ExposureStrategy(S2Config(), FakeDecide()))
+    trader.run()
+    world["clock"].at(datetime(2026, 10, 18, 1, 0, tzinfo=UTC))
+
+    def no_data(symbols, as_of):
+        raise DataUnavailableError("down")
+
+    trader.predict = no_data
+    assert trader.run().skipped  # Saturday's coin decision could not be made
+    coin = trader.missed_decisions()["crypto"]
+    assert coin.missed == (date(2026, 10, 17),) and coin.recorded == 1
+
+
+def test_strategies_without_a_daily_calendar_report_no_gaps(world):
+    trader = world["trader"](StubStrategy({"SPY"}))
+    trader.run()
+    assert trader.missed_decisions() == {}
+    assert format_gaps({}) == "no decision calendar for this strategy"
+    assert ExposureStrategy(S2Config(), FakeDecide()).is_weekly_day("crypto", date(2026, 10, 18))

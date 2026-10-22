@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     risk_max_order_fraction: Decimal = Field(Decimal("0.05"), gt=0, le=1)
     risk_max_order_krw: Decimal | None = Field(None, gt=0)
     risk_max_position_weight: Decimal = Field(Decimal("0.20"), gt=0, le=1)
+    # Broad index funds (risk.INDEX_FUNDS, SPY) instead of the symbol cap above: a 500-stock
+    # fund has no single-issuer risk (D-025). Can only be tightened (0 < x <= 0.80).
+    risk_max_index_fund_weight: Decimal = Field(Decimal("0.80"), gt=0, le=Decimal("0.80"))
     # Share of equity each asset class may hold (STRATEGIES.md S1, registered before any
     # backtest). Together at most 1: the rest stays in cash, never borrowed. Changing them
     # changes the strategy, so STRATEGY_CONFIGS_TRIED goes up.

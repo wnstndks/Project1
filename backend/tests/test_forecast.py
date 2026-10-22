@@ -345,7 +345,7 @@ def test_rank_comparison_is_per_class_and_finds_a_planted_ranking():
     planted = verdicts(compare_all(synth_oos(signal=0.4), lags=9))
     assert set(planted) == {f"{c}:{k}" for c in ("stock", "crypto") for k in KINDS}
     assert planted["stock:rank"].edge and planted["crypto:rank"].edge
-    assert FAMILY_SIZE == 18
+    assert FAMILY_SIZE == 24
     noise = verdicts(compare_all(synth_oos(signal=0.0), lags=9))
     assert not any(c.edge for c in noise.values())
 
@@ -458,3 +458,108 @@ def test_live_rank_edge_waits_for_the_forward_test():
     status = live_edge_at(report)(date(2026, 10, 20), "stock", "1w")
     assert comps["stock:rank"].edge
     assert not status.edge and status.reason == "forward_test_pending"
+
+
+def vol_oos(knows: bool, seed: int = 0, shuffle: bool = False):
+    """OOS rows whose outcomes have a slowly changing volatility. With `knows`, gbdt's 10-90%
+    range follows it while ewma_t's range stays at the long-run width; otherwise gbdt has
+    the same width as ewma_t plus noise. The median differs between them (gbdt q50 noisy),
+    so a location error cannot pass for volatility skill."""
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2016-01-01", "2021-12-31", freq="D")
+    z90 = metrics.RANGE_TO_SIGMA / 2
+    rows = []
+    for cls, n in (("stock", 6), ("crypto", 4)):
+        for i in range(n):
+            log_sigma = np.zeros(len(dates))
+            for t in range(1, len(dates)):
+                log_sigma[t] = 0.98 * log_sigma[t - 1] + rng.normal(0, 0.1)
+            sigma = np.exp(log_sigma)
+            y = sigma * rng.standard_normal(len(dates))
+            if shuffle:
+                y = rng.permutation(y)
+            width = sigma if knows else np.exp(rng.normal(0, 0.05, len(dates)))
+            q50 = rng.normal(0, 0.2, len(dates))
+            rows.append(
+                pd.DataFrame(
+                    {
+                        "date": dates,
+                        "symbol": f"{cls[0].upper()}{i}",
+                        "asset_class": cls,
+                        "y": y,
+                        "fr": y * 0.02,
+                        "gbdt_p_up": 0.5,
+                        "climatology_p_up": 0.5,
+                        "gbdt_q10": q50 - z90 * width,
+                        "gbdt_q50": q50,
+                        "gbdt_q90": q50 + z90 * width,
+                        "ewma_t_q10": -z90,
+                        "ewma_t_q50": 0.0,
+                        "ewma_t_q90": z90,
+                        "segment": np.where(dates >= "2021-06-01", "holdout", "walk_forward"),
+                    }
+                )
+            )
+    return pd.concat(rows, ignore_index=True)
+
+
+def test_vol_comparison_finds_a_planted_volatility_forecast_only():
+    from app.forecast.report import compare_all
+
+    planted = verdicts(compare_all(vol_oos(knows=True), lags=5))
+    assert planted["stock:vol"].edge and planted["crypto:vol"].edge
+    assert planted["stock:vol"].dm_stat > 5
+    noise = verdicts(compare_all(vol_oos(knows=False, seed=1), lags=5))
+    assert not noise["stock:vol"].edge and not noise["crypto:vol"].edge
+    # Shuffled outcomes break the link between the forecast and the volatility.
+    shuffled = verdicts(compare_all(vol_oos(knows=True, seed=2, shuffle=True), lags=5))
+    assert not shuffled["stock:vol"].edge and not shuffled["crypto:vol"].edge
+
+
+def test_vol_loss_scores_the_width_not_the_median():
+    y = np.array([0.5, -1.0, 2.0])
+    lo, hi = np.array([-1.0, -2.0, -0.5]), np.array([1.0, 2.0, 1.5])
+    shifted = metrics.qlike(y, metrics.implied_sigma(lo + 0.7, hi + 0.7))
+    assert shifted == pytest.approx(metrics.qlike(y, metrics.implied_sigma(lo, hi)))
+    # The right volatility beats a wrong one in expectation.
+    rng = np.random.default_rng(0)
+    draws = 2.0 * rng.standard_normal(200_000)
+    assert metrics.qlike(draws, np.full(len(draws), 2.0)).mean() < (
+        metrics.qlike(draws, np.full(len(draws), 1.0)).mean()
+    )
+    assert metrics.implied_sigma(np.array([0.0]), np.array([0.0]))[0] == metrics.MIN_SIGMA
+
+
+def test_point_in_time_vol_edge_uses_only_outcomes_known_by_then():
+    from app.forecast.report import PointInTimeEdge, target_end_dates
+
+    oos = vol_oos(knows=True)
+    as_of = date(2019, 6, 30)
+    before = PointInTimeEdge({"1d": oos}).lookup("vol")(as_of, "stock", "1d")
+    tampered = oos.copy()
+    for cls in ("stock", "crypto"):
+        rows = tampered["asset_class"] == cls
+        ends = target_end_dates(pd.DatetimeIndex(tampered.loc[rows, "date"]), cls, "1d")
+        idx = tampered.index[rows][ends > pd.Timestamp(as_of)]
+        tampered.loc[idx, ["y", "fr"]] = 10 * tampered.loc[idx, ["y", "fr"]]
+    after = PointInTimeEdge({"1d": tampered}).lookup("vol")(as_of, "stock", "1d")
+    assert before == after
+    assert before.edge and before.reason == "edge"
+    assert before.hit_rate_lower is not None and before.hit_rate_lower > 0.5
+    with pytest.raises(ValueError):
+        PointInTimeEdge({"1d": oos}).lookup("volatility")
+
+
+def test_live_range_and_vol_edges_wait_for_the_forward_test():
+    from app.forecast.report import compare_all, live_edge_at, to_dict
+
+    comps = verdicts(compare_all(vol_oos(knows=True), lags=5))
+    report = {"horizons": {"1d": {"comparisons": {k: to_dict(c) for k, c in comps.items()}}}}
+    assert comps["stock:vol"].edge
+    for kind in ("vol", "range", "rank"):
+        status = live_edge_at(report, kind=kind)(date(2026, 10, 20), "stock", "1d")
+        assert not status.edge and status.reason == "forward_test_pending", kind
+    # Direction is read from the report as before (no edge here).
+    assert live_edge_at(report, kind="direction")(date(2026, 10, 20), "stock", "1d").reason == (
+        "not_significant"
+    )

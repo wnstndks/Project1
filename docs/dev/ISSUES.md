@@ -336,3 +336,27 @@
 - 근거: `backend/app/config.py:31`, CLAUDE.md 「매매 신호·전략 규칙」(data A10, quant A12, risk A9, eval E-10).
 - 해결: 미해결 — 2단계 담당: 리드. `docs/dev/`는 1단계 문서화로 만들었다(STRATEGIES.md는 quant-researcher가 2단계에 작성). 자리표시자는 D-001·D-002로 운영하면서 사용자 확정을 기다린다(TODO_FOR_ME.md). 추출기 설명은 리드가 CLAUDE.md를 갱신할 때 맞춘다.
 - 검증: verifier 확인(2026-10-20). `config.py:31` 기본값 `ollama`, CLAUDE.md 자리표시자 두 곳.
+
+### [ISSUE-034] 백테스트 킬스위치 참고 집계가 연말 세금 납부를 일일 손실로 셈
+- 현상: S2-1d 백테스트(데모 자본 1억원 기준)의 킬스위치 참고 발동 1회(2024-12-31)는 그날 평가액이 −3.06% 줄어서 생겼다. 그중 약 −2.80%p는 그날 낸 2024년 양도세(약 350만원)이고, 시장 움직임은 약 −0.26%였다. d2의 2025-10-18 발동도 마지막 날 매도·세금 정산일과 겹친다. 기준선의 발동 횟수에도 같은 경우가 섞여 있을 수 있다(가설).
+- 원인: `summarize`가 세금을 낸 뒤의 평가액 곡선으로 `kill_switch_triggers`를 계산한다. 세금 납부일의 평가액 감소가 일일 손실 3%로 잡힌다.
+- 근거: verifier 재현 `scratchpad\verifier\s2_killswitch_check.py`. 평가액은 2024-12-30 125,082,105원에서 2024-12-31 121,253,775원으로 줄었고, `tax_by_year[2024]`는 3,505,083원이다. 코드는 `backend/app/strategy/backtest.py`의 `settle_taxes`(12-31 납부)와 `summarize`의 `kill_switch_triggers(eq, ...)`.
+- 해결: 판정에는 영향이 없다. 채택 판정은 킬스위치를 끈 MDD로 하고(D-003), 발동 날짜는 참고용이다. 리드 결정으로 risk 방식을 채택했다(2026-10-22, 최종 해결). 백테스트와 모의투자가 같은 킬스위치 규칙을 쓴다(D-003).
+  - risk: `risk.kill_switch_triggers(..., flows=)`와 `portfolio_breach(..., flows=)`. 일일 손실 규칙에서 그날 계좌 밖으로 나가거나 들어온 돈(세금, 입출금)을 뺀다. 낙폭 규칙은 세금을 낸 곡선 그대로 센다. flows를 넘기지 않으면 이전과 같다.
+    - 일일 손실을 시장 손익으로 센 이유: 일일 손실 킬스위치는 하루짜리 이상 손실을 잡는 장치다. 연말 세금 납부로 운영이 매년 멈추면 오탐이다.
+    - 낙폭은 세금을 포함한 이유: 세금은 실제 비용이고, 채택 MDD도 같은 세후 곡선으로 잰다(D-003, 백테스트와 운영의 규칙 일치). 입출금이 생기면 낙폭도 그만큼 보정해야 한다. 지금은 모의투자와 백테스트 모두 입출금이 없어 해당하지 않는다.
+    - 모의투자(`paper.py`)는 세금·입출금을 모형화하지 않는다. 그래서 운영 킬스위치는 이 이슈의 영향을 받지 않았고, flows도 넘기지 않는다.
+  - eval:
+    - `run_backtest`가 날짜별 세금 납부액을 `BacktestResult.tax_paid`에 남긴다.
+    - `summarize`가 `flows=-tax_paid`로 넘긴다.
+    - 세금 납부일·청산일의 발동(이제 낙폭 규칙만 해당)은 `kill_switch_on_settlement_days`로 따로 표시한다.
+    - 판정과 성과 수치는 바뀌지 않는다. 채택 MDD는 `max_drawdown`(세후 곡선)으로 계산하고 킬스위치를 쓰지 않는다. 테스트는 `summarize`에서 킬스위치 항목을 뺀 모든 값이 flows 유무와 무관하게 같은지 확인한다.
+  - 영향: 이전 보고(wave A·B, wave C)의 `kill_switch_count`는 수정 전 방식으로 센 값이다. S2-1d의 1회(2024-12-31)는 새 방식에서 0회다. 기준선 횟수는 다시 계산하지 않았다(참고값).
+- 검증: verifier 재현(2026-10-22). 세금을 빼면 그날 손실은 3% 한도 아래다. eval 테스트 `tests/test_backtest.py::test_kill_switch_daily_loss_leaves_out_taxes_paid`: 곡선이 3% 넘게 떨어진 세금 납부일이 발동으로 세지 않는다.
+  - risk 테스트(`tests/test_risk.py`):
+    - `test_daily_loss_leaves_out_taxes_and_other_cash_flows`
+      - 이 이슈 수치는 flows가 없으면 발동하고, 세금을 flows로 넘기면 발동하지 않는다.
+      - 같은 날 시장 −4%는 세금이 있어도 발동한다.
+      - 입금은 손실을 가리지 않는다.
+    - `test_drawdown_still_counts_taxes_paid`
+  - 전체 405개가 통과했다. verifier 재확인 완료(2026-10-22): `_daily_loss`는 1 − (오늘 − flow)/어제이고 summarize가 flow = −세금을 넘기므로 세금이 더해져 손실에서 빠진다. 이 이슈 수치로 계산하면 (121,253,775 + 3,505,083) / 125,082,105 → 손실 0.26%라 발동하지 않는다. 낙폭 규칙과 채택 MDD는 세금을 낸 곡선 그대로다. 운영 킬스위치(`paper.py`의 `kill_switch_triggers`·`portfolio_breach` 호출)에는 flows를 넘기지 않아 동작이 바뀌지 않는다(fail-closed 유지). S2의 낙폭은 10.7%라 새 방식에서 발동은 0회가 맞다.

@@ -350,3 +350,137 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - STRATEGIES.md 40행 확인(2026-10-21): quant 수정 전 사본과 diff한 결과 40행 한 줄만 바뀌었다("대략 t ≥ 3.5" → "단측 z ≈ 3.1 이상"). 남은 비차단 항목 없음.
 - STRATEGIES.md 40행 중간 확인(2026-10-21, 바로 아래 재확인으로 대체됨): 한때 40행이 PROGRESS·waveB_s1.md와 같은 긴 W-2 문구였다. 그 뒤 quant가 리드의 앞선 지시를 늦게 처리해 짧은 문구로 다시 바꿨다.
 - STRATEGIES.md 40행 최종(2026-10-21, 리드 확정): "시점 기준 rank IC t는 마지막 결정일 1.26, 결정 가능한 전체 날짜 중 최대 1.29로, Holm m=18 × 3 기준(단측 z ≈ 3.1 이상)에 한참 못 미친다." 수정 전 사본과 diff한 결과 40행만 바뀌었다. 중복이 없고, 내용은 W-2 문구(첫 순서 p < 0.05/54 ≈ 0.00093, 단측 z ≈ 3.1)와 같다.
+
+## S2-1d 사전 등록 (2026-10-22)
+- 판정: **조건부 통과**. 차단 1건(B-1), 미완 1건(M-1). 상세는 scratchpad `phase3\verify_registration.md`.
+- 대상: STRATEGIES.md 「S2 — 예측 변동성으로 SPY·BTC 노출 조절」, DECISIONS.md D-024·D-025, TODO_FOR_ME.md 1줄, scratchpad `phase3\` 설계·등록 문서와 합성 시뮬레이션 6개.
+- 변경 감지 해시(sha256 앞 16자리): STRATEGIES S2 절 `fe3129194e59b93a`, D-024~D-025 `60dc7c2cded07964`. 이후 바뀌면 사후 변경으로 다시 본다.
+
+### 확인한 항목
+| 항목 | 결과 |
+|---|---|
+| 리드 최종 결정 6개와 세 문서의 일치 | 일치. 철회된 ewma σ̂ 대체·실제 비중 band 인자는 기각 대안으로만 남음 |
+| 등록 전 결과 열람 흔적 | 없음. artifacts에 오늘 생긴 파일 없음, run 3 report.json(18개 비교, vol 없음) 그대로, holdout_log 3줄 |
+| 합성 시뮬레이션 | `sizing_sim*.py`는 numpy·sys만 사용(시장 데이터·DB·네트워크 없음). 등록 표 4행, 정적 0.8/0.2 P ≥ 0.98, 래칫 4~7%p를 재실행으로 재현 |
+| 규칙 모호성 | 초기 상태, 결측, 결정일, 체결, 래칫·밴드, 5% 주문 상한과 2% 허용오차(정체 없음, 경계 `>`가 문구와 같음) 확인. y·fr 미사용 |
+| CLAUDE.md | OOS만 입력, '우위 없음', 레버리지 없음, 한도 설정값, `AM_LIVE_TRADING` 불변, 실보유·금액 없음, 누수 없음 |
+| 기준선·다중검정 | 같은 기간·KRW·비용·세금. Holm m=24 × 3, 전략 m=2 × 3, DSR N=3 일관 |
+| pytest / ruff | 385 통과 / 통과(2단계 코드 포함 작업 트리 스냅샷) |
+
+### 발견한 문제
+- B-1(quant): PIT vol edge의 Holm 순위가 같은 묶음의 다른 p값에 달려 있는데, `PointInTimeEdge`에 넣을 기간(1d만 대 1d·1w·1m)과 `rank_symbols`가 등록되지 않았다. 결과를 본 뒤 고를 수 있는 자유도다. "run 3 walk_forward 1d·1w·1m 전부, rank_symbols = strategy_symbols(), configs_tried 3(S1 assess와 같음)"을 규칙에 한 문장 추가하면 해결.
+- M-1(eval): `evaluation.py`의 `STRATEGY_CONFIGS_TRIED`가 아직 2다. 3으로 올리고 주석을 남긴 뒤 백테스트한다.
+- 비차단 N-1~N-10: 지수 ETF 상한 `max()` 구현과 D-025 "더 엄격하게만" 문구 차이(risk), 2단계 코드가 verifier 확인 전에 작업 트리에 들어옴(리드), 수치 표현 0.07~0.09 → 0.06~0.09, "두 종목 목표" 문구, 첫 결정일 명시, 반증 7의 NaN 처리, eval_design 반증 번호, 초안 파일 표시, 기준선 ② 재계산 확인, 2% 상수 중복.
+  - N-2 사유(리드 확인 2026-10-22): 리드가 등록 완료 통보 뒤 "실데이터 계산 금지, 합성 테스트만" 조건으로 검증과 병행 구현을 지시했다. 절차 위반이 아니다. 실데이터 실행 흔적이 없다는 확인과 등록 절 해시에 의한 사후 변경 감시는 그대로 유지한다.
+
+### 재현
+- `py -3.11 -m uv run python -I <scratchpad>\phase3\sizing_sim6.py 3`(및 `sizing_sim2.py 1`, `sizing_sim4.py 3`), backend\에서.
+- `grep -n "STRATEGY_CONFIGS_TRIED =" backend/app/strategy/evaluation.py`, `wc -l docs/dev/holdout_log.jsonl`.
+- B-1 재확인(2026-10-22): **해결**.
+  - 방법: 첫 검증 때의 S2 절 원문을 복원해(해시 `fe3129194e59b93a` 일치) 현재 절과 diff했다. 바뀐 줄은 6줄이다.
+    - edge 항목 끝: PIT 판정 객체를 고정(run 3 walk_forward 1d·1w·1m 전부, `rank_symbols=strategy_symbols()`, `configs_tried=3`, min_years 2, lags `HORIZON_DAYS`, S1 assess와 같은 방식).
+    - N-3: 0.06~0.09. N-4: 자산군별 결정일 문구. N-5: `FIRST_DAY` 2017-01-01. N-6: 반증 7에서 Sharpe가 NaN이면 기각. 「기준값의 근거」 첫 줄 정정.
+  - 등록 수치(r, σ*, 밴드, 허용오차, 예산, 반증 1~9의 기준값)는 바뀌지 않았다. 모두 명확화이고 결과 열람 전이므로 카운터는 3 그대로가 맞다. 변경 이력에도 한 줄이 남아 있다.
+  - 무결성: holdout_log 3줄, artifacts에 오늘 생긴 파일 0개.
+  - N-8: `s2_rules_block.md` 첫 줄에 "대체됨" 표시가 있다. 해결.
+  - 새 감시 해시: STRATEGIES S2 절 `e788b68a9686ce29`(116줄), D-024~D-025 `04ebacc8b17f7e1a`.
+  - D-025 변경: "기존 수치 영향 없음"을 정정하는 항목이 추가됐다. 상한은 전역이라 기준선 ②를 다시 실행하면 수치가 바뀔 수 있고, eval이 다시 실행해 보고한다(N-9와 같은 내용). `symbol_cap`의 max 규칙도 적혔다.
+- 남은 항목:
+  - M-1(eval): `evaluation.py:36`이 아직 `STRATEGY_CONFIGS_TRIED = 2`다. 미완.
+  - N-1(risk): 진행 중. D-025 367행과 `config.py`의 "0 < x ≤ 0.80, 더 엄격하게만"이 그대로라 0.20 미만 값에 효과가 없다는 점이 아직 드러나 있지 않다.
+  - N-10: 요청 단계다.
+- M-1·N-1 재확인(2026-10-22): **둘 다 해결**. S2-1d 사전 등록 판정을 **통과**로 바꾼다.
+  - M-1: `evaluation.py:38`이 `STRATEGY_CONFIGS_TRIED = 3`이고 주석(S2-1d 등록, d1/d2는 세지 않음)이 있다. `assess.py`와 `assess_s2.py`는 이 상수를 Holm 배수와 DSR N으로 읽는다.
+  - B-1 구현 대조: `assess_s2.py`도 1d·1w·1m walk_forward로 `PointInTimeEdge(oos, rank_symbols=strategy_symbols(), configs_tried=CONFIGS_TRIED)`를 만든다. 등록 문구와 같다.
+  - N-1: `RiskLimits.symbol_cap`은 이제 `INDEX_FUNDS`에 `max_index_fund_weight`를 그대로 쓴다. 0.20보다 엄격한 값도 적용되고(`test_risk.py::test_a_tighter_index_cap_binds_even_below_the_symbol_cap`), D-025 「적용 방식」이 이렇게 고쳐졌다. `NO_LIMITS`는 `max_index_fund_weight=1.0`이다.
+  - 등록 절 해시는 `e788b68a9686ce29`로 변화가 없다. D-024~D-025 해시는 N-1 문구 수정으로 `14fba22df12ecba4`가 됐다(diff는 「적용 방식」 3줄뿐).
+  - 무결성: holdout_log 3줄, artifacts에 오늘 생긴 파일 0개. pytest 전부 통과, ruff 통과.
+  - 남은 비차단: N-10(2% 상수 단일화, 요청 단계). N-9(기준선 ② 재실행)와 N-6(NaN 처리 구현)은 2단계 백테스트 검증 때 확인한다.
+- risk 재확인(2026-10-22, N-1·N-10·state_reset): **통과**.
+  - N-1: `symbol_cap`이 `INDEX_FUNDS`에 `max_index_fund_weight`를 그대로 쓴다. `check_order`의 사유도 맞고 `NO_LIMITS`는 1.0이다.
+  - N-10: `paper.S2_MIN_ORDER_SHARE`가 없어졌다(grep 0건). `ExposureStrategy`는 `S2Config.min_trade_share`를 읽고, [0, 1) 밖이면 거부한다.
+  - state_reset: 저장된 e·R을 읽을 수 없으면 0에서 시작하고, 경고 로그와 `state_reset` 플래그를 남긴다. 첫 결정은 리셋으로 치지 않는다. 기록은 `strategy_id`별로 조회한다(`_rows`). 0에서 시작하면 주간 결정일까지 증액하지 않으므로 보수적인 쪽이다.
+  - `AM_LIVE_TRADING` 기본 False(config.py:38). true로 바꾸는 코드·설정은 0건이다. S2 모의투자의 edge는 `no_live_edge`다.
+  - pytest 399 passed, ruff check 통과, format 112 files.
+  - 해시: STRATEGIES S2 절은 `e788b68a9686ce29` 그대로다. D-024~D-025는 본문이 같고, 뒤에 D-026(eval 기록)이 붙으면서 구분 빈 줄 하나 때문에 해시가 `df81da38210b9620`으로 바뀌었다. D-026의 반증 7·8, m=24, 기준선 ② 한도, 허용오차 서술은 등록과 같다.
+  - 비차단:
+    - N-11(eval): D-026은 반증 7에서 "NaN이면 기각"이라고 하지만, `backtest.sharpe`는 분산 0이면 0.0을 돌려주므로 NaN 분기에는 도달하지 않는다. 둘 다 현금이면 0 = 0이라 "같으면 기각"으로 기각되므로 결과는 같다.
+    - N-12(eval): 등록 진단의 "업비트 KRW 민감도(2021-10 이후)"가 `assess_s2.py`에 없다. 판정과 무관하지만 보고서에 생략 사유를 적어야 한다.
+    - N-13(risk): 모의투자 실행기가 주간 결정일을 놓치면 그 주의 증액이 다음 주로 밀린다. 백테스트는 모든 날을 재생하므로 전진 모의투자 동안 실행 누락일을 기록·보고해야 한다.
+
+## S2-1d 백테스트 결과 (wave C, 2026-10-22)
+- 판정: **통과**. 관문 ① 기각(반증 1·2·3·4·7 해당, 5·6·8 통과)이 맞고, 보고 수치는 모두 재현된다. 상세는 scratchpad `phase3\verify_waveC_s2.md`.
+- 사후 변경 없음:
+  - 등록 절 해시 `e788b68a9686ce29`는 실행 전후로 같다. holdout_log는 3줄이고 artifacts에 새 파일이 없다.
+  - assess_s2가 쓰는 코드는 모두 실행 시작(15:13 KST) 전에 고쳐졌다.
+
+### 확인한 항목
+| 항목 | 결과 |
+|---|---|
+| assess_s2 재실행 | eval JSON과 모든 필드 일치(차이 0개) |
+| PIT vol edge 독립 재계산 | QLIKE 날짜별 차이 일치(최대 차이 0). XNYS 목표 종료일 불일치 0. 표본 36개 날짜의 사유·t·n 일치. 결정일 자기 행 미사용(누수 없음) |
+| 규칙 재생(등록 문구로 따로 구현) | 결정 5,407개의 동작 전부 일치. 노출 차이 ≤ 3e-5(환산 상수 2.5632 대 2.563103) |
+| SPY 별도 시뮬레이터 | 최종 평가액·세금·비용 일치(상대 차이 4e-16). 비용·세금이 실제로 차감됨 |
+| 지표 | S2 CAGR 2.21%, Sharpe 0.44, MDD 10.7%, 비용 비율 24.4%. 대 ① t −3.89, 대 ② t −2.37. 연도 2/9. d2 Sharpe 0.512. SPY·BTC vol DM 4.21·0.029. 모두 일치 |
+| 조건 동일성 | 같은 기간·비용·세금·자본. 한도와 허용오차의 차이는 등록대로. d1·d2 정의 일치 |
+| 기준선 ②(N-9) | S1 보고값 16.89%가 결정 종료 2025-10-01에서 재현되고, 2025-10-08에서는 17.43%. SPY 최대 0.165라 D-025 상한의 영향 없음 |
+| 코드 검토 | s2.py, risk.py, paper.py(state_reset), assess_s2.py, evaluation.py가 등록 규칙과 같다. y·fr 미사용. AM_LIVE_TRADING False |
+
+### 발견한 문제
+- ISSUE-034(eval, 비차단): S2 킬스위치 참고 발동 2024-12-31은 연말 양도세 납부(−2.80%p)를 일일 손실로 센 것이다. 그날 시장 움직임은 −0.26%였다. 판정에는 영향이 없다.
+- N-14(eval): 보고서 원인 3의 근거 "고정 노출 ① Sharpe 1.13"은 BTC를 포함한 전 기간 값이다. 2021-08-02 이후로 다시 계산하면 S2 0.636, SPY 보유 0.667, 기준선 ① 0.871이다. 결론은 같으므로 근거 수치를 바꾸기를 권한다.
+- N-15(quant·eval): σ̂ 환산 상수가 규칙(2.5632)과 검정(2.563103)에서 다르다. 둘 다 등록 문구와 같고 영향은 1e-5 수준이다.
+
+### 재현
+- backend\에서 `py -3.11 -m uv run python -m app.strategy.assess_s2 <out>`, `PYTHONPATH=. py -3.11 -m uv run python <scratchpad>\verifier\s2_pit_check.py <out>`, `s2_independent.py <out>`, `s2_killswitch_check.py`, `s2_post2021.py`
+- 리드 추가 항목(2026-10-22):
+  - edge 비율 집계: 분모는 주식 2,204(XNYS 세션 2017-01-03~2025-10-08)와 코인 3,203(UTC 날짜 2017-01-01~2025-10-08)을 더한 5,407이다. 분자는 주식 1,030 + 코인 0이다. 1,030 / 5,407 = 0.1905다. 분모 수는 규칙 재생과 달력에서 다시 셌다.
+    - 주식의 첫 edge는 2021-07-30이다. 표본 대조에서도 2021-06-30은 보정 p 0.061, 2021-12-31은 0.0225였다.
+    - 2021-07-30 이후 세션은 약 1,055개인데 그중 edge는 1,030개다. 중간에 꺼진 날이 약 25일 있다는 뜻이다.
+    - 분자 1,030은 PointInTimeEdge 조회값이다. 표본 36개 날짜는 독립 재계산과 일치했다.
+  - N-12 생략 사유: 타당하다. S2와 d2는 BTC 비중이 전 기간 0이었다(독립 재계산 최대 BTC 비중 0). 그래서 업비트 KRW 시세와 수수료로 바꿔도 S2 결과가 같다. 이 진단은 판정에 쓰지 않는다. d1(관문 무시)은 BTC를 들었으므로 업비트 민감도가 달라질 수 있지만, d1은 채택 불가 진단이라 결론에 영향이 없다.
+- quant 공개 확인(2026-10-22): 결과가 나온 뒤 S2 절에 넣었다가 지운 두 줄(성공 기준 3 집계 문구, 변경 이력)은 남아 있지 않다. S2 절 해시는 B-1 재확인 때와 같은 `e788b68a9686ce29`이고, 변경 이력의 마지막 줄도 B-1 반영 줄 그대로다. 사후 변경은 없다.
+  - 비차단 N-16(리드·quant): 관문 ③ 성공 기준 3("결정일의 50% 이상에서 신호가 정상 생성")은 자산군별인지 합산인지, `no_edge`를 정상 생성으로 볼지가 등록 문구에 없다. S2는 관문 ①에서 기각돼 지금은 쓸 일이 없다. 다음 전략은 등록할 때 정한다(이번 결과를 본 뒤 S2 문구를 바꾸면 사후 변경이다).
+- risk N-13 재확인(2026-10-22): **통과**.
+  - `run()`은 마지막 기록 뒤 놓친 결정일과 그중 주간 결정일을 경고 로그, `RunReport.missed`, 그날 기록의 rationale에 남긴다.
+  - `missed_decisions()`는 읽기 전용이다. 첫 기록일부터 마지막 확정 봉까지 결정일·기록·누락을 세고, 데이터 결측으로 skip된 날도 누락으로 센다.
+  - `paper gaps --strategy s2`는 날짜와 개수만 출력한다(금액 없음).
+  - 래칫 규칙은 바뀌지 않았다. pytest 402 passed, ruff 통과, `AM_LIVE_TRADING` False.
+- STRATEGIES.md S2 결과 반영 확인(2026-10-22, quant): **통과**.
+  - 등록 본문(「### 가설」부터 절 끝까지)의 해시는 반영 전후 모두 `b3c9c57c34c23319`이다. 반영 전은 등록 검증본(e788…)에서 잘라 계산했다. 등록 문구와 기준값은 그대로다. 등록 본문 위에서 바뀐 것은 상태 줄(기각)과 새로 넣은 「결과」「원인 분석 (S2)」「교훈과 후속」「다음 가설 후보」뿐이다.
+  - 수치(관문 표, edge 내역, 동작 횟수, 성과 4행, 진단 3행, 비용 0.5배, 코인 조회 비중 59%, N-14의 2021-08-02 이후 값)가 waveC_s2·verify_waveC_s2와 같다.
+  - N-14·N-15·N-16·ISSUE-034·N-13이 후속 항목에 반영됐다. 「이전 시도와 실패」의 S2 행과 S1 후보 목록의 대체 표시가 들어갔다. 변경 이력에 기각 한 줄이 추가됐고 카운터는 3이다.
+  - 사후 조정 금지(σ*, 밴드, 기간, 코인 제외, edge 정의 재시도 안 함)를 적었다. 다음 후보 C-1~C-4는 등록하지 않았다.
+- eval·risk ISSUE-034·N-14 재확인(2026-10-22): **통과**. (eval의 처음 통보는 "표시 키만 추가"였는데, 검증하는 동안 "세금을 뺀 곡선으로 센다"로 바뀌었다. 아래는 바뀐 뒤의 코드 기준이다.)
+  - ISSUE-034:
+    - `run_backtest`가 날짜별 세금 납부액을 `BacktestResult.tax_paid`에 남긴다.
+    - `summarize`는 `kill_switch_triggers(eq, limits, flows=-tax_paid)`를 쓴다. `_daily_loss` = 1 − (오늘 − flow)/어제라서 세금이 손실에서 빠진다. 입금은 손실을 가리지 않는다.
+    - 낙폭 규칙과 채택 MDD는 세금을 낸 곡선 그대로라 판정은 바뀌지 않는다(D-003).
+    - 이슈 수치로 다시 계산하면 2024-12-31 손실은 0.26%라 발동하지 않는다. S2 낙폭은 10.7%이므로 새 방식에서 S2 발동은 0회다.
+    - `kill_switch_on_settlement_days`는 세금 납부일·최종일의 (낙폭) 발동만 표시한다.
+    - 운영 킬스위치(`paper.py`의 `kill_switch_triggers`, `portfolio_breach`)는 flows 없이 불리므로 동작이 바뀌지 않는다(fail-closed 유지).
+    - 테스트: `test_kill_switch_daily_loss_leaves_out_taxes_paid`(backtest), `test_daily_loss_leaves_out_taxes_and_other_cash_flows`·`test_drawdown_still_counts_taxes_paid`(risk). ISSUES.md 검증 줄을 갱신했다(처음에 verifier가 적은 "표시 키 하나만" 문장은 사실과 달라 지웠다).
+  - 공개 확인: wave A·B·C 보고의 `kill_switch_count`는 이전 방식으로 센 값이다(참고값, ISSUE-034 영향 줄). 실행 뒤 `backtest.py`가 바뀌었으므로 지금 코드로 assess_s2를 다시 돌리면 킬스위치 참고 필드만 달라지고 성과·판정 수치는 같아야 한다.
+  - N-14: waveC_s2.md 6절 원인 3이 2021-08-02 이후 값(S2 0.636, 노출 0.401, SPY 0.667, ① 0.871)으로 바뀌었고 단일 구간 참고치로 표시됐다. 4절 킬스위치 문단도 확인된 원인으로 고쳐졌다.
+  - 비차단 N-17(eval): waveC_s2.md 125행의 경로가 `scratchpaderifier\s2_post2021.py`로 깨져 있다(``가 제어문자로 바뀐 것으로 보임). `scratchpaderifier\s2_post2021.py`로 고쳐야 한다. 4절·8절은 새 방식(세금 제외, S2 0회, 조치 전 JSON)과 맞는 것을 확인했다.
+
+## 마무리 검증 (2026-10-22, 커밋 전)
+- 판정: **통과. 커밋 가능.** 차단 문제는 없다.
+
+| 항목 | 결과 |
+|---|---|
+| PROGRESS.md 「S2-1d 결과」 | 관문 표, edge 내역, 성과 5행, 진단 3행, 위험 지표, 비용 0.5배, 미달 일수, 2021-08-02 이후 값이 verify_waveC_s2와 같다. 금액은 데모 자본(1억원) 백테스트 값뿐이고 실보유 정보는 없다 |
+| ISSUE-034 최종 | risk의 `flows` 인자(일일 손실만 세금·입출금 제외, 낙폭은 세후 곡선)와 eval의 `tax_paid`, `summarize(flows=-tax_paid)`가 연결돼 있다. 운영 킬스위치는 flows 없이 동작한다. ISSUES.md 5개 항목 형식이 지켜졌고 risk·eval 문구가 모두 남아 있다 |
+| 최종 코드로 assess_s2 재실행 | eval JSON과 다른 것은 킬스위치 참고 필드뿐이다. S2 1→0, d2 1→0, d1 4→3, 기준선 ① 56→55, SPY 38→37, `kill_switch_on_settlement_days`가 새로 생김. 관문·성과·진단 수치는 모두 같다 |
+| waveC_s2.md N-14 | 반영됨 |
+| TODO_FOR_ME.md | C-1~C-4 선택 항목, 지수 ETF 상한 확인, S2 모의투자 실행·누락 안내. 사용자 결정·실행 항목만 있다 |
+| pytest / ruff / format | 405 passed / 통과 / 112 files |
+| alembic | 새 DB에 upgrade head를 하면 head 9f363af5cd85이고, `alembic check`는 "No new upgrade operations detected" |
+| AM_LIVE_TRADING | 기본 False(config.py:38). true로 바꾸는 코드·설정은 0건 |
+| 커밋 대상 | 수정 25개와 새 파일 4개(`s2.py`, `assess_s2.py`, `test_s2.py`, `frontend/.../HoldingsList.tsx`). `*.db`(-shm·-wal 포함), `backend/.env`, `backend/artifacts/`, `.claude/`는 .gitignore로 제외된다. frontend/ 변경은 기존 사용자 작업이라 이번 커밋 대상이 아니다 |
+| 등록·홀드아웃 | 등록 본문 해시 `b3c9c57c34c23319`, holdout_log 3줄 |
+
+- 비차단:
+  - N-17(eval): 해결. waveC_s2.md의 경로 제어문자가 0건이다.
+  - N-18(risk·리드): TODO_FOR_ME가 기각된 S2의 모의투자를 매일 실행하라고 안내한다. 지금은 '우위 없음'과 노출 0 기록만 쌓이므로 선택 사항으로 표시하기를 권한다.
+  - 참고값: waveC·PROGRESS의 기준선 킬스위치 횟수(56 등)는 ISSUE-034 이전 방식으로 센 값이다. ISSUES에 공개돼 있다.

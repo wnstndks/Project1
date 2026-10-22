@@ -16,6 +16,7 @@ Gate ② (the holdout, reference only) is opened once per strategy configuration
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -24,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from app.forecast import cv, metrics
-from app.strategy.backtest import BacktestResult, cost_share
+from app.strategy.backtest import BacktestResult, cost_share, sharpe
 from app.strategy.risk import RiskLimits, adopt_strategy, max_drawdown
 
 # Strategy configurations (signal rules and thresholds) tried on this data, the holdout
@@ -32,7 +33,9 @@ from app.strategy.risk import RiskLimits, adopt_strategy, max_drawdown
 # Sharpe (D-004). Raise it whenever a rule or threshold changes after seeing results and
 # log the change in STRATEGIES.md.
 # 2: S1-1w and S1-1m registered 2026-10-20 before any backtest.
-STRATEGY_CONFIGS_TRIED = 2
+# 3: S2-1d registered 2026-10-22 before any backtest (D-024; one configuration, its d1/d2
+#    variants are diagnostics and not counted).
+STRATEGY_CONFIGS_TRIED = 3
 
 ALPHA = 0.05
 MIN_YEAR_SHARE = 2 / 3
@@ -170,11 +173,18 @@ def adoption_gate(
     limits: RiskLimits,
     configs_tried: int = STRATEGY_CONFIGS_TRIED,
     seed: int = 0,
+    ablation: BacktestResult | None = None,
+    symbol_dm: Mapping[str, float] | None = None,
 ) -> GateVerdict:
     """D-015 gate ① on walk-forward backtests run over the same days with the same costs.
 
     `edge_share` is the share of decision dates on which the point-in-time edge was on.
     `limits` is required (`RiskLimits.from_settings(settings)`), never the defaults quietly.
+    Extra conditions a strategy registered (stricter, never replacing 1-6):
+    - `ablation`: the same rule fed by the baseline forecast (S2: ewma_t widths); the
+      strategy's net Sharpe must be above it (point estimate, S2 falsification 7),
+    - `symbol_dm`: walk-forward DM statistic per traded symbol; each must be above 0
+      (S2 falsification 8).
     """
     r = strategy.returns
     excess = {
@@ -200,6 +210,15 @@ def adoption_gate(
         "5_max_drawdown": mdd_verdict.adopted,
         "6_costs": costs < MAX_COST_SHARE,
     }
+    if ablation is not None:
+        s, a = _aligned(r, ablation.returns)
+        ss, sa = sharpe(s), sharpe(a)
+        # Equal is not better; a Sharpe that cannot be computed rejects (S2 N-6).
+        checks["7_beats_ablation"] = math.isfinite(ss) and math.isfinite(sa) and ss > sa
+    if symbol_dm is not None:
+        checks["8_traded_symbol_dm"] = bool(symbol_dm) and all(
+            math.isfinite(v) and v > 0 for v in symbol_dm.values()
+        )
     reasons = [k for k, ok in checks.items() if not ok]
     return GateVerdict(
         status="candidate" if not reasons else "rejected",
@@ -297,3 +316,16 @@ def edge_share(statuses) -> float:
     if not statuses:
         return 0.0
     return sum(1 for s in statuses if s.edge) / len(statuses)
+
+
+def symbol_dm(oos: pd.DataFrame, symbol: str, kind: str = "vol", lags: int = 5) -> float:
+    """Walk-forward DM statistic of one symbol's rows for a comparison kind (S2
+    falsification 8: the class edge must also hold, as a point estimate, for what is
+    traded). Holdout rows are dropped first, so this never looks at the holdout."""
+    from app.forecast.report import COMPARISON_SPECS, compare
+
+    spec = next(s for s in COMPARISON_SPECS if s[0] == kind)
+    rows = oos[(oos["segment"] == "walk_forward") & (oos["symbol"] == symbol)]
+    if rows.empty:
+        return math.nan
+    return compare(rows, spec[1], spec[2], spec[3], lags).dm_stat
