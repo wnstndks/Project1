@@ -1,0 +1,5 @@
+date,fund,company,ticker,cusip,shares,market value ($),weight (%)
+10/22/2026,ARKW,TESLA INC,TSLA,88160R101,"500","$200,000.00",50.00%
+10/22/2026,ARKW,COINBASE GLOBAL INC -CLASS A,COIN,19260Q107,"500","$150,000.00",37.50%
+10/22/2026,ARKW,DRAFTKINGS INC-CL A,DKNG UW,26142V105,"1,000","$50,000.00",12.50%
+"Investors should carefully consider the investment objectives and risks."

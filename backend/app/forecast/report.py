@@ -18,10 +18,12 @@ Two edges are not read from the report:
 - `PointInTimeEdge.status` (backtests): the same tests on an expanding window of the
   walk-forward rows whose targets were known by the decision date, so a 2018 signal is
   never switched on by what happened in 2022 (D-005).
-- `live_edge_at` (the live service): a rank, range or vol edge stays False until a
-  pre-registered forward paper test confirms it (`FORWARD_CONFIRMED`, D-006); the
-  strategies using them were written down after their walk-forward results (and the
-  range holdout) were seen.
+- `live_edge_at` (the live service): the report's walk-forward verdict comes first; a
+  rank, range or vol edge that passed it still stays False until a pre-registered forward
+  paper test confirms it (`FORWARD_CONFIRMED`, D-006), since the strategies using them
+  were written down after their walk-forward results (and the range holdout) were seen.
+  So `forward_test_pending` means "passed walk-forward, forward test not done", and a
+  failed walk-forward is `not_significant` whatever the kind (ISSUE-037, D-028).
 """
 
 import math
@@ -296,7 +298,8 @@ class EdgeStatus:
 
     edge: bool
     # edge | no_data | insufficient_history | not_significant | inconsistent_years |
-    # forward_test_pending
+    # forward_test_pending (live only: the walk-forward tests passed and the forward paper
+    # test has not confirmed the kind yet; never given to a failed comparison)
     reason: str
     # Display only (confidence), over outcomes known by then, Wilson 95% lower bound of:
     # rank, the share of top-third rows whose return beat the same-date class mean; other
@@ -466,9 +469,13 @@ class PointInTimeEdge:
 def live_edge_at(report: Mapping, kind: str = "rank") -> EdgeLookup:
     """Edge callback for the live service, read from a saved report.
 
-    A rank, range or vol edge is withheld until FORWARD_CONFIRMED lists the class, horizon
-    and kind: the strategies trading on them were written down after their walk-forward
-    results were seen (D-006), and the range holdout too.
+    The report's walk-forward verdict (`comp.edge`) is read first: a comparison that failed
+    it is `not_significant` whatever the kind, so a failed range is never shown as "waiting
+    for its forward test" (ISSUE-037). A rank, range or vol edge that passed is still
+    withheld (`forward_test_pending`, edge False) until FORWARD_CONFIRMED lists the class,
+    horizon and kind: the strategies trading on them were written down after their
+    walk-forward results were seen (D-006), and the range holdout too. Only the reason
+    string depends on this order; `edge` is False in both withheld cases (D-028).
     """
 
     def lookup(as_of: date, asset_class: str, horizon: str) -> EdgeStatus:
@@ -485,10 +492,10 @@ def live_edge_at(report: Mapping, kind: str = "rank") -> EdgeLookup:
                 "year_share": float(comp.get("year_share") or 0.0),
             },
         )
+        if not comp.get("edge"):
+            return EdgeStatus(False, "not_significant", **common)
         if kind in FORWARD_TEST_KINDS and (asset_class, horizon, kind) not in FORWARD_CONFIRMED:
             return EdgeStatus(False, "forward_test_pending", **common)
-        if comp.get("edge"):
-            return EdgeStatus(True, "edge", **common)
-        return EdgeStatus(False, "not_significant", **common)
+        return EdgeStatus(True, "edge", **common)
 
     return lookup

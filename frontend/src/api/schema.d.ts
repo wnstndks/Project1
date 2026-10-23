@@ -235,6 +235,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio/sparklines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sparklines */
+        get: operations["sparklines_api_portfolio_sparklines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/benchmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Benchmark
+         * @description My history beside benchmarks bought and sold with my own cash flows on the same days.
+         */
+        get: operations["benchmark_api_portfolio_benchmark_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/predictions": {
         parameters: {
             query?: never;
@@ -542,6 +579,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/forecasts/held": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Held Forecasts */
+        get: operations["held_forecasts_api_forecasts_held_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/forecasts/track-record": {
         parameters: {
             query?: never;
@@ -586,6 +640,109 @@ export interface paths {
         /** Backtest */
         get: operations["backtest_api_forecasts__symbol__backtest_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gurus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Gurus */
+        get: operations["list_gurus_api_gurus_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gurus/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare */
+        get: operations["compare_api_gurus_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gurus/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync */
+        post: operations["sync_api_gurus_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gurus/{guru_id}/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Holdings */
+        get: operations["holdings_api_gurus__guru_id__holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check Rules */
+        get: operations["check_rules_api_rules_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rule Settings */
+        get: operations["get_rule_settings_api_rules_settings_get"];
+        /** Put Rule Settings */
+        put: operations["put_rule_settings_api_rules_settings_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -699,6 +856,37 @@ export interface components {
             /** Volume */
             volume: number;
         };
+        /**
+         * BenchmarkOut
+         * @description My value history and benchmarks fed with the same cash flows, on the same daily grid.
+         */
+        BenchmarkOut: {
+            /** Mine */
+            mine: components["schemas"]["HistoryPointOut"][];
+            /** Benchmarks */
+            benchmarks: components["schemas"]["BenchmarkSeriesOut"][];
+        };
+        /** BenchmarkPointOut */
+        BenchmarkPointOut: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Value */
+            value: number;
+            /** Value Krw */
+            value_krw: number;
+        };
+        /** BenchmarkSeriesOut */
+        BenchmarkSeriesOut: {
+            /** Symbol */
+            symbol: string;
+            /** Name Ko */
+            name_ko: string;
+            /** Points */
+            points: components["schemas"]["BenchmarkPointOut"][];
+        };
         /** Body_preview_screenshot_api_imports_screenshot_post */
         Body_preview_screenshot_api_imports_screenshot_post: {
             /** Files */
@@ -761,6 +949,13 @@ export interface components {
             /** Fx Rate */
             fx_rate?: number | string | null;
         };
+        /** CompareOut */
+        CompareOut: {
+            /** Syncing */
+            syncing: boolean;
+            /** Gurus */
+            gurus: components["schemas"]["GuruCompareOut"][];
+        };
         /** ConvertCurrencyIn */
         ConvertCurrencyIn: {
             /** Symbol */
@@ -788,6 +983,28 @@ export interface components {
             effect: number;
             /** Withholding */
             withholding: number;
+        };
+        /**
+         * CryptoRuleIn
+         * @description Asset-class layer for coins between the global values and the symbol overrides; a
+         *     null field keeps the global value.
+         */
+        CryptoRuleIn: {
+            /** Cut Loss Pct */
+            cut_loss_pct?: number | string | null;
+            /** Trailing Drop Pct */
+            trailing_drop_pct?: number | string | null;
+            /** Add Step Pct */
+            add_step_pct?: number | string | null;
+        };
+        /** CryptoRuleOut */
+        CryptoRuleOut: {
+            /** Cut Loss Pct */
+            cut_loss_pct?: number | null;
+            /** Trailing Drop Pct */
+            trailing_drop_pct?: number | null;
+            /** Add Step Pct */
+            add_step_pct?: number | null;
         };
         /**
          * Currency
@@ -897,11 +1114,138 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             job?: components["schemas"]["ForecastJobOut"] | null;
+            /**
+             * Live
+             * @default {}
+             */
+            live: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["LiveVerdictOut"];
+                };
+            };
+        };
+        /** GuruCompareOut */
+        GuruCompareOut: {
+            guru: components["schemas"]["GuruOut"];
+            /** Overlaps */
+            overlaps: components["schemas"]["OverlapOut"][];
+            /** Top Missing */
+            top_missing: components["schemas"]["MissingOut"][];
+        };
+        /** GuruHoldingOut */
+        GuruHoldingOut: {
+            /** Symbol */
+            symbol: string | null;
+            /** Cusip */
+            cusip: string | null;
+            /** Name */
+            name: string;
+            /** Shares */
+            shares: number;
+            /** Value Usd */
+            value_usd: number;
+            /**
+             * Weight Pct
+             * @description Share of the snapshot's total value, in percent
+             */
+            weight_pct: number;
+        };
+        /** GuruHoldingsOut */
+        GuruHoldingsOut: {
+            guru: components["schemas"]["GuruOut"];
+            /** Holdings */
+            holdings: components["schemas"]["GuruHoldingOut"][];
+            /**
+             * Total
+             * @description Positions in the snapshot before the `top` cut
+             */
+            total: number;
+        };
+        /**
+         * GuruOut
+         * @description A well-known investor and the state of their stored snapshot.
+         */
+        GuruOut: {
+            /** Id */
+            id: string;
+            /** Name Ko */
+            name_ko: string;
+            /** Name En */
+            name_en: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ark" | "13f";
+            /** Note */
+            note: string;
+            /** Synced At */
+            synced_at: string | null;
+            /** As Of */
+            as_of: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Error */
+            error: string | null;
+            /** Sync Note */
+            sync_note: string | null;
+            /** Holdings Count */
+            holdings_count: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeldForecastOut
+         * @description GET /forecasts/held: every symbol GET /forecasts/{symbol} would answer for (symbols
+         *     ever traded), sorted by symbol; symbols without a forecast are left out.
+         */
+        HeldForecastOut: {
+            /** Symbol */
+            symbol: string;
+            /** Asset Class */
+            asset_class: string;
+            /** Horizons */
+            horizons: components["schemas"]["HeldHorizonOut"][];
+        };
+        /**
+         * HeldHorizonOut
+         * @description One horizon of a held symbol, as price ratios so the client can scale any base
+         *     (the dollar close or the won value) without recomputing the forecast.
+         */
+        HeldHorizonOut: {
+            /** Horizon */
+            horizon: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Target Date
+             * Format: date
+             */
+            target_date: string;
+            /** Low Ratio */
+            low_ratio: number;
+            /** Mid Ratio */
+            mid_ratio: number;
+            /** High Ratio */
+            high_ratio: number;
+            /** P Up */
+            p_up: number;
+            /** Baseline P Up */
+            baseline_p_up: number;
+            /** Direction Edge */
+            direction_edge: boolean;
+            /** Range Edge */
+            range_edge: boolean;
+            /** Direction Reason */
+            direction_reason: string;
+            /** Range Reason */
+            range_reason: string;
         };
         /** HistoryPointOut */
         HistoryPointOut: {
@@ -943,6 +1287,14 @@ export interface components {
              * Format: date-time
              */
             price_as_of: string;
+            /** Prev Close */
+            prev_close: number;
+            /** Day Change */
+            day_change: number;
+            /** Day Change Pct */
+            day_change_pct: number;
+            /** Day Change Krw */
+            day_change_krw: number;
             /** Market Value */
             market_value: number;
             /** Unrealized Pnl */
@@ -1004,6 +1356,10 @@ export interface components {
             direction_edge: boolean;
             /** Range Edge */
             range_edge: boolean;
+            /** Direction Reason */
+            direction_reason: string;
+            /** Range Reason */
+            range_reason: string;
         };
         /** HorizonMetrics */
         HorizonMetrics: {
@@ -1022,6 +1378,17 @@ export interface components {
             model: string;
             /** Problem */
             problem: string | null;
+        };
+        /** KillSwitchOut */
+        KillSwitchOut: {
+            /** Tripped */
+            tripped: boolean;
+            /** Reason Code */
+            reason_code: string | null;
+            /** Detail */
+            detail: string;
+            /** Since */
+            since: string | null;
         };
         /** KimchiPremiumOut */
         KimchiPremiumOut: {
@@ -1055,6 +1422,17 @@ export interface components {
             /** Fx Stale */
             fx_stale: boolean;
         };
+        /**
+         * LiveVerdictOut
+         * @description Why a kind of forecast is or is not trusted live (forecast.report.live_edge_at):
+         *     edge | forward_test_pending | not_significant | no_data.
+         */
+        LiveVerdictOut: {
+            /** Direction */
+            direction: string;
+            /** Range */
+            range: string;
+        };
         /** Metrics */
         Metrics: {
             /** Samples */
@@ -1065,6 +1443,15 @@ export interface components {
             best_epoch: number;
             /** Train Seconds */
             train_seconds: number;
+        };
+        /** MissingOut */
+        MissingOut: {
+            /** Symbol */
+            symbol: string | null;
+            /** Name */
+            name: string;
+            /** Weight Pct */
+            weight_pct: number;
         };
         /** NewsDayOut */
         NewsDayOut: {
@@ -1090,6 +1477,17 @@ export interface components {
             finnhub_enabled: boolean;
             /** Warnings */
             warnings: string[];
+        };
+        /** OverlapOut */
+        OverlapOut: {
+            /** Symbol */
+            symbol: string;
+            /** Name */
+            name: string;
+            /** My Weight Pct */
+            my_weight_pct: number;
+            /** Guru Weight Pct */
+            guru_weight_pct: number;
         };
         /** PortfolioForecastOut */
         PortfolioForecastOut: {
@@ -1164,6 +1562,8 @@ export interface components {
             status: string;
             /** Message */
             message: string | null;
+            /** Warning */
+            warning: string | null;
             /** Current Quantity */
             current_quantity: number | null;
             /** Diff */
@@ -1247,10 +1647,266 @@ export interface components {
             as_of: string;
         };
         /**
+         * ResolvedRuleOut
+         * @description The values that applied to this symbol: global → asset class → symbol overrides.
+         */
+        ResolvedRuleOut: {
+            /** Cut Loss Pct */
+            cut_loss_pct: number;
+            /** Trailing Lookback Days */
+            trailing_lookback_days: number;
+            /** Trailing Drop Pct */
+            trailing_drop_pct: number;
+            /** Below Ma Days */
+            below_ma_days: number;
+            /** Ma Long */
+            ma_long: number;
+            /** Ma Short */
+            ma_short: number;
+            /** Add Step Pct */
+            add_step_pct: number;
+            /** Add Max Steps */
+            add_max_steps: number;
+            /** Add Requires Above Ma Short */
+            add_requires_above_ma_short: boolean;
+            /** Target Weight Gap Pt */
+            target_weight_gap_pt: number;
+            /** Target Weight Pct */
+            target_weight_pct: number | null;
+        };
+        /** RuleCheckAllOut */
+        RuleCheckAllOut: {
+            /** Checks */
+            checks: components["schemas"]["RuleCheckOut"][];
+            /** Skipped */
+            skipped: components["schemas"]["SkippedCheckOut"][];
+            /** Total Risk Pct Equity */
+            total_risk_pct_equity: number | null;
+            kill_switch: components["schemas"]["KillSwitchOut"];
+            /** Live Trading */
+            live_trading: boolean;
+            labels: components["schemas"]["RuleLabelsOut"];
+            /** Settings Notes */
+            settings_notes: string[];
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+        };
+        /** RuleCheckOut */
+        RuleCheckOut: {
+            /** Symbol */
+            symbol: string;
+            asset_type: components["schemas"]["AssetType"];
+            currency: components["schemas"]["Currency"];
+            /** Status */
+            status: string;
+            /** Label Ko */
+            label_ko: string;
+            /** Chip Ko */
+            chip_ko: string;
+            /** Triggers */
+            triggers: components["schemas"]["RuleTriggerOut"][];
+            levels: components["schemas"]["RuleLevelsOut"];
+            rule: components["schemas"]["ResolvedRuleOut"];
+            /** Price */
+            price: number;
+            /** Avg Cost */
+            avg_cost: number;
+            /** Quantity */
+            quantity: number;
+            /** Weight Pct */
+            weight_pct: number;
+            /** Add Steps Done */
+            add_steps_done: number;
+            /** Cut Distance Pct */
+            cut_distance_pct: number;
+            /** Add Distance Pct */
+            add_distance_pct: number | null;
+            /** Blocked By */
+            blocked_by: string[];
+            /** Blocked Labels */
+            blocked_labels: string[];
+            /** Add Cap Krw */
+            add_cap_krw: number | null;
+            /** Risk Pct Equity */
+            risk_pct_equity: number | null;
+            /** Weight Room Pt */
+            weight_room_pt: number | null;
+            /** Notes */
+            notes: string[];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Bars */
+            bars: number;
+            /** History Error */
+            history_error: string | null;
+            /** Cut Prob 1M */
+            cut_prob_1m: number | null;
+            /** Cut Prob 1M Label */
+            cut_prob_1m_label: string | null;
+            /** Forecast Status */
+            forecast_status: string;
+        };
+        /**
+         * RuleDefaultsOut
+         * @description The `AM_RULES_*` values, for the settings page's reset button.
+         */
+        RuleDefaultsOut: {
+            global: components["schemas"]["RuleGlobalOut"];
+            crypto: components["schemas"]["CryptoRuleOut"];
+        };
+        /** RuleGlobalIn */
+        RuleGlobalIn: {
+            /** Cut Loss Pct */
+            cut_loss_pct: number | string;
+            /** Trailing Lookback Days */
+            trailing_lookback_days: number;
+            /** Trailing Drop Pct */
+            trailing_drop_pct: number | string;
+            /** Below Ma Days */
+            below_ma_days: number;
+            /** Ma Long */
+            ma_long: number;
+            /** Ma Short */
+            ma_short: number;
+            /** Add Step Pct */
+            add_step_pct: number | string;
+            /** Add Max Steps */
+            add_max_steps: number;
+            /** Add Requires Above Ma Short */
+            add_requires_above_ma_short: boolean;
+            /** Target Weight Gap Pt */
+            target_weight_gap_pt: number | string;
+            /** Max Risk Pct */
+            max_risk_pct: number | string;
+        };
+        /** RuleGlobalOut */
+        RuleGlobalOut: {
+            /** Cut Loss Pct */
+            cut_loss_pct: number;
+            /** Trailing Lookback Days */
+            trailing_lookback_days: number;
+            /** Trailing Drop Pct */
+            trailing_drop_pct: number;
+            /** Below Ma Days */
+            below_ma_days: number;
+            /** Ma Long */
+            ma_long: number;
+            /** Ma Short */
+            ma_short: number;
+            /** Add Step Pct */
+            add_step_pct: number;
+            /** Add Max Steps */
+            add_max_steps: number;
+            /** Add Requires Above Ma Short */
+            add_requires_above_ma_short: boolean;
+            /** Target Weight Gap Pt */
+            target_weight_gap_pt: number;
+            /** Max Risk Pct */
+            max_risk_pct: number;
+        };
+        /** RuleLabelsOut */
+        RuleLabelsOut: {
+            /** Status */
+            status: {
+                [key: string]: string;
+            };
+            /** Block */
+            block: {
+                [key: string]: string;
+            };
+            /** Prob Caveat */
+            prob_caveat: string;
+        };
+        /**
+         * RuleLevelsOut
+         * @description Prices in the position's currency (`RuleCheckOut.currency`).
+         */
+        RuleLevelsOut: {
+            /** Cut Price */
+            cut_price: number;
+            /** Cut Loss Price */
+            cut_loss_price: number;
+            /** Trailing High */
+            trailing_high: number;
+            /** Trailing Stop Price */
+            trailing_stop_price: number;
+            /** Add Price */
+            add_price: number | null;
+            /** Next Add Step */
+            next_add_step: number | null;
+            /** Ma Short */
+            ma_short: number | null;
+            /** Ma Long */
+            ma_long: number | null;
+            /** Target Weight Pct */
+            target_weight_pct: number | null;
+            /** Risk Amount */
+            risk_amount: number;
+        };
+        /** RuleSettingsIn */
+        RuleSettingsIn: {
+            global: components["schemas"]["RuleGlobalIn"];
+            crypto?: components["schemas"]["CryptoRuleIn"] | null;
+            /**
+             * Targets
+             * @default {}
+             */
+            targets: {
+                [key: string]: components["schemas"]["SymbolRuleIn"];
+            };
+        };
+        /** RuleSettingsOut */
+        RuleSettingsOut: {
+            global: components["schemas"]["RuleGlobalOut"];
+            crypto: components["schemas"]["CryptoRuleOut"];
+            /** Targets */
+            targets: {
+                [key: string]: components["schemas"]["SymbolRuleOut"];
+            };
+            defaults: components["schemas"]["RuleDefaultsOut"];
+            /** Warnings */
+            warnings: string[];
+            /** Updated At */
+            updated_at: string | null;
+            /** Live Trading */
+            live_trading: boolean;
+        };
+        /** RuleTriggerOut */
+        RuleTriggerOut: {
+            /** Code */
+            code: string;
+            /** Label Ko */
+            label_ko: string;
+            /** Detail */
+            detail: string;
+            /** Kind */
+            kind: string;
+        };
+        /**
          * Side
          * @enum {string}
          */
         Side: "buy" | "sell";
+        /** SkippedCheckOut */
+        SkippedCheckOut: {
+            /** Symbol */
+            symbol: string;
+            /** Reason */
+            reason: string;
+        };
+        /** SparklineOut */
+        SparklineOut: {
+            /** Symbol */
+            symbol: string;
+            /** Closes */
+            closes: number[];
+        };
         /**
          * SummaryOut
          * @description Amounts in USD unless suffixed with _krw.
@@ -1260,6 +1916,12 @@ export interface components {
             market_value: number;
             /** Market Value Krw */
             market_value_krw: number;
+            /** Day Change */
+            day_change: number;
+            /** Day Change Krw */
+            day_change_krw: number;
+            /** Day Change Pct */
+            day_change_pct: number;
             /** Cost Basis */
             cost_basis: number;
             /** Unrealized Pnl */
@@ -1313,6 +1975,44 @@ export interface components {
             horizons: components["schemas"]["HorizonForecastOut"][];
             /** Recent */
             recent: components["schemas"]["ClosePoint"][];
+        };
+        /**
+         * SymbolRuleIn
+         * @description Per-symbol overrides; a null field keeps the asset-class or global value. Numbers may
+         *     arrive as strings and are parsed as exact decimals. Ranges are checked by the rule engine
+         *     (`RuleSettings`), which answers 422 naming the field.
+         */
+        SymbolRuleIn: {
+            /** Target Weight Pct */
+            target_weight_pct?: number | string | null;
+            /** Cut Loss Pct */
+            cut_loss_pct?: number | string | null;
+            /** Trailing Drop Pct */
+            trailing_drop_pct?: number | string | null;
+            /** Add Step Pct */
+            add_step_pct?: number | string | null;
+            /** Add Max Steps */
+            add_max_steps?: number | null;
+        };
+        /** SymbolRuleOut */
+        SymbolRuleOut: {
+            /** Target Weight Pct */
+            target_weight_pct?: number | null;
+            /** Cut Loss Pct */
+            cut_loss_pct?: number | null;
+            /** Trailing Drop Pct */
+            trailing_drop_pct?: number | null;
+            /** Add Step Pct */
+            add_step_pct?: number | null;
+            /** Add Max Steps */
+            add_max_steps?: number | null;
+        };
+        /** SyncOut */
+        SyncOut: {
+            /** Syncing */
+            syncing: boolean;
+            /** Gurus */
+            gurus: components["schemas"]["GuruOut"][];
         };
         /** TrackRecordOut */
         TrackRecordOut: {
@@ -1973,6 +2673,70 @@ export interface operations {
             };
         };
     };
+    sparklines_api_portfolio_sparklines_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SparklineOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    benchmark_api_portfolio_benchmark_get: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated; default AM_BENCHMARKS */
+                symbols?: string | null;
+                start?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BenchmarkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     trained_models_api_predictions_get: {
         parameters: {
             query?: never;
@@ -2484,6 +3248,26 @@ export interface operations {
             };
         };
     };
+    held_forecasts_api_forecasts_held_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldForecastOut"][];
+                };
+            };
+        };
+    };
     track_record_api_forecasts_track_record_get: {
         parameters: {
             query?: {
@@ -2566,6 +3350,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ForecastBacktestPoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_gurus_api_gurus_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuruOut"][];
+                };
+            };
+        };
+    };
+    compare_api_gurus_compare_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompareOut"];
+                };
+            };
+        };
+    };
+    sync_api_gurus_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncOut"];
+                };
+            };
+        };
+    };
+    holdings_api_gurus__guru_id__holdings_get: {
+        parameters: {
+            query?: {
+                top?: number;
+            };
+            header?: never;
+            path: {
+                guru_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuruHoldingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_rules_api_rules_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleCheckAllOut"];
+                };
+            };
+        };
+    };
+    get_rule_settings_api_rules_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleSettingsOut"];
+                };
+            };
+        };
+    };
+    put_rule_settings_api_rules_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleSettingsOut"];
                 };
             };
             /** @description Validation Error */

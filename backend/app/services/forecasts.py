@@ -19,12 +19,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from app.data.assets import FX_USDKRW, UPBIT_MARKETS, trades_every_day
-from app.data.calendar import next_trading_dates
+from app.data.calendar import last_final_date, next_trading_dates
 from app.data.provider import MarketDataError
 from app.db.models import AssetType, Currency, ForecastLog, Transaction
-from app.forecast import aggregate, store
+from app.forecast import aggregate, store, universe
 from app.forecast.data import Inputs, bars_frame, load_inputs
 from app.forecast.panel import HORIZONS, AssetClass, build_panel, latest_ranks
+from app.forecast.report import ASSET_CLASSES, live_edge_at
 from app.forecast.walkforward import apply_offsets
 from app.services.errors import ConflictError, DomainError, NotFoundError
 from app.services.market_data import MarketDataService, SymbolNotFoundError
@@ -70,6 +71,17 @@ def target_date(symbol: str, as_of: date, horizon: str) -> date:
     return next_trading_dates(symbol, as_of, HORIZONS[horizon][cls])[-1]
 
 
+def live_verdicts(report: dict) -> dict[str, dict[str, dict[str, str]]]:
+    """The live reason per asset class, horizon and kind, read the way the symbol
+    forecasts read it (`live_edge_at`), so the home and the detail page cannot disagree."""
+    lookups = {kind: live_edge_at(report, kind) for kind in ("direction", "range")}
+    today = date.today()  # the live lookup reads the saved report whatever the date
+    return {
+        cls: {h: {kind: at(today, cls, h).reason for kind, at in lookups.items()} for h in HORIZONS}
+        for cls in ASSET_CLASSES
+    }
+
+
 class ForecastService:
     def __init__(
         self,
@@ -90,7 +102,7 @@ class ForecastService:
     def _latest(self, run: store.Run) -> tuple[pd.DataFrame, Inputs]:
         """Predictions for the newest row of every held symbol, per horizon and model."""
         held = held_symbols(self.db)
-        key = (run.run_id, tuple(held))
+        key = (run.run_id, tuple(held), self._bar_epoch())
         with _compute_lock:
             now = self.clock()
             with _lock:
@@ -102,6 +114,18 @@ class ForecastService:
                 _inference.clear()
                 _inference[key] = (now, out, inputs)
             return out, inputs
+
+    def _bar_epoch(self) -> tuple[date | None, date | None]:
+        """The newest stock and coin bars the calendar says are final by now. Part of the
+        inference cache key: once a session has closed (and settled) the next request
+        rebuilds instead of serving the previous session's row for up to INFERENCE_TTL
+        (ISSUE-040). Whether the provider has delivered that bar yet is `_compute`'s
+        problem; the key only asks whether it should exist."""
+        today, now_utc = self.market.now().date(), self.market.utc_now()
+        return (
+            last_final_date(universe.STOCK_BENCHMARK, today, now_utc),
+            last_final_date(universe.CRYPTO_BENCHMARK, today, now_utc),
+        )
 
     def _compute(
         self, run: store.Run, held: list[tuple[str, AssetClass]]
@@ -217,27 +241,31 @@ class ForecastService:
             ],
         }
 
-    def forecast(self, symbol: str) -> dict:
-        run = _run(self.artifacts_dir)
-        preds, inputs = self._latest(run)
-        mine = preds[preds["symbol"] == symbol]
-        if mine.empty:
-            if symbol in dict(held_symbols(self.db)):
-                raise DomainError(
-                    f"{symbol}은(는) 가격 이력이 짧아(300거래일 미만) 아직 예측하지 않습니다",
-                    code="insufficient_history",
-                )
-            raise NotFoundError(f"{symbol}은(는) 보유 종목이 아니라 예측하지 않습니다")
-        bars = inputs.assets[symbol].bars
-        base = float(bars["close"].iloc[-1])
-        horizons = []
+    def _horizon_rows(
+        self,
+        run: store.Run,
+        mine: pd.DataFrame,
+        symbol: str,
+        asset_class: AssetClass,
+        base: float,
+    ) -> list[dict]:
+        """One symbol's predictions per horizon, scaled back to prices from the latest close,
+        with the live verdict. Shared by `forecast` and `held_forecasts`: the same numbers,
+        whichever endpoint the page asks."""
+        # The live verdict per class, horizon and kind (D-018): a range edge stays withheld
+        # until its forward paper test is confirmed, whatever the walk-forward report says.
+        direction_at = live_edge_at(run.report, "direction")
+        range_at = live_edge_at(run.report, "range")
+        rows = []
         for h, g in mine.groupby("horizon", sort=False):
             by_model = g.set_index("model")
             gb = by_model.loc["gbdt"]
             as_of = gb["as_of"]
             scale = float(gb["scale"])
-            comp = run.report["horizons"].get(h, {}).get("comparisons", {})
-            horizons.append(
+            as_of_date = pd.Timestamp(as_of).date()
+            direction = direction_at(as_of_date, asset_class, h)
+            range_ = range_at(as_of_date, asset_class, h)
+            rows.append(
                 {
                     "horizon": h,
                     "as_of": as_of,
@@ -251,13 +279,70 @@ class ForecastService:
                     "baseline_p_up": float(by_model.loc["climatology", "p_up"]),
                     "baseline_p10": base * float(np.exp(by_model.loc["ewma_t", "q10"] * scale)),
                     "baseline_p90": base * float(np.exp(by_model.loc["ewma_t", "q90"] * scale)),
-                    "direction_edge": bool(comp.get("direction", {}).get("edge", False)),
-                    "range_edge": bool(comp.get("range", {}).get("edge", False)),
+                    "direction_edge": direction.edge,
+                    "direction_reason": direction.reason,
+                    "range_edge": range_.edge,
+                    "range_reason": range_.reason,
                 }
             )
-        held = next((h for h in self.portfolio.holdings() if h.symbol == symbol), None)
+        return rows
+
+    def held_forecasts(self) -> list[dict]:
+        """Every held symbol's horizons in one call (the home used to ask per symbol), as
+        ratios to the latest close. Symbols without a prediction (history too short) are
+        left out rather than failing the whole list."""
+        run = _run(self.artifacts_dir)
+        preds, inputs = self._latest(run)
+        out = []
+        for symbol, asset_class in held_symbols(self.db):
+            mine = preds[preds["symbol"] == symbol]
+            if mine.empty:
+                continue
+            base = float(inputs.assets[symbol].bars["close"].iloc[-1])
+            out.append(
+                {
+                    "symbol": symbol,
+                    "asset_class": asset_class,
+                    "horizons": [
+                        {
+                            "horizon": r["horizon"],
+                            "as_of": r["as_of"],
+                            "target_date": r["target_date"],
+                            "low_ratio": r["p10"] / base,
+                            "mid_ratio": r["p50"] / base,
+                            "high_ratio": r["p90"] / base,
+                            "p_up": r["p_up"],
+                            "baseline_p_up": r["baseline_p_up"],
+                            "direction_edge": r["direction_edge"],
+                            "range_edge": r["range_edge"],
+                            "direction_reason": r["direction_reason"],
+                            "range_reason": r["range_reason"],
+                        }
+                        for r in self._horizon_rows(run, mine, symbol, asset_class, base)
+                    ],
+                }
+            )
+        return out
+
+    def forecast(self, symbol: str) -> dict:
+        run = _run(self.artifacts_dir)
+        preds, inputs = self._latest(run)
+        mine = preds[preds["symbol"] == symbol]
+        held = dict(held_symbols(self.db))
+        if mine.empty:
+            if symbol in held:
+                raise DomainError(
+                    f"{symbol}은(는) 가격 이력이 짧아(300거래일 미만) 아직 예측하지 않습니다",
+                    code="insufficient_history",
+                )
+            raise NotFoundError(f"{symbol}은(는) 보유 종목이 아니라 예측하지 않습니다")
+        bars = inputs.assets[symbol].bars
+        base = float(bars["close"].iloc[-1])
+        fallback: AssetClass = "crypto" if trades_every_day(symbol) else "stock"
+        horizons = self._horizon_rows(run, mine, symbol, held.get(symbol, fallback), base)
+        holding = next((h for h in self.portfolio.holdings() if h.symbol == symbol), None)
         krw_rate = None
-        if held is not None and held.currency == Currency.KRW and symbol in UPBIT_MARKETS:
+        if holding is not None and holding.currency == Currency.KRW and symbol in UPBIT_MARKETS:
             # Upbit won per dollar of this coin, premium included: what the user actually sees.
             premium = self._premia([symbol], inputs).get(symbol)
             fx = inputs.context_close("usdkrw")
@@ -365,7 +450,12 @@ class ForecastService:
         if path is None:
             return {"trained": False}
         run = _run(self.artifacts_dir)
-        return {"trained": True, "meta": run.meta, "report": run.report}
+        return {
+            "trained": True,
+            "meta": run.meta,
+            "report": run.report,
+            "live": live_verdicts(run.report),
+        }
 
     def backtest(self, symbol: str, horizon: str) -> list[dict]:
         run = _run(self.artifacts_dir)

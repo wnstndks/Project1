@@ -1,10 +1,14 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Asset Manager</title>
+    <!-- Preset the saved theme before the first paint (same key as src/lib/theme.tsx); light by default. -->
+    <script>
+      try { var t = localStorage.getItem('asset-manager.theme'); if (t === 'dark' || t === 'system') document.documentElement.dataset.theme = t } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

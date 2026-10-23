@@ -651,6 +651,124 @@
         }
       }
     },
+    "/api/portfolio/sparklines": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "Sparklines",
+        "operationId": "sparklines_api_portfolio_sparklines_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 7,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SparklineOut"
+                  },
+                  "title": "Response Sparklines Api Portfolio Sparklines Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/benchmark": {
+      "get": {
+        "tags": [
+          "portfolio"
+        ],
+        "summary": "Benchmark",
+        "description": "My history beside benchmarks bought and sold with my own cash flows on the same days.",
+        "operationId": "benchmark_api_portfolio_benchmark_get",
+        "parameters": [
+          {
+            "name": "symbols",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated; default AM_BENCHMARKS",
+              "title": "Symbols"
+            },
+            "description": "Comma-separated; default AM_BENCHMARKS"
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/predictions": {
       "get": {
         "tags": [
@@ -1315,6 +1433,31 @@
         }
       }
     },
+    "/api/forecasts/held": {
+      "get": {
+        "tags": [
+          "forecasts"
+        ],
+        "summary": "Held Forecasts",
+        "operationId": "held_forecasts_api_forecasts_held_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HeldForecastOut"
+                  },
+                  "type": "array",
+                  "title": "Response Held Forecasts Api Forecasts Held Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/forecasts/track-record": {
       "get": {
         "tags": [
@@ -1450,6 +1593,208 @@
                     "$ref": "#/components/schemas/ForecastBacktestPoint"
                   },
                   "title": "Response Backtest Api Forecasts  Symbol  Backtest Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gurus": {
+      "get": {
+        "tags": [
+          "gurus"
+        ],
+        "summary": "List Gurus",
+        "operationId": "list_gurus_api_gurus_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GuruOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Gurus Api Gurus Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gurus/compare": {
+      "get": {
+        "tags": [
+          "gurus"
+        ],
+        "summary": "Compare",
+        "operationId": "compare_api_gurus_compare_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gurus/sync": {
+      "post": {
+        "tags": [
+          "gurus"
+        ],
+        "summary": "Sync",
+        "operationId": "sync_api_gurus_sync_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gurus/{guru_id}/holdings": {
+      "get": {
+        "tags": [
+          "gurus"
+        ],
+        "summary": "Holdings",
+        "operationId": "holdings_api_gurus__guru_id__holdings_get",
+        "parameters": [
+          {
+            "name": "guru_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Guru Id"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 20,
+              "title": "Top"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuruHoldingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rules/check": {
+      "get": {
+        "tags": [
+          "rules"
+        ],
+        "summary": "Check Rules",
+        "operationId": "check_rules_api_rules_check_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleCheckAllOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rules/settings": {
+      "get": {
+        "tags": [
+          "rules"
+        ],
+        "summary": "Get Rule Settings",
+        "operationId": "get_rule_settings_api_rules_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "rules"
+        ],
+        "summary": "Put Rule Settings",
+        "operationId": "put_rule_settings_api_rules_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSettingsOut"
                 }
               }
             }
@@ -1700,6 +2045,81 @@
         ],
         "title": "BarOut"
       },
+      "BenchmarkOut": {
+        "properties": {
+          "mine": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPointOut"
+            },
+            "type": "array",
+            "title": "Mine"
+          },
+          "benchmarks": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkSeriesOut"
+            },
+            "type": "array",
+            "title": "Benchmarks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mine",
+          "benchmarks"
+        ],
+        "title": "BenchmarkOut",
+        "description": "My value history and benchmarks fed with the same cash flows, on the same daily grid."
+      },
+      "BenchmarkPointOut": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "value_krw": {
+            "type": "number",
+            "title": "Value Krw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "value",
+          "value_krw"
+        ],
+        "title": "BenchmarkPointOut"
+      },
+      "BenchmarkSeriesOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name_ko": {
+            "type": "string",
+            "title": "Name Ko"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkPointOut"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name_ko",
+          "points"
+        ],
+        "title": "BenchmarkSeriesOut"
+      },
       "Body_preview_screenshot_api_imports_screenshot_post": {
         "properties": {
           "files": {
@@ -1883,6 +2303,27 @@
         ],
         "title": "CommitRowIn"
       },
+      "CompareOut": {
+        "properties": {
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "gurus": {
+            "items": {
+              "$ref": "#/components/schemas/GuruCompareOut"
+            },
+            "type": "array",
+            "title": "Gurus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "syncing",
+          "gurus"
+        ],
+        "title": "CompareOut"
+      },
       "ConvertCurrencyIn": {
         "properties": {
           "symbol": {
@@ -1953,6 +2394,94 @@
           "withholding"
         ],
         "title": "CorporateActionOut"
+      },
+      "CryptoRuleIn": {
+        "properties": {
+          "cut_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Loss Pct"
+          },
+          "trailing_drop_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trailing Drop Pct"
+          },
+          "add_step_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Step Pct"
+          }
+        },
+        "type": "object",
+        "title": "CryptoRuleIn",
+        "description": "Asset-class layer for coins between the global values and the symbol overrides; a\nnull field keeps the global value."
+      },
+      "CryptoRuleOut": {
+        "properties": {
+          "cut_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Loss Pct"
+          },
+          "trailing_drop_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trailing Drop Pct"
+          },
+          "add_step_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Step Pct"
+          }
+        },
+        "type": "object",
+        "title": "CryptoRuleOut"
       },
       "Currency": {
         "type": "string",
@@ -2230,6 +2759,17 @@
                 "type": "null"
               }
             ]
+          },
+          "live": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/LiveVerdictOut"
+              },
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Live",
+            "default": {}
           }
         },
         "type": "object",
@@ -2237,6 +2777,211 @@
           "trained"
         ],
         "title": "ForecastStatusOut"
+      },
+      "GuruCompareOut": {
+        "properties": {
+          "guru": {
+            "$ref": "#/components/schemas/GuruOut"
+          },
+          "overlaps": {
+            "items": {
+              "$ref": "#/components/schemas/OverlapOut"
+            },
+            "type": "array",
+            "title": "Overlaps"
+          },
+          "top_missing": {
+            "items": {
+              "$ref": "#/components/schemas/MissingOut"
+            },
+            "type": "array",
+            "title": "Top Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guru",
+          "overlaps",
+          "top_missing"
+        ],
+        "title": "GuruCompareOut"
+      },
+      "GuruHoldingOut": {
+        "properties": {
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "cusip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cusip"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "shares": {
+            "type": "number",
+            "title": "Shares"
+          },
+          "value_usd": {
+            "type": "number",
+            "title": "Value Usd"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct",
+            "description": "Share of the snapshot's total value, in percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "cusip",
+          "name",
+          "shares",
+          "value_usd",
+          "weight_pct"
+        ],
+        "title": "GuruHoldingOut"
+      },
+      "GuruHoldingsOut": {
+        "properties": {
+          "guru": {
+            "$ref": "#/components/schemas/GuruOut"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/GuruHoldingOut"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Positions in the snapshot before the `top` cut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guru",
+          "holdings",
+          "total"
+        ],
+        "title": "GuruHoldingsOut"
+      },
+      "GuruOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name_ko": {
+            "type": "string",
+            "title": "Name Ko"
+          },
+          "name_en": {
+            "type": "string",
+            "title": "Name En"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ark",
+              "13f"
+            ],
+            "title": "Source"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "sync_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Note"
+          },
+          "holdings_count": {
+            "type": "integer",
+            "title": "Holdings Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name_ko",
+          "name_en",
+          "source",
+          "note",
+          "synced_at",
+          "as_of",
+          "stale",
+          "error",
+          "sync_note",
+          "holdings_count"
+        ],
+        "title": "GuruOut",
+        "description": "A well-known investor and the state of their stored snapshot."
       },
       "HTTPValidationError": {
         "properties": {
@@ -2250,6 +2995,104 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HeldForecastOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "asset_class": {
+            "type": "string",
+            "title": "Asset Class"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/HeldHorizonOut"
+            },
+            "type": "array",
+            "title": "Horizons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "asset_class",
+          "horizons"
+        ],
+        "title": "HeldForecastOut",
+        "description": "GET /forecasts/held: every symbol GET /forecasts/{symbol} would answer for (symbols\never traded), sorted by symbol; symbols without a forecast are left out."
+      },
+      "HeldHorizonOut": {
+        "properties": {
+          "horizon": {
+            "type": "string",
+            "title": "Horizon"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "target_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Target Date"
+          },
+          "low_ratio": {
+            "type": "number",
+            "title": "Low Ratio"
+          },
+          "mid_ratio": {
+            "type": "number",
+            "title": "Mid Ratio"
+          },
+          "high_ratio": {
+            "type": "number",
+            "title": "High Ratio"
+          },
+          "p_up": {
+            "type": "number",
+            "title": "P Up"
+          },
+          "baseline_p_up": {
+            "type": "number",
+            "title": "Baseline P Up"
+          },
+          "direction_edge": {
+            "type": "boolean",
+            "title": "Direction Edge"
+          },
+          "range_edge": {
+            "type": "boolean",
+            "title": "Range Edge"
+          },
+          "direction_reason": {
+            "type": "string",
+            "title": "Direction Reason"
+          },
+          "range_reason": {
+            "type": "string",
+            "title": "Range Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "horizon",
+          "as_of",
+          "target_date",
+          "low_ratio",
+          "mid_ratio",
+          "high_ratio",
+          "p_up",
+          "baseline_p_up",
+          "direction_edge",
+          "range_edge",
+          "direction_reason",
+          "range_reason"
+        ],
+        "title": "HeldHorizonOut",
+        "description": "One horizon of a held symbol, as price ratios so the client can scale any base\n(the dollar close or the won value) without recomputing the forecast."
       },
       "HistoryPointOut": {
         "properties": {
@@ -2322,6 +3165,22 @@
             "format": "date-time",
             "title": "Price As Of"
           },
+          "prev_close": {
+            "type": "number",
+            "title": "Prev Close"
+          },
+          "day_change": {
+            "type": "number",
+            "title": "Day Change"
+          },
+          "day_change_pct": {
+            "type": "number",
+            "title": "Day Change Pct"
+          },
+          "day_change_krw": {
+            "type": "number",
+            "title": "Day Change Krw"
+          },
           "market_value": {
             "type": "number",
             "title": "Market Value"
@@ -2386,6 +3245,10 @@
           "cost_basis",
           "price",
           "price_as_of",
+          "prev_close",
+          "day_change",
+          "day_change_pct",
+          "day_change_krw",
           "market_value",
           "unrealized_pnl",
           "unrealized_pct",
@@ -2458,6 +3321,14 @@
           "range_edge": {
             "type": "boolean",
             "title": "Range Edge"
+          },
+          "direction_reason": {
+            "type": "string",
+            "title": "Direction Reason"
+          },
+          "range_reason": {
+            "type": "string",
+            "title": "Range Reason"
           }
         },
         "type": "object",
@@ -2474,7 +3345,9 @@
           "baseline_p10",
           "baseline_p90",
           "direction_edge",
-          "range_edge"
+          "range_edge",
+          "direction_reason",
+          "range_reason"
         ],
         "title": "HorizonForecastOut"
       },
@@ -2533,6 +3406,49 @@
           "problem"
         ],
         "title": "ImportStatusOut"
+      },
+      "KillSwitchOut": {
+        "properties": {
+          "tripped": {
+            "type": "boolean",
+            "title": "Tripped"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tripped",
+          "reason_code",
+          "detail",
+          "since"
+        ],
+        "title": "KillSwitchOut"
       },
       "KimchiPremiumOut": {
         "properties": {
@@ -2595,6 +3511,25 @@
         ],
         "title": "KimchiPremiumOut"
       },
+      "LiveVerdictOut": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "range": {
+            "type": "string",
+            "title": "Range"
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "range"
+        ],
+        "title": "LiveVerdictOut",
+        "description": "Why a kind of forecast is or is not trusted live (forecast.report.live_edge_at):\nedge | forward_test_pending | not_significant | no_data."
+      },
       "Metrics": {
         "properties": {
           "samples": {
@@ -2625,6 +3560,36 @@
           "train_seconds"
         ],
         "title": "Metrics"
+      },
+      "MissingOut": {
+        "properties": {
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "weight_pct"
+        ],
+        "title": "MissingOut"
       },
       "NewsDayOut": {
         "properties": {
@@ -2705,6 +3670,34 @@
           "warnings"
         ],
         "title": "NewsOut"
+      },
+      "OverlapOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "my_weight_pct": {
+            "type": "number",
+            "title": "My Weight Pct"
+          },
+          "guru_weight_pct": {
+            "type": "number",
+            "title": "Guru Weight Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "my_weight_pct",
+          "guru_weight_pct"
+        ],
+        "title": "OverlapOut"
       },
       "PortfolioForecastOut": {
         "properties": {
@@ -2919,6 +3912,17 @@
             ],
             "title": "Message"
           },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          },
           "current_quantity": {
             "anyOf": [
               {
@@ -2979,6 +3983,7 @@
           "confidence",
           "status",
           "message",
+          "warning",
           "current_quantity",
           "diff",
           "delta_quantity",
@@ -3193,6 +4198,759 @@
         ],
         "title": "QuoteOut"
       },
+      "ResolvedRuleOut": {
+        "properties": {
+          "cut_loss_pct": {
+            "type": "number",
+            "title": "Cut Loss Pct"
+          },
+          "trailing_lookback_days": {
+            "type": "integer",
+            "title": "Trailing Lookback Days"
+          },
+          "trailing_drop_pct": {
+            "type": "number",
+            "title": "Trailing Drop Pct"
+          },
+          "below_ma_days": {
+            "type": "integer",
+            "title": "Below Ma Days"
+          },
+          "ma_long": {
+            "type": "integer",
+            "title": "Ma Long"
+          },
+          "ma_short": {
+            "type": "integer",
+            "title": "Ma Short"
+          },
+          "add_step_pct": {
+            "type": "number",
+            "title": "Add Step Pct"
+          },
+          "add_max_steps": {
+            "type": "integer",
+            "title": "Add Max Steps"
+          },
+          "add_requires_above_ma_short": {
+            "type": "boolean",
+            "title": "Add Requires Above Ma Short"
+          },
+          "target_weight_gap_pt": {
+            "type": "number",
+            "title": "Target Weight Gap Pt"
+          },
+          "target_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Weight Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cut_loss_pct",
+          "trailing_lookback_days",
+          "trailing_drop_pct",
+          "below_ma_days",
+          "ma_long",
+          "ma_short",
+          "add_step_pct",
+          "add_max_steps",
+          "add_requires_above_ma_short",
+          "target_weight_gap_pt",
+          "target_weight_pct"
+        ],
+        "title": "ResolvedRuleOut",
+        "description": "The values that applied to this symbol: global \u2192 asset class \u2192 symbol overrides."
+      },
+      "RuleCheckAllOut": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/RuleCheckOut"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/SkippedCheckOut"
+            },
+            "type": "array",
+            "title": "Skipped"
+          },
+          "total_risk_pct_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Risk Pct Equity"
+          },
+          "kill_switch": {
+            "$ref": "#/components/schemas/KillSwitchOut"
+          },
+          "live_trading": {
+            "type": "boolean",
+            "title": "Live Trading"
+          },
+          "labels": {
+            "$ref": "#/components/schemas/RuleLabelsOut"
+          },
+          "settings_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Settings Notes"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checks",
+          "skipped",
+          "total_risk_pct_equity",
+          "kill_switch",
+          "live_trading",
+          "labels",
+          "settings_notes",
+          "checked_at"
+        ],
+        "title": "RuleCheckAllOut"
+      },
+      "RuleCheckOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "asset_type": {
+            "$ref": "#/components/schemas/AssetType"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "chip_ko": {
+            "type": "string",
+            "title": "Chip Ko"
+          },
+          "triggers": {
+            "items": {
+              "$ref": "#/components/schemas/RuleTriggerOut"
+            },
+            "type": "array",
+            "title": "Triggers"
+          },
+          "levels": {
+            "$ref": "#/components/schemas/RuleLevelsOut"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/ResolvedRuleOut"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "avg_cost": {
+            "type": "number",
+            "title": "Avg Cost"
+          },
+          "quantity": {
+            "type": "number",
+            "title": "Quantity"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct"
+          },
+          "add_steps_done": {
+            "type": "integer",
+            "title": "Add Steps Done"
+          },
+          "cut_distance_pct": {
+            "type": "number",
+            "title": "Cut Distance Pct"
+          },
+          "add_distance_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Distance Pct"
+          },
+          "blocked_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked By"
+          },
+          "blocked_labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Labels"
+          },
+          "add_cap_krw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Cap Krw"
+          },
+          "risk_pct_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Pct Equity"
+          },
+          "weight_room_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight Room Pt"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          },
+          "history_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Error"
+          },
+          "cut_prob_1m": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Prob 1M"
+          },
+          "cut_prob_1m_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Prob 1M Label"
+          },
+          "forecast_status": {
+            "type": "string",
+            "title": "Forecast Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "asset_type",
+          "currency",
+          "status",
+          "label_ko",
+          "chip_ko",
+          "triggers",
+          "levels",
+          "rule",
+          "price",
+          "avg_cost",
+          "quantity",
+          "weight_pct",
+          "add_steps_done",
+          "cut_distance_pct",
+          "add_distance_pct",
+          "blocked_by",
+          "blocked_labels",
+          "add_cap_krw",
+          "risk_pct_equity",
+          "weight_room_pt",
+          "notes",
+          "as_of",
+          "bars",
+          "history_error",
+          "cut_prob_1m",
+          "cut_prob_1m_label",
+          "forecast_status"
+        ],
+        "title": "RuleCheckOut"
+      },
+      "RuleDefaultsOut": {
+        "properties": {
+          "global": {
+            "$ref": "#/components/schemas/RuleGlobalOut"
+          },
+          "crypto": {
+            "$ref": "#/components/schemas/CryptoRuleOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "global",
+          "crypto"
+        ],
+        "title": "RuleDefaultsOut",
+        "description": "The `AM_RULES_*` values, for the settings page's reset button."
+      },
+      "RuleGlobalIn": {
+        "properties": {
+          "cut_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Cut Loss Pct"
+          },
+          "trailing_lookback_days": {
+            "type": "integer",
+            "title": "Trailing Lookback Days"
+          },
+          "trailing_drop_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Trailing Drop Pct"
+          },
+          "below_ma_days": {
+            "type": "integer",
+            "title": "Below Ma Days"
+          },
+          "ma_long": {
+            "type": "integer",
+            "title": "Ma Long"
+          },
+          "ma_short": {
+            "type": "integer",
+            "title": "Ma Short"
+          },
+          "add_step_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Add Step Pct"
+          },
+          "add_max_steps": {
+            "type": "integer",
+            "title": "Add Max Steps"
+          },
+          "add_requires_above_ma_short": {
+            "type": "boolean",
+            "title": "Add Requires Above Ma Short"
+          },
+          "target_weight_gap_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Target Weight Gap Pt"
+          },
+          "max_risk_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Max Risk Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cut_loss_pct",
+          "trailing_lookback_days",
+          "trailing_drop_pct",
+          "below_ma_days",
+          "ma_long",
+          "ma_short",
+          "add_step_pct",
+          "add_max_steps",
+          "add_requires_above_ma_short",
+          "target_weight_gap_pt",
+          "max_risk_pct"
+        ],
+        "title": "RuleGlobalIn"
+      },
+      "RuleGlobalOut": {
+        "properties": {
+          "cut_loss_pct": {
+            "type": "number",
+            "title": "Cut Loss Pct"
+          },
+          "trailing_lookback_days": {
+            "type": "integer",
+            "title": "Trailing Lookback Days"
+          },
+          "trailing_drop_pct": {
+            "type": "number",
+            "title": "Trailing Drop Pct"
+          },
+          "below_ma_days": {
+            "type": "integer",
+            "title": "Below Ma Days"
+          },
+          "ma_long": {
+            "type": "integer",
+            "title": "Ma Long"
+          },
+          "ma_short": {
+            "type": "integer",
+            "title": "Ma Short"
+          },
+          "add_step_pct": {
+            "type": "number",
+            "title": "Add Step Pct"
+          },
+          "add_max_steps": {
+            "type": "integer",
+            "title": "Add Max Steps"
+          },
+          "add_requires_above_ma_short": {
+            "type": "boolean",
+            "title": "Add Requires Above Ma Short"
+          },
+          "target_weight_gap_pt": {
+            "type": "number",
+            "title": "Target Weight Gap Pt"
+          },
+          "max_risk_pct": {
+            "type": "number",
+            "title": "Max Risk Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cut_loss_pct",
+          "trailing_lookback_days",
+          "trailing_drop_pct",
+          "below_ma_days",
+          "ma_long",
+          "ma_short",
+          "add_step_pct",
+          "add_max_steps",
+          "add_requires_above_ma_short",
+          "target_weight_gap_pt",
+          "max_risk_pct"
+        ],
+        "title": "RuleGlobalOut"
+      },
+      "RuleLabelsOut": {
+        "properties": {
+          "status": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Status"
+          },
+          "block": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Block"
+          },
+          "prob_caveat": {
+            "type": "string",
+            "title": "Prob Caveat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "block",
+          "prob_caveat"
+        ],
+        "title": "RuleLabelsOut"
+      },
+      "RuleLevelsOut": {
+        "properties": {
+          "cut_price": {
+            "type": "number",
+            "title": "Cut Price"
+          },
+          "cut_loss_price": {
+            "type": "number",
+            "title": "Cut Loss Price"
+          },
+          "trailing_high": {
+            "type": "number",
+            "title": "Trailing High"
+          },
+          "trailing_stop_price": {
+            "type": "number",
+            "title": "Trailing Stop Price"
+          },
+          "add_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Price"
+          },
+          "next_add_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Add Step"
+          },
+          "ma_short": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ma Short"
+          },
+          "ma_long": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ma Long"
+          },
+          "target_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Weight Pct"
+          },
+          "risk_amount": {
+            "type": "number",
+            "title": "Risk Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cut_price",
+          "cut_loss_price",
+          "trailing_high",
+          "trailing_stop_price",
+          "add_price",
+          "next_add_step",
+          "ma_short",
+          "ma_long",
+          "target_weight_pct",
+          "risk_amount"
+        ],
+        "title": "RuleLevelsOut",
+        "description": "Prices in the position's currency (`RuleCheckOut.currency`)."
+      },
+      "RuleSettingsIn": {
+        "properties": {
+          "global": {
+            "$ref": "#/components/schemas/RuleGlobalIn"
+          },
+          "crypto": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CryptoRuleIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SymbolRuleIn"
+            },
+            "type": "object",
+            "title": "Targets",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "global"
+        ],
+        "title": "RuleSettingsIn"
+      },
+      "RuleSettingsOut": {
+        "properties": {
+          "global": {
+            "$ref": "#/components/schemas/RuleGlobalOut"
+          },
+          "crypto": {
+            "$ref": "#/components/schemas/CryptoRuleOut"
+          },
+          "targets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SymbolRuleOut"
+            },
+            "type": "object",
+            "title": "Targets"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/RuleDefaultsOut"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "live_trading": {
+            "type": "boolean",
+            "title": "Live Trading"
+          }
+        },
+        "type": "object",
+        "required": [
+          "global",
+          "crypto",
+          "targets",
+          "defaults",
+          "warnings",
+          "updated_at",
+          "live_trading"
+        ],
+        "title": "RuleSettingsOut"
+      },
+      "RuleTriggerOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label_ko",
+          "detail",
+          "kind"
+        ],
+        "title": "RuleTriggerOut"
+      },
       "Side": {
         "type": "string",
         "enum": [
@@ -3200,6 +4958,45 @@
           "sell"
         ],
         "title": "Side"
+      },
+      "SkippedCheckOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "reason"
+        ],
+        "title": "SkippedCheckOut"
+      },
+      "SparklineOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "closes": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Closes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "closes"
+        ],
+        "title": "SparklineOut"
       },
       "SummaryOut": {
         "properties": {
@@ -3210,6 +5007,18 @@
           "market_value_krw": {
             "type": "number",
             "title": "Market Value Krw"
+          },
+          "day_change": {
+            "type": "number",
+            "title": "Day Change"
+          },
+          "day_change_krw": {
+            "type": "number",
+            "title": "Day Change Krw"
+          },
+          "day_change_pct": {
+            "type": "number",
+            "title": "Day Change Pct"
           },
           "cost_basis": {
             "type": "number",
@@ -3283,6 +5092,9 @@
         "required": [
           "market_value",
           "market_value_krw",
+          "day_change",
+          "day_change_krw",
+          "day_change_pct",
           "cost_basis",
           "unrealized_pnl",
           "unrealized_pct",
@@ -3354,6 +5166,162 @@
           "recent"
         ],
         "title": "SymbolForecastOut"
+      },
+      "SymbolRuleIn": {
+        "properties": {
+          "target_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Weight Pct"
+          },
+          "cut_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Loss Pct"
+          },
+          "trailing_drop_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trailing Drop Pct"
+          },
+          "add_step_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Step Pct"
+          },
+          "add_max_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Max Steps"
+          }
+        },
+        "type": "object",
+        "title": "SymbolRuleIn",
+        "description": "Per-symbol overrides; a null field keeps the asset-class or global value. Numbers may\narrive as strings and are parsed as exact decimals. Ranges are checked by the rule engine\n(`RuleSettings`), which answers 422 naming the field."
+      },
+      "SymbolRuleOut": {
+        "properties": {
+          "target_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Weight Pct"
+          },
+          "cut_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Loss Pct"
+          },
+          "trailing_drop_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trailing Drop Pct"
+          },
+          "add_step_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Step Pct"
+          },
+          "add_max_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Max Steps"
+          }
+        },
+        "type": "object",
+        "title": "SymbolRuleOut"
+      },
+      "SyncOut": {
+        "properties": {
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "gurus": {
+            "items": {
+              "$ref": "#/components/schemas/GuruOut"
+            },
+            "type": "array",
+            "title": "Gurus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "syncing",
+          "gurus"
+        ],
+        "title": "SyncOut"
       },
       "TrackRecordOut": {
         "properties": {

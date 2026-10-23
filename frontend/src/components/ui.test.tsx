@@ -26,12 +26,19 @@ describe('PnL', () => {
     expect(el).toHaveTextContent('▼−$4.00')
   })
 
+  it('rounds the percentage to the requested digits', () => {
+    renderIn('USD', <PnL pctOnly value={0} pct={-8.14} digits={1} />)
+    expect(screen.getByText(/−8\.1%/)).toHaveClass('text-loss')
+    renderIn('USD', <PnL value={2} pct={2.345} digits={1} />)
+    expect(screen.getByText(/\+\$2\.00/)).toHaveTextContent('▲+$2.00(+2.3%)')
+  })
+
   it('formats in won by default', () => {
     render(
       <CurrencyProvider>
         <PnL value={-397_000} />
       </CurrencyProvider>,
     )
-    expect(screen.getByText(/−₩397,000/)).toHaveClass('text-loss')
+    expect(screen.getByText(/−397,000원/)).toHaveClass('text-loss')
   })
 })

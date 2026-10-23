@@ -13,6 +13,7 @@ export type AssetInfo = Schemas['AssetInfo']
 export type Holding = Schemas['HoldingOut']
 export type Summary = Schemas['SummaryOut']
 export type HistoryPoint = Schemas['HistoryPointOut']
+export type Sparkline = Schemas['SparklineOut']
 export type Transaction = Schemas['TransactionOut']
 export type TransactionInput = Schemas['TransactionIn']
 export type SymbolForecast = Schemas['SymbolForecastOut']
@@ -30,6 +31,12 @@ export type News = Schemas['NewsOut']
 export type ImportPreview = Schemas['PreviewOut']
 export type ImportPreviewRow = Schemas['PreviewRowOut']
 export type ImportCommit = Schemas['CommitIn']
+// Rule checks (plan G): the user's own buy-more / stop-loss rules, not trading signals.
+export type RuleCheckAll = Schemas['RuleCheckAllOut']
+export type RuleCheck = Schemas['RuleCheckOut']
+export type RuleTrigger = Schemas['RuleTriggerOut']
+export type RuleSettings = Schemas['RuleSettingsOut']
+export type RuleSettingsInput = Schemas['RuleSettingsIn']
 
 export class ApiError extends Error {
   readonly status: number
@@ -82,6 +89,7 @@ export const api = {
   summary: () => request<Summary>('/portfolio/summary'),
   holdings: () => request<Holding[]>('/portfolio/holdings'),
   portfolioHistory: (start?: string) => request<HistoryPoint[]>(`/portfolio/history${query({ start })}`),
+  sparklines: (days = 30) => request<Sparkline[]>(`/portfolio/sparklines?days=${days}`),
 
   transactions: () => request<Transaction[]>('/transactions'),
   createTransaction: (data: TransactionInput) =>
@@ -138,4 +146,43 @@ export const api = {
   quote: (symbol: string) => request<Quote>(`/market/${encodeURIComponent(symbol)}/quote`),
   history: (symbol: string, start?: string, end?: string) =>
     request<Bar[]>(`/market/${encodeURIComponent(symbol)}/history${query({ start, end })}`),
+
+  // Rule checks and settings. Percentages go as strings so the backend parses exact decimals.
+  rulesCheck: () => request<RuleCheckAll>('/rules/check'),
+  rulesSettings: () => request<RuleSettings>('/rules/settings'),
+  updateRulesSettings: (data: RuleSettingsInput) =>
+    request<RuleSettings>('/rules/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
+  /** Every held symbol's forecast in one request (ratios to the latest close). */
+  forecastsHeld: () => request<HeldForecast[]>('/forecasts/held'),
 }
+
+// --- Well-known investors and "same money" benchmarks (Compare page) ---
+export type Guru = Schemas['GuruOut']
+export type GuruHolding = Schemas['GuruHoldingOut']
+export type GuruHoldings = Schemas['GuruHoldingsOut']
+export type GuruCompare = Schemas['GuruCompareOut']
+export type GuruCompareResult = Schemas['CompareOut']
+export type GuruSync = Schemas['SyncOut']
+export type Overlap = Schemas['OverlapOut']
+export type MissingHolding = Schemas['MissingOut']
+export type Benchmark = Schemas['BenchmarkOut']
+export type BenchmarkSeries = Schemas['BenchmarkSeriesOut']
+export type BenchmarkPoint = Schemas['BenchmarkPointOut']
+
+/** Kept apart from `api` so parallel edits to that object never collide; same `request` underneath. */
+export const compareApi = {
+  gurus: () => request<Guru[]>('/gurus'),
+  guruCompare: () => request<GuruCompareResult>('/gurus/compare'),
+  guruHoldings: (id: string, top = 20) =>
+    request<GuruHoldings>(`/gurus/${encodeURIComponent(id)}/holdings?top=${top}`),
+  syncGurus: () => request<GuruSync>('/gurus/sync', { method: 'POST' }),
+  benchmark: (symbols: string[], start?: string) =>
+    request<Benchmark>(`/portfolio/benchmark${query({ symbols: symbols.join(',') || undefined, start })}`),
+}
+
+// --- Forecasts: all held symbols at once (`api.forecastsHeld`) and the live verdict ---
+export type HeldForecast = Schemas['HeldForecastOut']
+export type HeldHorizonForecast = Schemas['HeldHorizonOut']
+/** `ForecastStatus.live[assetClass][horizon]`: reasons, not the report's raw edge flags. */
+export type LiveVerdict = Schemas['LiveVerdictOut']

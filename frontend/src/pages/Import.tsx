@@ -27,10 +27,11 @@ type EditableRow = {
 function toEditable(r: ImportPreviewRow): EditableRow {
   // The screenshot shows TOTAL holdings. For a symbol already held, only the extra units are
   // recorded (at the price that keeps the average cost equal to the screenshot's), so a
-  // re-upload never double counts. Rows held in the same or a smaller amount start unticked.
+  // re-upload never double counts. Rows held in the same or a smaller amount start unticked,
+  // and so does a row whose price the backend doubts (`warning`): the user confirms it first.
   const delta = r.diff === 'different' && r.delta_quantity != null && r.delta_price != null
   return {
-    include: r.status === 'ok' && (r.diff === 'new' || delta),
+    include: r.status === 'ok' && (r.diff === 'new' || delta) && !r.warning,
     name: r.name,
     asset_type: r.asset_type,
     symbol: r.symbol ? displaySymbol(r.symbol) : '',
@@ -116,7 +117,7 @@ export function Import() {
   if (status.data && !status.data.configured) {
     const ollama = status.data.engine === 'ollama'
     return (
-      <Card title="자산 업로드 준비 필요">
+      <Card title="스크린샷 가져오기 준비 필요">
         <div className="space-y-2 text-sm text-ink-2">
           <p>{status.data.problem}</p>
           {ollama ? (
@@ -146,18 +147,19 @@ export function Import() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">자산 업로드</h1>
+        <h1 className="text-2xl font-semibold">스크린샷 가져오기</h1>
         <p className="mt-1 text-sm text-ink-2">
           증권사·거래소 앱의 해외주식/코인 잔고 화면을 캡처해 올리면 보유 종목을 읽어 옵니다. 결과를 확인하고
-          고친 뒤 가져오세요.
+          고친 뒤 가져오세요. 토스증권처럼 평균단가가 없는 화면은 평가금액과 평가손익으로 단가를 계산합니다.
+          매수일은 화면에 없으니 아래 날짜를 실제 매수일로 바꿔 주세요.
         </p>
       </div>
 
       {created !== null && (
         <div className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           {created}개 종목을 가져왔습니다.{' '}
-          <Link to="/" className="text-accent underline">대시보드</Link>에서 확인하거나{' '}
-          <Link to="/projection" className="text-accent underline">미래 자산</Link>을 계산해 보세요.
+          <Link to="/" className="text-accent underline">홈</Link>에서 확인하거나{' '}
+          <Link to="/projection" className="text-accent underline">장기 시뮬레이션</Link>을 돌려 보세요.
         </div>
       )}
 
@@ -264,7 +266,10 @@ export function Import() {
                       <CellInput value={r.price} onChange={(v) => update(i, { price: v })} />
                       <div className="mt-1 text-[11px] text-muted">{r.currency}</div>
                       {r.source.price_estimated && (
-                        <div className="mt-1 text-[11px] text-muted">원화 매입금액÷오늘 환율로 추정</div>
+                        // The backend says how it derived the price (market value - P&L, cost / rate, ...).
+                        <div className="mt-1 max-w-56 text-[11px] text-muted">
+                          {r.source.message ?? '원화 매입금액÷오늘 환율로 추정'}
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2">
@@ -307,8 +312,9 @@ export function Import() {
             </button>
           </div>
           <p className="mt-2 text-xs text-muted">
-            실제 매수일을 모르면 오늘로 두세요. 매입 환율이 있으면 원화 원금은 그 환율로, 없으면 위 날짜의 환율로
-            계산합니다. 가져온 내용은 거래 내역에서 수정·삭제할 수 있습니다.
+            화면에는 매수일이 없어 위 날짜가 모든 종목의 매수일로 기록됩니다. 실제 매수일로 바꿔야 자산 추이가
+            그려집니다(모르면 오늘로 두고 나중에 거래 내역에서 고치세요). 매입 환율이 있으면 원화 원금은 그 환율로,
+            없으면 위 날짜의 환율로 계산합니다. 가져온 내용은 거래 내역에서 수정·삭제할 수 있습니다.
           </p>
           {commit.error && (
             <div className="mt-3">
@@ -323,7 +329,15 @@ export function Import() {
 
 function RowStatus({ row }: { row: ImportPreviewRow }) {
   if (row.status !== 'ok') return <span className="text-danger">{row.message}</span>
-  const confidence = row.confidence === 'low' && <div className="text-muted">인식 불확실 · 값을 확인하세요</div>
+  // `ok` rows can still carry a doubt (`warning`: two readings disagree) or a note (`message`:
+  // how the price was derived). The derivation note sits by the price when it was estimated.
+  const confidence = (
+    <>
+      {row.warning && <div className="max-w-72 text-danger">확인 필요: {row.warning}</div>}
+      {row.message && !row.price_estimated && <div className="max-w-72 text-ink-2">{row.message}</div>}
+      {row.confidence === 'low' && <div className="text-muted">인식 불확실 · 값을 확인하세요</div>}
+    </>
+  )
   if (row.diff === 'same')
     return (
       <>

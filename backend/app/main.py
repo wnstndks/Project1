@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api import (
     corporate_actions,
     forecasts,
+    gurus,
     health,
     imports,
     market,
@@ -13,6 +14,7 @@ from app.api import (
     portfolio,
     predictions,
     projection,
+    rules,
     transactions,
 )
 from app.config import get_settings
@@ -69,6 +71,8 @@ def create_app() -> FastAPI:
         news,
         corporate_actions,
         forecasts,
+        gurus,
+        rules,
     ):
         api.include_router(module.router)
     app.include_router(api)

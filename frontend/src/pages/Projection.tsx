@@ -15,6 +15,8 @@ import type { Assumptions, Projection as ProjectionResult, ProjectionInput } fro
 import { useAssumptions, useProjection } from '../api/hooks'
 import { Card, ErrorBox, Muted, SegmentedControl, StatTile } from '../components/ui'
 import { useMoney } from '../lib/currency'
+import { bandLabel, tailPhrase } from '../lib/forecast'
+import { formatKrwShort } from '../lib/format'
 
 type Form = {
   years: string
@@ -73,7 +75,7 @@ function ProjectionView({ a }: { a: Assumptions }) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">미래 자산 시뮬레이션</h1>
+        <h1 className="text-2xl font-semibold">장기 시뮬레이션</h1>
         <p className="mt-1 text-sm text-ink-2">
           현재 보유 자산 {formatKrwShort(a.start_value_krw)}에서 시작해 매달 적립했을 때의 자산을 5,000번
           시뮬레이션합니다. 결과는 확률적 범위이며 투자 조언이 아닙니다.
@@ -158,9 +160,14 @@ function Results({ data, hasTarget, usdKrw }: { data: ProjectionResult; hasTarge
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label={`${final.year}년 후 중간값`} value={format(pick(final, 'p50'))} sub="50%는 이보다 많음" />
-        <StatTile label="비관 (하위 10%)" value={format(pick(final, 'p10'))} sub="10%는 이보다 적음" />
-        <StatTile label="낙관 (상위 10%)" value={format(pick(final, 'p90'))} sub="10%는 이보다 많음" />
+        {/* The same words as the forecast cards: median, 10~90% band, and its two tails. */}
+        <StatTile
+          label={`${final.year}년 후 예상 중간값`}
+          value={format(pick(final, 'p50'))}
+          sub="절반은 이보다 많고 절반은 적어요"
+        />
+        <StatTile label={tailPhrase('bad')} value={format(pick(final, 'p10'))} sub="10번 중 1번은 이보다 적어요" />
+        <StatTile label={tailPhrase('good')} value={format(pick(final, 'p90'))} sub="10번 중 1번은 이보다 많아요" />
         <StatTile
           label={hasTarget ? '목표 달성 확률' : '원금 손실 확률'}
           value={`${(hasTarget ? data.prob_target! : data.prob_loss).toFixed(1)}%`}
@@ -184,9 +191,11 @@ function Results({ data, hasTarget, usdKrw }: { data: ProjectionResult; hasTarge
       >
         <ul className="mb-3 flex flex-wrap gap-4 text-xs text-ink-2" aria-label="범례">
           <LegendItem swatch={<span className="inline-block h-2.5 w-4 rounded-sm bg-[var(--series-1)] opacity-20" />}>
-            10~90% 범위
+            {bandLabel()}
           </LegendItem>
-          <LegendItem swatch={<span className="inline-block h-0.5 w-4 rounded bg-[var(--series-1)]" />}>중간값</LegendItem>
+          <LegendItem swatch={<span className="inline-block h-0.5 w-4 rounded bg-[var(--series-1)]" />}>
+            예상 중간값
+          </LegendItem>
           <LegendItem swatch={<span className="inline-block h-0.5 w-4 rounded bg-[var(--series-2)]" />}>총 납입액</LegendItem>
         </ul>
         <div className="h-80">
@@ -240,9 +249,9 @@ function Results({ data, hasTarget, usdKrw }: { data: ProjectionResult; hasTarge
                 <tr className="border-b border-line text-right text-xs text-muted">
                   <th className="px-5 py-2 text-left font-medium">연도</th>
                   <th className="px-3 py-2 font-medium">총 납입</th>
-                  <th className="px-3 py-2 font-medium">하위 10%</th>
-                  <th className="px-3 py-2 font-medium">중간값</th>
-                  <th className="px-5 py-2 font-medium">상위 10%</th>
+                  <th className="px-3 py-2 font-medium">운 나쁜 경우</th>
+                  <th className="px-3 py-2 font-medium">예상 중간값</th>
+                  <th className="px-5 py-2 font-medium">운 좋은 경우</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,9 +296,9 @@ function BandTooltip({ active, payload, format }: TooltipContentProps & { format
   return (
     <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-sm">
       <div className="mb-1 text-muted">{r.year}년 후</div>
-      {line('상위 10%', r.band[1])}
-      {line('중간값', r.p50, true)}
-      {line('하위 10%', r.band[0])}
+      {line('운 좋은 경우', r.band[1])}
+      {line('예상 중간값', r.p50, true)}
+      {line('운 나쁜 경우', r.band[0])}
       {line('총 납입', r.contributed)}
     </div>
   )
@@ -318,9 +327,4 @@ function NumberField({ label, value, onChange, hint, ...rest }: {
       {hint && <span className="mt-1 block text-[11px] text-muted">{hint}</span>}
     </label>
   )
-}
-
-function formatKrwShort(v: number): string {
-  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}억 원`
-  return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만 원`
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<edgarSubmission xmlns="http://www.sec.gov/edgar/thirteenffiler" xmlns:com="http://www.sec.gov/edgar/common">
+  <headerData><submissionType>13F-HR/A</submissionType></headerData>
+  <formData>
+    <coverPage>
+      <reportCalendarOrQuarter>06-30-2026</reportCalendarOrQuarter>
+      <isAmendment>true</isAmendment>
+      <amendmentNo>1</amendmentNo>
+      <amendmentInfo><amendmentType>NEW HOLDINGS</amendmentType><confDeniedExpired>true</confDeniedExpired></amendmentInfo>
+    </coverPage>
+    <summaryPage><tableEntryTotal>1</tableEntryTotal><tableValueTotal>100000</tableValueTotal></summaryPage>
+  </formData>
+</edgarSubmission>

@@ -37,8 +37,25 @@ class ExtractedHolding(BaseModel):
     cost_krw: str | None = Field(
         description="Total purchase amount in KRW (매입금액) as a decimal string; null if not shown"
     )
+    # The next three are never written to the ledger. When the screen has no average price
+    # (list views of 토스증권, 키움 and others), the service derives the purchase cost from
+    # them: cost = market value - P&L, or market value / (1 + return / 100).
+    market_value_krw: str | None = Field(
+        description="Current market value of the position in KRW (평가금액) as displayed; "
+        "null if not shown or shown only in dollars"
+    )
+    pnl_krw: str | None = Field(
+        description="Unrealized profit or loss of the position in KRW (평가손익) exactly as "
+        "displayed, WITH its sign, e.g. '-123456' or '+54000'; null if not shown or shown only "
+        "in dollars"
+    )
+    return_pct: str | None = Field(
+        description="Return percentage (수익률) exactly as displayed, with its sign, "
+        "e.g. '+12.5' or '-3.2'; null if not shown"
+    )
     confidence: Literal["high", "medium", "low"] = Field(
-        description="low if any value was hard to read or the ticker is a guess"
+        description="low if any value was hard to read, the ticker is a guess, or it was "
+        "unclear which number is the per-unit purchase price"
     )
 
 
@@ -59,18 +76,52 @@ class HoldingsExtractor(Protocol):
 
 SYSTEM_PROMPT = """\
 You read screenshots of a Korean investor's brokerage or exchange app showing their current \
-holdings (잔고) of US stocks and cryptocurrencies, and extract one entry per holding.
+holdings (잔고, 보유종목) of US stocks and cryptocurrencies, and extract one entry per holding.
 
 - Include every individual holding row. Skip totals, cash balances, and summary rows.
 - Copy numbers exactly as displayed, without thousands separators. Never estimate a value \
 that is not visible: use null instead.
-- Korean apps often show prices in both USD and KRW. Put the per-unit average purchase price \
-in USD into avg_price_usd, a per-unit average price shown in won into avg_price_krw (usual for \
-coins on Upbit/Bithumb), and the total purchase amount in KRW (매입금액) into cost_krw.
+
+How Korean broker apps lay out a holding (키움 영웅문, 토스증권, 삼성증권, 미래에셋, NH, KB, \
+한국투자, 신한 and others): each row has the name, then several numbers, usually in this order: \
+보유수량/잔고수량 (quantity), 평균단가/매입단가/평단/매수평균가 (average purchase price \
+PER SHARE), 현재가 (current price), 평가손익 (unrealized profit, in won or dollars), \
+수익률 (return in %, signed, often colored red or blue), 평가금액 (market value), \
+매입금액 (total purchase amount) and 비중 (weight in %). Several apps print a won and a dollar \
+figure for the same item next to each other, e.g. "$1,234.50 / 1,700,000원" or \
+"+124,000원 (+8.2%)".
+
+List views (토스증권, 키움, 삼성 and others) often show NO average price at all: the first line \
+has the name, quantity and market value (평가금액, in won), and the second line the unrealized \
+P&L in won with the return in percent, e.g. "-123,456원 (-7.89%)". In that case leave \
+avg_price_usd and avg_price_krw null and copy 평가금액 into market_value_krw, 평가손익 into \
+pnl_krw and 수익률 into return_pct, each with its sign. NEVER write the return percentage, with \
+or without its sign, into avg_price_usd.
+
+Field rules:
+- avg_price_usd is ONLY the average purchase price per share (평균단가/매입단가/평단/매수평균가). \
+It is never 수익률, 평가손익, 평가금액, 매입금액, 비중 or 현재가. For US stocks it is a dollar \
+amount ($ or 달러), usually with two decimals, and it has about the same number of digits as \
+the current price (현재가) in the same row. A number with a % sign or a +/- sign, or a number \
+hundreds of times smaller or larger than the current price, is not the unit price. If you \
+cannot tell which number is the unit price, set avg_price_usd to null and confidence to "low" \
+instead of guessing.
+- market_value_krw, pnl_krw, return_pct: the position's market value (평가금액), unrealized \
+P&L (평가손익) and return (수익률) exactly as shown, with their signs; won amounts only. The \
+app recomputes the purchase cost from them when no average price is shown.
+- avg_price_krw: a per-unit average price shown in won (평균매수가/매수평균가), usual for coins \
+on Upbit/Bithumb and for brokers that show US stocks in won.
+- cost_krw: the total purchase amount in won (매입금액/투자원금/매수금액) exactly as shown. \
+Always fill it, together with quantity, whenever it is visible: the app recomputes the unit \
+price from them to cross-check avg_price_usd.
+- Keep won amounts in the *_krw fields and dollar amounts in avg_price_usd. Never put a won \
+amount or a total into a per-unit dollar field.
 - Infer the US ticker from Korean or English company names (애플 -> AAPL, 엔비디아 -> NVDA). \
 For ETFs use the exchange-traded ticker, never a mutual fund share class \
 (Vanguard S&P 500 ETF -> VOO, not VFINX). Set ticker_shown to false whenever you inferred the \
 ticker rather than read it. Coins are only BTC, ETH, XRP or SOL; use those symbols.
+- Set confidence to "low" whenever a value is partly hidden, cut off, or ambiguous between \
+columns.
 - If the image does not show holdings, return an empty list.\
 """
 
@@ -194,6 +245,9 @@ DEMO_STATEMENT = ExtractedStatement(
             avg_price_usd="231.40",
             avg_price_krw=None,
             cost_krw="3,840,000",
+            market_value_krw=None,
+            pnl_krw=None,
+            return_pct=None,
             confidence="high",
         ),
         ExtractedHolding(
@@ -205,6 +259,9 @@ DEMO_STATEMENT = ExtractedStatement(
             avg_price_usd="128.75",
             avg_price_krw=None,
             cost_krw="4,410,000",
+            market_value_krw=None,
+            pnl_krw=None,
+            return_pct=None,
             confidence="high",
         ),
         ExtractedHolding(
@@ -216,6 +273,9 @@ DEMO_STATEMENT = ExtractedStatement(
             avg_price_usd=None,
             avg_price_krw=None,
             cost_krw="3,520,000",
+            market_value_krw=None,
+            pnl_krw=None,
+            return_pct=None,
             confidence="medium",
         ),
         ExtractedHolding(
@@ -227,6 +287,9 @@ DEMO_STATEMENT = ExtractedStatement(
             avg_price_usd="92.10",
             avg_price_krw=None,
             cost_krw=None,
+            market_value_krw=None,
+            pnl_krw=None,
+            return_pct=None,
             confidence="low",
         ),
     ],

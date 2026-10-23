@@ -20,19 +20,31 @@ import {
   useTrackRecord,
 } from '../api/hooks'
 import { useMoney } from '../lib/currency'
-import { HORIZON_LABEL } from '../lib/forecast'
-import { formatPct } from '../lib/format'
-import { ErrorBox, Muted, SegmentedControl } from './ui'
+import {
+  COVERAGE_PHRASE,
+  edgeLabels,
+  HORIZON_LABEL,
+  horizonPhrase,
+  isPastTarget,
+  midPhrase,
+  pctRange,
+  pendingPhrase,
+  rangePhrase,
+  reasonLabel,
+  worstHorizonVerdict,
+  type EdgeTone,
+  type Horizon,
+} from '../lib/forecast'
+import { formatDate, formatPct, isoDate } from '../lib/format'
+import { DAY_MS, tickLabel } from '../lib/priceChart'
+import { Disclosure, ErrorBox, Muted, SegmentedControl } from './ui'
 
 const HORIZON_OPTIONS = Object.entries(HORIZON_LABEL).map(([value, label]) => ({ value, label }))
 
-const ACTUAL = { label: '실제 종가', color: 'var(--series-1)' }
-const FORECAST = { label: '예측 중앙값 · 10~90% 범위', color: 'var(--series-2)' }
-
-type Row = { t: number; actual?: number; mid?: number; band?: [number, number] }
+const ACTUAL = { label: '실제 수익률', color: 'var(--series-1)' }
+const FORECAST = { label: `당시 예측 범위 (${COVERAGE_PHRASE})`, color: 'var(--series-2)' }
 
 const day = (d: string) => new Date(`${d}T00:00:00`).getTime()
-const pct = (v: number) => formatPct(v * 100)
 
 /** Training controls for the one global model, shared by every page that shows forecasts. */
 export function TrainButton({ notTrained }: { notTrained: boolean }) {
@@ -55,139 +67,181 @@ export function TrainButton({ notTrained }: { notTrained: boolean }) {
   )
 }
 
+/**
+ * Plain-language forecast summary for one held symbol: a direction chip and a range chip
+ * (the most conservative verdict across the three horizons), three horizon lines, and the
+ * full validation record folded under "이 예측, 믿을 만한가요?".
+ * The fan chart itself lives on the main price chart (PriceForecastChart).
+ */
 export function ForecastPanel({ symbol, fx }: { symbol: string; fx?: number }) {
   const forecast = useForecast(symbol)
   const notTrained = forecast.error instanceof ApiError && forecast.error.code === 'not_trained'
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-2xl text-xs text-muted">
-          보유 종목과 참조 종목 약 60개를 함께 학습한 LightGBM 분위수 모델이 1일·1주·1개월 뒤 가격의 범위(10~90%)와
-          오를 확률을 추정합니다. 기준선을 통계적으로 이기지 못하면 &lsquo;우위 없음&rsquo;으로 표시합니다. 참고용이며
-          투자 조언이 아닙니다.
-        </p>
-        <TrainButton notTrained={notTrained} />
+  if (notTrained) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-ink-2">아직 학습된 모델이 없습니다. 첫 학습은 시세를 내려받느라 몇 분 걸립니다.</p>
+        <TrainButton notTrained />
       </div>
-      {notTrained ? (
-        <Muted>아직 학습된 모델이 없습니다. 첫 학습은 시세를 내려받느라 몇 분 걸립니다.</Muted>
-      ) : forecast.error ? (
-        <ErrorBox error={forecast.error} />
-      ) : !forecast.data ? (
-        <Muted>예측을 계산하는 중… (처음에는 수십 초 걸릴 수 있습니다)</Muted>
-      ) : (
-        <ForecastView data={forecast.data} symbol={symbol} fx={fx} />
-      )}
-    </div>
-  )
+    )
+  }
+  if (forecast.error) return <ErrorBox error={forecast.error} />
+  if (!forecast.data) return <Muted>예측을 계산하는 중… (처음에는 수십 초 걸릴 수 있습니다)</Muted>
+  return <ForecastSummary data={forecast.data} symbol={symbol} fx={fx} />
 }
 
-function ForecastView({ data, symbol, fx }: { data: SymbolForecast; symbol: string; fx?: number }) {
-  const { currency, format, compact } = useMoney()
+const CHIP_CLASS: Record<EdgeTone, string> = {
+  good: 'bg-accent-soft text-accent',
+  pending: 'bg-hover text-ink-2',
+  none: 'border border-line text-muted',
+}
+
+function ForecastSummary({ data, symbol, fx }: { data: SymbolForecast; symbol: string; fx?: number }) {
+  const { currency, format } = useMoney()
   // Prices are USD; in KRW mode convert at today's rate (the best guess for future rates
   // too). Coins held on Upbit use their Upbit rate, which includes the kimchi premium.
   const rate = data.krw_rate ?? fx
   const conv = (usd: number) => (currency === 'KRW' && rate ? usd * rate : usd)
+  const money = (v: number) => format(conv(v))
   const coin = symbol.endsWith('-USD')
-
-  const rows: Row[] = data.recent.map((p) => ({ t: day(p.date), actual: conv(p.close) }))
-  const last = rows.at(-1)
-  if (last?.actual !== undefined) {
-    // Start the fan at the last close so it grows out of the price line.
-    last.mid = last.actual
-    last.band = [last.actual, last.actual]
-  }
-  for (const h of data.horizons) {
-    rows.push({ t: day(h.target_date), mid: conv(h.p50), band: [conv(h.p10), conv(h.p90)] })
-  }
+  // One verdict for the card: the most conservative of the three horizons, per axis.
+  const worst = worstHorizonVerdict(data.horizons)
+  const chips = worst ? edgeLabels(worst) : []
+  const asOf = data.horizons[0]?.as_of
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Legend />
-        <FanChart rows={rows} format={format} compact={compact} />
-      </div>
-      <HorizonTable horizons={data.horizons} format={(v) => format(conv(v))} coin={coin} />
+    <div className="space-y-4">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <ul className="flex flex-wrap gap-1.5" aria-label="검증 판정">
+            {chips.map((c) => (
+              <li
+                key={c.axis}
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ${CHIP_CLASS[c.tone]}`}
+              >
+                <span className="font-medium opacity-80">{c.axis}</span>
+                {c.label}
+              </li>
+            ))}
+          </ul>
+          <span className="text-xs text-muted">1일·1주·1개월 공통 (세 기간 중 가장 보수적인 판정)</span>
+        </div>
+      )}
+      <ul className="divide-y divide-line">
+        {data.horizons.map((h) => (
+          <HorizonLine key={h.horizon} h={h} coin={coin} format={money} />
+        ))}
+      </ul>
       <p className="text-xs text-muted">
-        기준선: 오를 확률은 학습 기간에 오른 날의 비율, 범위는 EWMA 변동성 + 두꺼운 꼬리(t분포). 데이터 기준일{' '}
-        {data.horizons[0]?.as_of} {coin ? '일봉 마감(한국 시간 다음 날 오전 9시, 달러 시세 기준)' : '미국 장 마감'}, 학습{' '}
-        {data.trained_at.slice(0, 16).replace('T', ' ')}.
-        {coin && currency === 'KRW' && (data.krw_rate ? ' 원화는 현재 업비트 가격 비율(김치 프리미엄 포함)로 환산했습니다.' : ' 원화는 달러 시세를 오늘 환율로 환산한 값입니다.')}
+        {asOf && `데이터 기준일 ${formatDate(asOf, 'long')} `}
+        {coin ? '일봉 마감(한국 시간 다음 날 오전 9시, 달러 시세 기준)' : '미국 장 마감'}.
+        {coin &&
+          currency === 'KRW' &&
+          (data.krw_rate
+            ? ' 원화는 현재 업비트 가격 비율(김치 프리미엄 포함)로 환산했습니다.'
+            : ' 원화는 달러 시세를 오늘 환율로 환산한 값입니다.')}{' '}
+        기준선은 시장 지수가 아니라 단순 통계(방향: 과거에 오른 날 비율, 범위: EWMA 변동성)입니다. 참고용이며 투자
+        조언이 아닙니다.
       </p>
-      <Validation />
-      <Backtest symbol={symbol} />
-      <TrackRecord symbol={symbol} />
+      <Disclosure summary="이 예측, 믿을 만한가요?">
+        <div className="space-y-6">
+          <p className="text-sm text-ink-2">
+            아래는 모델을 과거 데이터로 시험한 성적입니다. 기준선과 차이가 없으면 &lsquo;우위 없음&rsquo;입니다.
+          </p>
+          <Verdicts horizons={data.horizons} format={money} />
+          <p className="text-xs text-muted">
+            보유 종목과 참조 종목 약 60개를 함께 학습한 LightGBM 분위수 모델이 1일·1주·1개월 뒤 가격의 범위(
+            {COVERAGE_PHRASE})와 오를 확률을 추정합니다. 기준선: 오를 확률은 학습 기간에 오른 날의 비율, 범위는 EWMA
+            변동성 + 두꺼운 꼬리(t분포). 학습 {data.trained_at.slice(0, 16).replace('T', ' ')}.
+          </p>
+          <Validation />
+          <Backtest symbol={symbol} />
+          <TrackRecord symbol={symbol} />
+          <TrainButton notTrained={false} />
+        </div>
+      </Disclosure>
     </div>
-  )
-}
-
-function Badge({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
-  return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${
-        ok ? 'bg-hover text-ink' : 'text-muted'
-      }`}
-    >
-      {ok ? `✓ ${yes}` : no}
-    </span>
   )
 }
 
 /** A coin's daily bar for date D closes at 00:00 UTC on D+1, which is 09:00 the next day in Korea. */
 function closeLabel(date: string, coin: boolean): string {
-  if (!coin) return date
+  if (!coin) return formatDate(date, 'long')
   const next = new Date(`${date}T00:00:00Z`)
   next.setUTCDate(next.getUTCDate() + 1)
-  return `${next.toISOString().slice(0, 10)} 09:00`
+  return `${formatDate(next.toISOString().slice(0, 10), 'long')} 09:00`
 }
 
-function HorizonTable({ horizons, format, coin }: {
-  horizons: HorizonForecast[]
-  format: (v: number) => string
-  coin: boolean
-}) {
+function HorizonLine({ h, coin, format }: { h: HorizonForecast; coin: boolean; format: (v: number) => string }) {
+  const move = h.base_price > 0 ? (h.p50 / h.base_price - 1) * 100 : 0
+  const pct = (v: number) => `${(v * 100).toFixed(0)}%`
+  const direction = reasonLabel(h.direction_reason)
+  // A target date already behind today (the latest bar has not arrived yet, ISSUE-039) is not a
+  // forecast of the future any more: it is dimmed and labelled as waiting to be scored.
+  const past = isPastTarget(h.target_date)
   return (
-    <div className="-mx-5 overflow-x-auto">
-      <table className="num w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-line text-left text-xs text-muted">
-            <th className="px-5 py-2 font-medium">기간</th>
-            <th className="px-3 py-2 font-medium">목표일</th>
-            <th className="px-3 py-2 text-right font-medium">10~90% 범위</th>
-            <th className="px-3 py-2 text-right font-medium">중앙값</th>
-            <th className="px-3 py-2 text-right font-medium">오를 확률 (기준선)</th>
-            <th className="px-5 py-2 font-medium">검증 결과</th>
-          </tr>
-        </thead>
-        <tbody>
-          {horizons.map((h) => (
-            <tr key={h.horizon} className="border-b border-line align-top last:border-0">
-              <td className="px-5 py-2.5 font-medium">{HORIZON_LABEL[h.horizon]}</td>
-              <td className="px-3 py-2.5 text-ink-2">{closeLabel(h.target_date, coin)}</td>
-              <td className="px-3 py-2.5 text-right">
-                {format(h.p10)} ~ {format(h.p90)}
-                <div className="text-xs text-muted">
-                  {pct(h.p10 / h.base_price - 1)} ~ {pct(h.p90 / h.base_price - 1)}
-                </div>
-              </td>
-              <td className="px-3 py-2.5 text-right">{format(h.p50)}</td>
-              <td className="px-3 py-2.5 text-right">
-                {(h.p_up * 100).toFixed(0)}%{' '}
-                <span className="text-xs text-muted">({(h.baseline_p_up * 100).toFixed(0)}%)</span>
-              </td>
-              <td className="space-x-1 px-5 py-2.5">
-                <Badge ok={h.direction_edge} yes="방향 우위" no="방향 우위 없음" />
-                <Badge ok={h.range_edge} yes="범위 우위" no="범위는 기준선 수준" />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <li className={`flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3 ${past ? 'opacity-60' : ''}`}>
+      <div>
+        <div className="text-[15px] font-semibold text-ink">
+          {past ? pendingPhrase(h.target_date) : horizonPhrase(h.horizon as Horizon, coin)}
+        </div>
+        <div className="text-xs text-muted">
+          {past && `${HORIZON_LABEL[h.horizon] ?? h.horizon} 예측 · `}
+          {closeLabel(h.target_date, coin)} 기준
+        </div>
+      </div>
+      <div className="num text-right">
+        {/* The median is an estimate, not a gain: no P&L color or arrow. */}
+        <div className="text-[15px] font-semibold text-ink">
+          {midPhrase(format(h.p50))} <span className="font-normal text-ink-2">({formatPct(move, true, 1)})</span>
+        </div>
+        <div className="text-[13px] text-ink-2">
+          {rangePhrase(format(h.p10), format(h.p90))}{' '}
+          <span className="text-muted">({pctRange(h.p10, h.p90, h.base_price)})</span>
+        </div>
+        {h.direction_reason === 'edge' ? (
+          <div className="text-[13px] text-ink-2">
+            오를 확률 {pct(h.p_up)} <span className="text-muted">(기준선 {pct(h.baseline_p_up)})</span>
+          </div>
+        ) : (
+          // Without a direction edge the probability is not a headline: it stays, dimmed, with the verdict.
+          <div className="text-xs text-muted">
+            방향: {direction.label} (모델 {pct(h.p_up)} · 과거 평균 {pct(h.baseline_p_up)}
+            {h.direction_reason === 'not_significant' && ', 검증에서 차이 없음'})
+          </div>
+        )}
+      </div>
+    </li>
   )
 }
 
-function Legend({ items = [ACTUAL, FORECAST] }: { items?: { label: string; color: string }[] }) {
+/**
+ * The live verdict per horizon, direction and range separately, with the baseline's range
+ * beside the model's so the "우위 없음" has something to be compared with.
+ */
+function Verdicts({ horizons, format }: { horizons: HorizonForecast[]; format: (v: number) => string }) {
+  return (
+    <ul className="space-y-2 text-sm text-ink-2">
+      {horizons.map((h) => {
+        const [direction, range] = edgeLabels(h)
+        return (
+          <li key={h.horizon}>
+            <div>
+              <span className="font-medium text-ink">{HORIZON_LABEL[h.horizon]}</span> · 방향 {direction.label} · 범위{' '}
+              {range.label}
+            </div>
+            <div className="num text-xs text-muted">
+              현재 예측 범위 {format(h.p10)}~{format(h.p90)} · 기준선 범위 {format(h.baseline_p10)}~
+              {format(h.baseline_p90)}
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Legend({ items }: { items: { label: string; color: string }[] }) {
   return (
     <ul className="mb-3 flex flex-wrap gap-4 text-xs text-ink-2" aria-label="범례">
       {items.map((s) => (
@@ -197,107 +251,6 @@ function Legend({ items = [ACTUAL, FORECAST] }: { items?: { label: string; color
         </li>
       ))}
     </ul>
-  )
-}
-
-const dateTick = (t: number) => {
-  const d = new Date(t)
-  return `${d.getMonth() + 1}.${d.getDate()}`
-}
-
-function FanChart({ rows, format, compact }: {
-  rows: Row[]
-  format: (v: number) => string
-  compact: (v: number) => string
-}) {
-  return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--grid)" />
-          <XAxis
-            dataKey="t"
-            type="number"
-            scale="time"
-            domain={['dataMin', 'dataMax']}
-            tickLine={false}
-            axisLine={{ stroke: 'var(--axis)' }}
-            tick={{ fill: 'var(--muted)', fontSize: 11 }}
-            tickFormatter={dateTick}
-            minTickGap={40}
-          />
-          <YAxis
-            width={64}
-            tickLine={false}
-            axisLine={false}
-            tick={{ fill: 'var(--muted)', fontSize: 11 }}
-            tickFormatter={compact}
-            domain={['auto', 'auto']}
-          />
-          <Tooltip
-            content={(props) => <FanTooltip {...props} format={format} />}
-            cursor={{ stroke: 'var(--axis)', strokeWidth: 1 }}
-          />
-          <Area
-            dataKey="band"
-            stroke="none"
-            fill={FORECAST.color}
-            fillOpacity={0.18}
-            connectNulls
-            isAnimationActive={false}
-          />
-          <Line
-            dataKey="actual"
-            stroke={ACTUAL.color}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }}
-            isAnimationActive={false}
-          />
-          <Line
-            dataKey="mid"
-            stroke={FORECAST.color}
-            strokeWidth={2}
-            strokeDasharray="4 3"
-            dot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2, fill: FORECAST.color }}
-            connectNulls
-            isAnimationActive={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-function FanTooltip({ active, payload, label, format }: TooltipContentProps & { format: (v: number) => string }) {
-  if (!active || !payload?.length) return null
-  const row = payload[0].payload as Row
-  return (
-    <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-sm">
-      <div className="mb-1 text-muted">{new Date(Number(label)).toLocaleDateString('ko-KR')}</div>
-      {row.actual !== undefined && (
-        <div className="flex justify-between gap-4">
-          <span className="text-ink-2">{ACTUAL.label}</span>
-          <span className="num font-semibold text-ink">{format(row.actual)}</span>
-        </div>
-      )}
-      {row.mid !== undefined && row.actual === undefined && (
-        <>
-          <div className="flex justify-between gap-4">
-            <span className="text-ink-2">중앙값</span>
-            <span className="num font-semibold text-ink">{format(row.mid)}</span>
-          </div>
-          {row.band && (
-            <div className="flex justify-between gap-4">
-              <span className="text-ink-2">10~90%</span>
-              <span className="num text-ink">
-                {format(row.band[0])} ~ {format(row.band[1])}
-              </span>
-            </div>
-          )}
-        </>
-      )}
-    </div>
   )
 }
 
@@ -318,6 +271,7 @@ function Backtest({ symbol }: { symbol: string }) {
   }))
   const inside = points.filter((p) => p.actual >= p.q10 && p.actual <= p.q90).length
   const holdoutStart = points.find((p) => p.segment === 'holdout')?.date
+  const spanDays = rows.length > 1 ? (rows[rows.length - 1].t - rows[0].t) / DAY_MS : 0
 
   return (
     <div>
@@ -331,12 +285,7 @@ function Backtest({ symbol }: { symbol: string }) {
         <Muted>이 종목은 검증 구간 데이터가 없습니다.</Muted>
       ) : (
         <>
-          <Legend
-            items={[
-              { label: '실제 수익률', color: ACTUAL.color },
-              { label: '예측 10~90% 범위', color: FORECAST.color },
-            ]}
-          />
+          <Legend items={[ACTUAL, FORECAST]} />
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -349,7 +298,7 @@ function Backtest({ symbol }: { symbol: string }) {
                   tickLine={false}
                   axisLine={{ stroke: 'var(--axis)' }}
                   tick={{ fill: 'var(--muted)', fontSize: 11 }}
-                  tickFormatter={(t: number) => new Date(t).toISOString().slice(2, 7).replace('-', '.')}
+                  tickFormatter={(t: number) => tickLabel(t, spanDays)}
                   minTickGap={40}
                 />
                 <YAxis
@@ -369,9 +318,10 @@ function Backtest({ symbol }: { symbol: string }) {
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs text-muted">
-            실제 수익률이 예측 범위 안에 든 비율 {((inside / points.length) * 100).toFixed(0)}% (목표 80%,{' '}
-            {points.length}건). 각 시점의 예측은 그 이전 데이터로만 학습한 모델이 낸 것이며
-            {holdoutStart && `, ${holdoutStart} 이후는 학습에 쓰지 않은 최종 확인 구간입니다`}.
+            실제 수익률이 당시 예측 범위 안에 든 비율 {((inside / points.length) * 100).toFixed(0)}% (목표 80%,{' '}
+            {points.length}건). 기준선 범위의 적중률은 위 &lsquo;검증 성적&rsquo; 표의 기준선 값을 참고하세요. 각
+            시점의 예측은 그 이전 데이터로만 학습한 모델이 낸 것이며
+            {holdoutStart && `, ${formatDate(holdoutStart, 'long')} 이후는 학습에 쓰지 않은 최종 확인 구간입니다`}.
           </p>
         </>
       )}
@@ -384,13 +334,13 @@ function BacktestTooltip({ active, payload, label }: TooltipContentProps) {
   const row = payload[0].payload as BacktestRow
   return (
     <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-sm">
-      <div className="mb-1 text-muted">{new Date(Number(label)).toLocaleDateString('ko-KR')} 예측</div>
+      <div className="mb-1 text-muted">{formatDate(isoDate(new Date(Number(label))), 'long')} 예측</div>
       <div className="flex justify-between gap-4">
         <span className="text-ink-2">실제</span>
         <span className="num font-semibold text-ink">{formatPct(row.actual)}</span>
       </div>
       <div className="flex justify-between gap-4">
-        <span className="text-ink-2">예측 범위</span>
+        <span className="text-ink-2">당시 예측 범위</span>
         <span className="num text-ink">
           {formatPct(row.band[0])} ~ {formatPct(row.band[1])}
         </span>
@@ -475,16 +425,22 @@ function TrackRecord({ symbol }: { symbol: string }) {
           아직 채점된 예측이 없습니다. 예측은 처음 보여 준 그대로 저장되고 목표일이 지나면 채점됩니다(대기 {pending}건).
         </Muted>
       ) : (
-        <ul className="space-y-1 text-sm">
-          {summary.map((s) => (
-            <li key={s.horizon} className="text-ink-2">
-              <span className="font-medium text-ink">{HORIZON_LABEL[s.horizon]}</span> · {s.scored}건 · 범위 적중{' '}
-              {(s.coverage * 100).toFixed(0)}% · 방향 {(s.hit_rate * 100).toFixed(0)}% (기준선{' '}
-              {(s.baseline_hit_rate * 100).toFixed(0)}%)
-            </li>
-          ))}
-          {pending > 0 && <li className="text-xs text-muted">채점 대기 {pending}건</li>}
-        </ul>
+        <>
+          <ul className="space-y-1 text-sm">
+            {summary.map((s) => (
+              <li key={s.horizon} className="text-ink-2">
+                <span className="font-medium text-ink">{HORIZON_LABEL[s.horizon]}</span> · {s.scored}건 · 범위 적중{' '}
+                {(s.coverage * 100).toFixed(0)}% · 방향 {(s.hit_rate * 100).toFixed(0)}% (기준선{' '}
+                {(s.baseline_hit_rate * 100).toFixed(0)}%) · Brier {s.brier.toFixed(3)} (기준선{' '}
+                {s.baseline_brier.toFixed(3)})
+              </li>
+            ))}
+            {pending > 0 && <li className="text-xs text-muted">채점 대기 {pending}건</li>}
+          </ul>
+          <p className="mt-2 text-xs text-muted">
+            범위 적중의 기준선은 실전 기록에 없어 위 &lsquo;검증 성적&rsquo; 표의 기준선 값을 참고하세요.
+          </p>
+        </>
       )}
     </div>
   )

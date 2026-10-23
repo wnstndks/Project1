@@ -18,6 +18,12 @@ class HoldingOut(BaseModel):
     cost_basis: Num
     price: Num
     price_as_of: datetime
+    # Close before the quote's session, in the pricing currency (USD; Upbit won for KRW coins).
+    prev_close: Num
+    # Today's move: quantity x (price - prev_close). USD, percent, and KRW at today's rate.
+    day_change: Num
+    day_change_pct: Num
+    day_change_krw: Num
     market_value: Num
     unrealized_pnl: Num
     unrealized_pct: Num
@@ -45,6 +51,10 @@ class SummaryOut(BaseModel):
 
     market_value: Num
     market_value_krw: Num
+    # Sum of today's moves; pct against the value at the previous closes.
+    day_change: Num
+    day_change_krw: Num
+    day_change_pct: Num
     cost_basis: Num
     unrealized_pnl: Num
     unrealized_pct: Num
@@ -69,3 +79,29 @@ class HistoryPointOut(BaseModel):
     market_value_krw: float
     cost_basis: float
     cost_basis_krw: float
+
+
+class SparklineOut(BaseModel):
+    symbol: str
+    # Closes oldest first, in the pricing currency (USD; Upbit won for KRW coins).
+    closes: list[float]
+
+
+class BenchmarkPointOut(BaseModel):
+    date: date
+    # The benchmark bought with my won flows, valued in USD and in KRW at that day's rate.
+    value: float
+    value_krw: float
+
+
+class BenchmarkSeriesOut(BaseModel):
+    symbol: str
+    name_ko: str
+    points: list[BenchmarkPointOut]
+
+
+class BenchmarkOut(BaseModel):
+    """My value history and benchmarks fed with the same cash flows, on the same daily grid."""
+
+    mine: list[HistoryPointOut]
+    benchmarks: list[BenchmarkSeriesOut]

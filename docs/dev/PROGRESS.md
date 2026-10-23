@@ -377,3 +377,41 @@ S2-1d(예측 변동성으로 SPY·BTC 노출 조절, D-024, STRATEGIES.md S2)를
   - C-3: 생존 편향 없는 횡단면
   - C-4: 전략을 더 시도하지 않음
 - 실서비스와 모의투자의 S2 신호는 vol edge가 `FORWARD_CONFIRMED`에 없으므로 '우위 없음'이다(D-026). 실매매(`AM_LIVE_TRADING`)는 false 그대로다.
+
+
+## 화면 개편·유명 투자자 비교·규칙 점검 (2026-10-22~23)
+
+### 배경
+사용자 피드백(2026-10-22): 홈이 통계 용어와 숫자 나열이라 "뭐가 뭔지 모르겠다", 종목별 현재 차트(이동평균 포함)와 미래 예측이 없다, 유명 투자자(캐시 우드 등) 포트폴리오와 비교하고 싶다, 언제 추매·손절할지 알려 달라, 화면은 토스처럼 흰 바탕으로. 계획은 `~/.claude/plans/cozy-noodling-volcano.md`(A~H). H(분야별 탐색)는 사용자 결정 뒤 진행.
+
+### 결과 (브랜치 agent-team, 한 커밋)
+- **A 백엔드·공용**(app-engineer): 보유 종목 일간 변동(`prev_close`, `day_change*`, 직전 캐시 봉 대비), `GET /api/portfolio/sparklines`, 종목별 `direction_reason`/`range_reason`을 `report.live_edge_at`에서 받음(옛 report 키 불일치 해소), `GET /api/forecasts/status`의 `live`, `GET /api/forecasts/held`(보유 종목 일괄), 추론 캐시 키에 마지막 확정 봉 날짜(ISSUE-040). 용어 함수는 `frontend/src/lib/forecast.ts` 한 곳.
+- **B 홈**: 총 자산 → 세션 기준 변동 → 확인 배너(단가 확인·배당/분할·규칙 점검) → 보유 종목 목록(30일 미니 차트·변동·수익률·규칙 칩·1주 변동 범위 힌트) → 앞으로의 예상 자산(한 문장 + 1개월 띠, 숫자표는 접기) → 자산 추이(이력 7일 미만이면 안내) → 유명 투자자 비교 카드. 자산군 비중·김치 프리미엄은 해당할 때만. `HoldingsTable` 삭제.
+- **C 종목 상세·거래**: 한 차트에 종가 선(또는 캔들) + 이동평균 5/20/60/120 + 거래량 + 내 평균단가 + 52주 고저 + 마지막 종가에서 이어지는 예측 띠(`PriceForecastChart`, 캔들은 `CandleChart`에 같은 지표). 예측 요약은 배지 + 세 줄, 검증표는 "이 예측, 믿을 만한가요?" 접기. 거래 페이지 `단가 확인` 배지와 `?check=1` 필터.
+- **F 유명 투자자 비교**(data-engineer + app-engineer): 캐시 우드는 ARK ETF 보유 CSV, 버핏·버리·애크먼·드러켄밀러·달리오·테퍼는 SEC 13F(`AM_SEC_USER_AGENT`가 비어 있으면 동기화하지 않고 이유를 응답·화면에 표시). CUSIP→티커 OpenFIGI 영구 캐시. "같은 날 같은 돈을 넣었다면" 곡선(`benchmarks.py`, ARKK·BRK-B·SPY·QQQ·BTC-USD). 화면 `/compare`, 홈 카드, 종목 상세 한 줄. 한계(지연·롱 온리·ETF≠개인 계좌·조언 아님)는 화면에 상시 표기.
+- **G 추매·손절 규칙 점검**(risk-engineer + app-engineer): `app/strategy/rules.py` 순수 함수(손절선·추적 손절·장기선 아래 K봉 / 분할 추매·목표 비중 미달 / 비중·주문 상한·킬스위치로 막힘), 설정 `AM_RULES_*`·`AM_RULES_CRYPTO_*`, 테이블 `rule_settings`, `GET /api/rules/check`, `GET/PUT /api/rules/settings`. 화면 `/rules`, 홈 칩·배너, 종목 상세 카드. '신호'가 아니라 "내가 정한 규칙의 점검 결과"로 표기(D-027, C-2 선택).
+- **가져오기 수정**(ISSUE-036): 평균단가가 없는 토스형 화면은 `평가금액 − 평가손익`으로 원화 매입금액을 역산(`price_estimated`), 수익률(%)을 단가로 읽은 행과 20배 이상 어긋난 행은 `warning`(기본 미선택). 프론트 `isSuspiciousCost`도 같은 규칙.
+- **평가 수정**(evaluation-engineer, ISSUE-037): walk-forward를 통과하지 못한 종류가 `forward_test_pending`으로 나오던 문제를 고쳐 `not_significant`로. 현재 run의 실서비스 판정은 `stock 1d range`만 전진 검증 대기, 나머지는 우위 없음.
+- **검수 2회**(UX 32항목·트레이더 24항목)를 수정 라운드 1·2로 반영. 기본 테마를 라이트(토스식)로 바꾸고 헤더에 밝게/어둡게/시스템 토글(`src/lib/theme.tsx`, `<html data-theme>`, 프리페인트 스크립트).
+
+### 핵심 수치
+- 검증 결과는 `VERIFICATION.md`의 "화면 개편·유명 투자자 비교·규칙 점검 (2026-10-23)" 백엔드·프론트엔드 섹션에 있다. 두 verifier 모두 통과, 차단 0건(비차단 백엔드 5건·프론트 10건은 수정 또는 TODO로 처리).
+
+| 항목 | 이전(S2 커밋 시점) | 이번 커밋 |
+|---|---|---|
+| 백엔드 pytest | 405 | 562 (규칙 68·가져오기 44·유명 투자자·벤치마크·규칙 API·일간 변동·held 포함) |
+| ruff check / format | 통과 | 통과 |
+| alembic | head 하나 | head `6de1dd6fc3d6` 하나, `alembic check` 추가 작업 없음 |
+| 프론트 vitest | (없음) | 23 파일 129개 |
+| 프론트 build / oxlint | — | 통과 / 경고 0 |
+| 현재 run 실서비스 판정 | — | `stock 1d range`만 `forward_test_pending`, 나머지 11칸 `not_significant` (report와 일치) |
+| 폰 너비(390px) | — | 홈·상세·비교·규칙 overflow 0, 칩 잘림 0, 헤더 140px |
+
+### 기록
+- D-027(규칙 점검 = C-2, 라벨·기본값), D-028(eval 수정), D-029(리드 결정 묶음). ISSUE-035~040. CLAUDE.md의 화면·비교·규칙·테마 단락 갱신.
+
+### 남은 것
+- 13F 투자자 6명은 사용자가 `backend/.env`의 `AM_SEC_USER_AGENT`를 채워야 보인다(TODO_FOR_ME).
+- 다음 웨이브(F-2, data-engineer 조사 중): 13F 제출자 추가(소로스·아이칸·하워드 막스·클라먼·아인혼·리 루·게이츠 재단·국민연금·노르웨이 국부펀드 등, CIK는 EDGAR에서 확인, `expected_name` 안전장치) + 미국 의원 거래 공시(STOCK Act) "내 종목을 최근 거래한 의원". 트럼프 등 개인은 공시 포트폴리오가 없어 화면에 그 이유만 적는다.
+- H(분야별 탐색·추천)는 사용자 결정 뒤.
+- 사용자 데이터: 스크린샷으로 가져온 거래의 단가·매수일 수정은 사용자가 거래 페이지에서(실제 수치는 기록하지 않음).

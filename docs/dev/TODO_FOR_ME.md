@@ -22,18 +22,21 @@
   - 비율만 알려 주면 되고, 계좌 정보는 필요 없다.
 
 - [ ] 다음 전략 방향 선택(S1·S2 기각 후, STRATEGIES.md 「다음 가설 후보 (S1·S2 이후)」 C-1~C-4)
-  - C-1: 새 정보원으로 예측 엔진을 보강한다. 데이터 확보가 먼저이고, `CONFIGS_TRIED`가 4가 된다.
-  - C-2: 예측 없는 위험 관리 정책을 화면에 둘지 정한다. CLAUDE.md 신호 규칙(edge 없으면 '우위 없음')과 충돌하므로 사용자 결정이 필요하다.
-  - C-3: 생존 편향 없는 구성종목 데이터를 쓴다. 유료 데이터나 다른 공급자가 필요하다.
-  - C-4: 전략 추가를 중단한다.
-  - 고르기 전까지 신호는 '우위 없음'이다. 고른 방향은 quant-researcher가 결과를 보기 전에 STRATEGIES.md에 등록하고, `STRATEGY_CONFIGS_TRIED`를 올린다.
-- [ ] app-engineer 투입 여부 결정. 아래 항목은 app-engineer 담당 파일이라 다른 역할이 고칠 수 없다.
-  - `services/forecasts.py:114`: 참조 종목 순위 피처의 peers를 run의 학습 유니버스로 제한
-  - `services/forecasts.py:283`: 환율 대체 경로가 엄격 로더를 쓰도록 변경(D-011, ISSUE-022)
-  - `services/forecasts.py:426`: 앱 안의 재학습이 홀드아웃 열람을 기록 없이 함(ISSUE-005)
-  - 화면이 새 report 키(`stock:direction` 등)를 읽도록 변경. 그 전까지 화면 edge는 모두 False다.
+  - 2026-10-22 사용자가 "언제 추매·손절할지 알려 달라"고 해 **C-2(예측 없는 규칙 점검)를 선택한 것으로 처리**했다(D-027). `/rules` 화면과 `app/strategy/rules.py`가 그 결과다. 이것은 전략이 아니라 사용자 규칙의 점검이며, 예측 기반 신호 자리는 여전히 '우위 없음'이다.
+  - 예측 엔진 쪽 방향(C-1 새 정보원 / C-3 생존 편향 없는 데이터 / C-4 중단)은 아직 결정 전이다. 고르기 전까지 신호는 '우위 없음'이다. 고른 방향은 quant-researcher가 결과를 보기 전에 STRATEGIES.md에 등록하고, `STRATEGY_CONFIGS_TRIED`를 올린다.
+- [ ] 규칙 점검 기본값 확인(`/rules` 화면, 설정값 `AM_RULES_*`)
+  - 현재 기본값: 손절 −15%(코인 −25%), 60일 고점 대비 −20%(코인 −30%), 60일선 아래 5봉, 추매 −5%마다 최대 2회(코인 −8%), 20일선 위에서만, 목표 비중 미달 5%p, 포지션 리스크 한도 2%. 트레이더 검수 권고를 반영한 값이고 화면에서 바꿀 수 있다.
+  - 검토 요청(트레이더 검수, D-027): 코인 4종 합산 비중 상한(예 30%) 추가 여부, 전 종목 손절 합산 한도(예 총자산 8%) 추가 여부, 시간 손절(매수 후 90봉 내 미회복) 추가 여부, 현금 잔고 수동 입력 기능 여부(지금은 현금을 몰라 "추매 가능 금액 미확인"으로 표시).
+- [ ] app-engineer 후속 항목(아래는 app-engineer 담당 파일)
+  - [x] 화면이 새 report 키(`stock:direction` 등)를 읽도록 변경(2026-10-22, `report.live_edge_at` 사용).
+  - `services/forecasts.py`: 참조 종목 순위 피처의 peers를 run의 학습 유니버스로 제한
+  - `services/forecasts.py`: 환율 대체 경로가 엄격 로더를 쓰도록 변경(D-011, ISSUE-022)
+  - `services/forecasts.py`: 앱 안의 재학습이 홀드아웃 열람을 기록 없이 함(ISSUE-005)
   - 킬스위치 리셋 API(지금은 사용자만 리셋할 수 있고, 리셋할 화면·API가 없음)
-- [ ] CLAUDE.md 갱신 검토. 2단계에서 바뀐 아래 내용이 CLAUDE.md에 아직 없다. 검토 후 반영 여부를 정한다.
+  - [x] 홈 보유 행의 1주 범위 힌트를 `GET /api/forecasts/held` 한 번으로 받도록 변경(2026-10-23, 수정 라운드 2).
+  - 2026-10-23 프론트 verifier 비차단(VERIFICATION.md 프론트엔드 섹션): `Transactions.tsx`의 `money()`가 거래일 환율로 반대 통화를 계산함(`TransactionOut`에 원화 금액이 없어서, 이번 웨이브 이전부터) → 백엔드가 `*_krw`를 주도록 바꾸는 것이 정석; 단가 확인 기준 통화가 홈(USD)과 상세(포지션 통화)에서 다름(비율이라 결과는 같음, 통일 권장); `fiftyTwoWeek` 창 366일; `HoldingsList`의 `text-white`(색 아바타 위 글자, CSS 변수 규칙의 유일한 예외).
+- [ ] 분야별 종목 탐색·추천(계획 H, `~/.claude/plans/cozy-noodling-volcano.md`)을 시작할지 결정. 재무 스크리닝 순위이지 수익률 예측이 아니라는 전제로 설계돼 있다.
+- [ ] CLAUDE.md 갱신 검토. 화면 개편·규칙 점검·유명 투자자 비교는 2026-10-23에 반영했다. 2단계에서 바뀐 아래 내용은 CLAUDE.md에 아직 없다. 검토 후 반영 여부를 정한다.
   - 확정 봉 판정이 `symbol_syncs.synced_at`(UTC) 기준으로 바뀌었다(D-016).
   - 모의투자 CLI(`python -m app.strategy.paper run|fill|score`)가 생겼다.
   - 새 설정이 생겼다: `AM_RISK_*`, `AM_STRATEGY_BUDGET_*`, `AM_PAPER_INITIAL_CAPITAL_KRW`, `AM_LIVE_TRADING`.
@@ -41,6 +44,15 @@
   - `app/strategy/` 구조: signals, s1, risk, execution, paper, backtest, baselines, evaluation, assess.
 
 ## 직접 실행해야 하는 일
+- [ ] 스크린샷으로 가져온 거래의 평균단가·매수일 바로잡기
+  - 홈·거래 페이지에 `단가 확인` 배지가 붙은 거래는 추출기가 수익률(%)을 단가로 읽은 것이다(ISSUE-036). 거래 페이지 상단 목록에서 수정하거나, "가져온 거래 전체 삭제" 뒤 같은 스크린샷을 다시 올리면 평가금액·평가손익으로 역산한 단가가 들어온다.
+  - 보유 화면에는 매수일이 없어 업로드한 날짜로 기록된다. 실제 매수일로 고쳐야 자산 추이와 "같은 날 같은 돈을 넣었다면" 비교가 그려진다.
+- [ ] `backend/.env`에 `AM_SEC_USER_AGENT` 채우기(유명 투자자 비교의 13F 데이터)
+  - 2026-10-23 추가: 버핏(버크셔)·버리·애크먼·드러켄밀러·달리오·테퍼는 이미 목록에 있고, 이 값이 비어 있어서 비교 화면에 캐시 우드만 보인다. 형식은 `앱이름 연락이메일`(SEC 요구). 다음 웨이브(F-2, D-030)에서 추가하는 소로스·아이칸·하워드 막스·클라먼·리 루·게이츠 재단·국민연금·노르웨이 국부펀드 등도 이 값이 있어야 보인다.
+- [ ] `backend/.env`의 `AM_FINNHUB_API_KEY`가 줄만 있고 값이 비어 있다(2026-10-23 확인). 뉴스 기능이 동작하려면 무료 키를 발급해 채운다. 의원 거래 공시는 Finnhub가 아니라 하원 공시 원본을 쓰므로 이 키와 무관하다.
+  - 형식: `앱이름 연락처이메일` (예: `asset-manager you@example.com`). SEC EDGAR는 이 형식의 User-Agent가 없으면 403으로 막는다(https://www.sec.gov/os/accessing-edgar-data).
+  - 비어 있으면 13F 투자자(버핏·버리·애크먼·드러켄밀러·달리오·테퍼)는 `AM_SEC_USER_AGENT 미설정`으로 표시되고 동기화하지 않는다. ARK(캐시 우드)는 설정 없이 동작한다.
+  - (선택) `AM_OPENFIGI_API_KEY`: 없어도 되지만 CUSIP→티커 변환 한도가 분당 25요청·10건이라 달리오(약 1,000종목) 첫 변환이 여러 번에 나눠 진행된다. 키가 있으면 한 번에 끝난다.
 - [ ] 모의투자 일일 실행 예약(작업 스케줄러 등). 실제 주문은 나가지 않는다(`AM_LIVE_TRADING`=false).
   - 주식: 금요일 미국 장 마감 뒤(한국 시간 토요일 아침)에 `py -3.11 -m uv run python -m app.strategy.paper run`
   - 코인: 월요일 09:00 KST 뒤(일요일 UTC 봉 마감 뒤)에 같은 `run`

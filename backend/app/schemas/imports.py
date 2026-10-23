@@ -28,6 +28,10 @@ class PreviewRowOut(BaseModel):
     confidence: str
     status: str
     message: str | None
+    # A doubt about the unit price on an `ok` row (e.g. 20x away from the current price, or
+    # equal to the displayed return %). The user can still import the row after fixing the
+    # price; the frontend leaves such rows unselected by default.
+    warning: str | None
     current_quantity: Num | None
     diff: str | None
     delta_quantity: Num | None

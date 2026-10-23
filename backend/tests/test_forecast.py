@@ -460,6 +460,56 @@ def test_live_rank_edge_waits_for_the_forward_test():
     assert not status.edge and status.reason == "forward_test_pending"
 
 
+def test_live_edge_reason_reads_the_walk_forward_verdict_first(monkeypatch):
+    """ISSUE-037: a rank, range or vol comparison that failed the walk-forward tests is
+    `not_significant`, not "waiting for its forward test". Only one that passed waits, and
+    its `edge` stays False until FORWARD_CONFIRMED lists it. The flag never depends on the
+    order, only the reason does."""
+    from app.forecast import report as report_module
+    from app.forecast.report import live_edge_at
+
+    failed = {
+        "edge": False,
+        "dates": 900,
+        "mean_gain": 0.0,
+        "dm_stat": 0.1,
+        "p_adjusted": 1.0,
+        "year_share": 0.5,
+    }
+    passed = {**failed, "edge": True, "mean_gain": 0.02, "dm_stat": 3.1, "p_adjusted": 0.01}
+    report = {
+        "horizons": {
+            "1w": {
+                "comparisons": {
+                    "stock:range": failed,
+                    "stock:rank": passed,
+                    "stock:direction": passed,
+                    "crypto:direction": failed,
+                }
+            }
+        }
+    }
+
+    def at(kind, asset_class="stock", horizon="1w"):
+        s = live_edge_at(report, kind)(date(2026, 10, 20), asset_class, horizon)
+        return s.edge, s.reason
+
+    assert at("range") == (False, "not_significant")  # failed walk-forward, forward kind
+    assert at("rank") == (False, "forward_test_pending")  # passed, not yet confirmed
+    assert at("direction") == (True, "edge")  # direction needs no forward test
+    assert at("direction", "crypto") == (False, "not_significant")
+    assert at("vol") == (False, "no_data")  # not in this report
+    assert at("range", horizon="1m") == (False, "no_data")
+    # The walk-forward numbers travel with a failed verdict too (the UI shows them).
+    assert live_edge_at(report, "range")(date(2026, 10, 20), "stock", "1w").n == 900
+    # Once a forward paper test confirms a kind (a DECISIONS.md entry), it goes live; a
+    # failed comparison of the same kind does not.
+    confirmed = frozenset({("stock", "1w", "rank"), ("stock", "1w", "range")})
+    monkeypatch.setattr(report_module, "FORWARD_CONFIRMED", confirmed)
+    assert at("rank") == (True, "edge")
+    assert at("range") == (False, "not_significant")
+
+
 def vol_oos(knows: bool, seed: int = 0, shuffle: bool = False):
     """OOS rows whose outcomes have a slowly changing volatility. With `knows`, gbdt's 10-90%
     range follows it while ewma_t's range stays at the long-run width; otherwise gbdt has
@@ -555,10 +605,15 @@ def test_live_range_and_vol_edges_wait_for_the_forward_test():
 
     comps = verdicts(compare_all(vol_oos(knows=True), lags=5))
     report = {"horizons": {"1d": {"comparisons": {k: to_dict(c) for k, c in comps.items()}}}}
-    assert comps["stock:vol"].edge
-    for kind in ("vol", "range", "rank"):
+    assert comps["stock:vol"].edge and comps["stock:range"].edge
+    for kind in ("vol", "range"):
         status = live_edge_at(report, kind=kind)(date(2026, 10, 20), "stock", "1d")
         assert not status.edge and status.reason == "forward_test_pending", kind
+    # A forward-test kind that failed the walk-forward is not "pending": there is no edge
+    # to wait for (ISSUE-037).
+    assert not comps["stock:rank"].edge
+    rank = live_edge_at(report, kind="rank")(date(2026, 10, 20), "stock", "1d")
+    assert not rank.edge and rank.reason == "not_significant"
     # Direction is read from the report as before (no edge here).
     assert live_edge_at(report, kind="direction")(date(2026, 10, 20), "stock", "1d").reason == (
         "not_significant"

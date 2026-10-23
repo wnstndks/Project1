@@ -104,6 +104,12 @@ def test_symbol_forecast_has_ordered_ranges_and_verdicts(client, trained):
         assert 0 <= h["p_up"] <= 1
         assert h["target_date"] > h["as_of"]
         assert isinstance(h["direction_edge"], bool)
+        assert h["direction_reason"] in {"edge", "not_significant", "no_data"}
+        # A range edge is never live before its forward paper test (D-006). The reason says
+        # whether the walk-forward found one to wait for (ISSUE-037, D-028).
+        comp = status["report"]["horizons"][h["horizon"]]["comparisons"]["stock:range"]
+        assert h["range_edge"] is False
+        assert h["range_reason"] == ("forward_test_pending" if comp["edge"] else "not_significant")
     week = body["horizons"][1]
     # Five NYSE sessions after a Friday close is the next Friday.
     assert (date.fromisoformat(week["target_date"]) - date.fromisoformat(week["as_of"])).days == 7
@@ -202,6 +208,8 @@ def test_held_symbol_without_enough_history_says_so(client, trained, monkeypatch
     buy(client, "MSFT", 1, 400)
     res = client.get("/api/forecasts/MSFT")
     assert res.status_code == 422 and res.json()["code"] == "insufficient_history"
+    # The bulk list leaves it out instead of failing for everyone.
+    assert [h["symbol"] for h in client.get("/api/forecasts/held").json()] == ["AAPL", "BTC-USD"]
 
 
 def test_premium_reverts_toward_its_mean():
@@ -214,3 +222,116 @@ def test_premium_reverts_toward_its_mean():
     plain = aggregate.simulate([a], fx, np.eye(2), seed=3)
     with_premium = aggregate.simulate([a], fx, np.eye(2), seed=3, premium={"BTC-USD": (mean, sd)})
     assert with_premium.p50 < plain.p50  # a high premium is expected to shrink
+
+
+def test_edges_follow_the_live_verdict_per_asset_class(client, trained, trained_dir):
+    client.get("/api/forecasts/AAPL")  # loads the run so its report can be edited in place
+    report = forecasts._runs[trained_dir].report
+    comparisons = report["horizons"]["1d"]["comparisons"]
+    assert {"stock:direction", "stock:range", "crypto:direction"} <= set(comparisons)
+    comparisons["stock:direction"]["edge"] = True
+    comparisons["stock:range"]["edge"] = True
+    comparisons["crypto:direction"]["edge"] = False
+
+    day = client.get("/api/forecasts/AAPL").json()["horizons"][0]
+    assert day["horizon"] == "1d"
+    assert day["direction_edge"] is True and day["direction_reason"] == "edge"
+    # A range edge in the report is still withheld until its forward test confirms it.
+    assert day["range_edge"] is False and day["range_reason"] == "forward_test_pending"
+
+    # The coin reads the crypto comparison, not the stock one.
+    coin_day = client.get("/api/forecasts/BTC").json()["horizons"][0]
+    assert coin_day["direction_edge"] is False
+    assert coin_day["direction_reason"] == "not_significant"
+
+
+def test_status_live_verdicts_are_the_symbol_forecasts_verdicts(client, trained, trained_dir):
+    from app.forecast.report import live_edge_at
+
+    status = client.get("/api/forecasts/status").json()
+    assert set(status["live"]) == {"stock", "crypto"}
+    assert all(set(by_h) == {"1d", "1w", "1m"} for by_h in status["live"].values())
+    report = forecasts._runs[trained_dir].report
+    for cls in ("stock", "crypto"):
+        for h in ("1d", "1w", "1m"):
+            assert status["live"][cls][h] == {
+                "direction": live_edge_at(report, "direction")(TODAY, cls, h).reason,
+                "range": live_edge_at(report, "range")(TODAY, cls, h).reason,
+            }
+    # The detail page's badges and the home's model sentence read the same verdict.
+    for h in client.get("/api/forecasts/AAPL").json()["horizons"]:
+        assert status["live"]["stock"][h["horizon"]] == {
+            "direction": h["direction_reason"],
+            "range": h["range_reason"],
+        }
+
+    comparisons = report["horizons"]["1d"]["comparisons"]
+    comparisons["stock:direction"]["edge"] = True
+    comparisons["stock:range"]["edge"] = True
+    live = client.get("/api/forecasts/status").json()["live"]["stock"]["1d"]
+    assert live["direction"] == "edge"
+    # The report's raw range flag is not the live verdict: the forward test comes first.
+    assert live["range"] == "forward_test_pending"
+    assert client.get("/api/forecasts/AAPL").json()["horizons"][0]["direction_reason"] == "edge"
+
+
+def test_untrained_status_has_no_live_verdicts_and_no_held_list(client, artifacts):
+    body = client.get("/api/forecasts/status").json()
+    assert body["trained"] is False and body["live"] == {}
+    res = client.get("/api/forecasts/held")
+    assert res.status_code == 404 and res.json()["code"] == "not_trained"
+
+
+def test_held_forecasts_list_every_held_symbol_once_as_ratios(client, trained):
+    body = client.get("/api/forecasts/held").json()
+    # Sorted by symbol, holdings only: MSFT is in the reference universe but not held.
+    assert [(h["symbol"], h["asset_class"]) for h in body] == [
+        ("AAPL", "stock"),
+        ("BTC-USD", "crypto"),
+    ]
+    single = client.get("/api/forecasts/AAPL").json()
+    horizons = body[0]["horizons"]
+    assert [h["horizon"] for h in horizons] == ["1d", "1w", "1m"]
+    for mine, theirs in zip(horizons, single["horizons"], strict=True):
+        base = theirs["base_price"]
+        assert mine["low_ratio"] == pytest.approx(theirs["p10"] / base)
+        assert mine["mid_ratio"] == pytest.approx(theirs["p50"] / base)
+        assert mine["high_ratio"] == pytest.approx(theirs["p90"] / base)
+        assert mine["low_ratio"] <= mine["mid_ratio"] <= mine["high_ratio"]
+        for key in (
+            "as_of",
+            "target_date",
+            "p_up",
+            "baseline_p_up",
+            "direction_edge",
+            "range_edge",
+            "direction_reason",
+            "range_reason",
+        ):
+            assert mine[key] == theirs[key], key
+    coin = next(h for h in body if h["symbol"] == "BTC-USD")
+    assert (
+        coin["horizons"][0]["direction_reason"]
+        == (client.get("/api/forecasts/BTC").json()["horizons"][0]["direction_reason"])
+    )
+
+
+def test_inference_is_rebuilt_once_a_new_session_has_closed(client, trained, monkeypatch):
+    """Regression for ISSUE-040: the 30-minute inference cache used to outlive a session
+    close, so the previous session's row (and a past 1d target date) was served on."""
+    computed: list = []
+    real = forecasts.ForecastService._compute
+
+    def counting(self, run, held):
+        computed.append(held)
+        return real(self, run, held)
+
+    monkeypatch.setattr(forecasts.ForecastService, "_compute", counting)
+    final = {"date": date(2026, 10, 15)}
+    monkeypatch.setattr(forecasts, "last_final_date", lambda *_: final["date"])
+    client.get("/api/forecasts/AAPL")
+    client.get("/api/forecasts/held")
+    assert len(computed) == 1  # within INFERENCE_TTL the cached inference is reused
+    final["date"] = date(2026, 10, 16)  # the next session closed and settled
+    client.get("/api/forecasts/AAPL")
+    assert len(computed) == 2

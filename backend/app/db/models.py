@@ -290,3 +290,66 @@ class PaperSignal(Base):
     # Filled orders only: value change of the bought or sold quantity to target_date, in KRW,
     # after the fee.
     trade_pnl_krw: Mapped[Decimal | None] = mapped_column(DecimalText)
+
+
+class GuruHoldingRecord(Base):
+    """One position of a well-known investor's latest public snapshot (ARK CSV or 13F).
+
+    Only the latest snapshot per investor is kept; `weight` is the share of the snapshot's
+    total value. `symbol` is None for cash, private placements and CUSIPs not yet mapped.
+    """
+
+    __tablename__ = "guru_holdings"
+    __table_args__ = (Index("ix_guru_holdings_guru_as_of", "guru_id", "as_of"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guru_id: Mapped[str] = mapped_column(String(40))
+    as_of: Mapped[date] = mapped_column(Date)
+    symbol: Mapped[str | None] = mapped_column(String(20))
+    cusip: Mapped[str | None] = mapped_column(String(12))
+    name: Mapped[str] = mapped_column(String(200))
+    shares: Mapped[float] = mapped_column(Float)
+    value_usd: Mapped[float] = mapped_column(Float)
+    weight: Mapped[float] = mapped_column(Float)
+
+
+class GuruSync(Base):
+    """Last sync attempt per investor. `error` is set when the attempt failed and the stored
+    holdings (if any) are from an earlier success; `note` carries non-fatal caveats."""
+
+    __tablename__ = "guru_syncs"
+
+    guru_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+    as_of: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String(4))
+    error: Mapped[str | None] = mapped_column(String(300))
+    note: Mapped[str | None] = mapped_column(String(300))
+
+
+class CusipTicker(Base):
+    """Permanent CUSIP -> ticker cache from OpenFIGI. `symbol` None means the lookup found no
+    US listing; those are retried after a while, successes never expire."""
+
+    __tablename__ = "cusip_tickers"
+
+    cusip: Mapped[str] = mapped_column(String(12), primary_key=True)
+    symbol: Mapped[str | None] = mapped_column(String(20))
+    name: Mapped[str | None] = mapped_column(String(200))
+    resolved_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
+class RuleSettingsRow(Base):
+    """The user's buy-more / stop-loss rules (app/strategy/rules.py, DECISIONS.md D-027).
+
+    One row (id 1). `global_json` holds the `RuleSettings` fields except `targets`;
+    `targets_json` maps a symbol to its `SymbolRule` overrides (None values left out).
+    Without a row the `AM_RULES_*` defaults apply.
+    """
+
+    __tablename__ = "rule_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    global_json: Mapped[dict] = mapped_column(JSON)
+    targets_json: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC

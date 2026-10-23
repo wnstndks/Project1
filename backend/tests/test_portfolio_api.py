@@ -1,6 +1,10 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
+
+from app.services.market_data import HISTORY_TTL, MarketDataService, QuoteCache
+from app.services.portfolio import PortfolioService
+from tests.conftest import TODAY
 
 
 def buy(client, symbol, qty, price, day="2026-10-01", asset_type="stock", side="buy", fee=0):
@@ -306,3 +310,99 @@ def test_deleting_imports_that_later_sells_depend_on_is_refused(client, db):
     db.commit()
     assert client.delete("/api/transactions?confirm=imports").status_code == 422
     assert len(client.get("/api/transactions").json()) == 2
+
+
+def _prev_close(provider, qsym):
+    """The fake provider's close before the quote's session, as the service defines it."""
+    quote = provider.get_quote(qsym)
+    cutoff = quote.as_of.date()
+    bars = provider.get_history(qsym, cutoff - timedelta(days=14), cutoff)
+    prior = [b for b in bars if b.date < cutoff]
+    assert prior and prior[-1].date < cutoff
+    return quote.price, prior[-1].close
+
+
+def test_day_change_is_measured_from_the_previous_close(client, provider):
+    buy(client, "AAPL", 10, 100)
+    krw_trade(client, "BTC", "0.01", "80000000")
+    holdings = {h["symbol"]: h for h in client.get("/api/portfolio/holdings").json()}
+    summary = client.get("/api/portfolio/summary").json()
+    fx = summary["usd_krw"]
+
+    price, prev = _prev_close(provider, "AAPL")
+    aapl = holdings["AAPL"]
+    assert aapl["prev_close"] == pytest.approx(prev)
+    assert aapl["day_change"] == pytest.approx(10 * (price - prev))
+    assert aapl["day_change_pct"] == pytest.approx((price - prev) / prev * 100)
+    assert aapl["day_change_krw"] == pytest.approx(aapl["day_change"] * fx)
+
+    # A KRW coin moves in won against its Upbit close; the USD figure is derived.
+    price, prev = _prev_close(provider, "KRW-BTC")
+    btc = holdings["BTC-USD"]
+    assert btc["prev_close"] == pytest.approx(prev)
+    assert btc["day_change_krw"] == pytest.approx(0.01 * (price - prev))
+    assert btc["day_change"] == pytest.approx(btc["day_change_krw"] / fx)
+
+    assert summary["day_change"] == pytest.approx(sum(h["day_change"] for h in holdings.values()))
+    assert summary["day_change_krw"] == pytest.approx(
+        sum(h["day_change_krw"] for h in holdings.values())
+    )
+    assert summary["day_change_pct"] == pytest.approx(
+        summary["day_change"] / (summary["market_value"] - summary["day_change"]) * 100
+    )
+    assert summary["day_change"] != 0
+
+
+def test_sparklines_read_closes_where_each_position_is_priced(client, provider):
+    assert client.get("/api/portfolio/sparklines").json() == []
+    buy(client, "AAPL", 10, 100)
+    krw_trade(client, "BTC", "0.01", "80000000")
+    buy(client, "MSFT", 1, 300, day="2026-10-01")
+    buy(client, "MSFT", 1, 310, day="2026-10-02", side="sell")  # closed: not shown
+
+    body = client.get("/api/portfolio/sparklines?days=30").json()
+    assert [s["symbol"] for s in body] == ["AAPL", "BTC-USD"]
+    start = date.today() - timedelta(days=30)
+    aapl = next(s for s in body if s["symbol"] == "AAPL")
+    assert aapl["closes"] == pytest.approx(
+        [b.close for b in provider.get_history("AAPL", start, date.today())]
+    )
+    # The KRW coin's line is its Upbit won series, not the dollar price.
+    btc = next(s for s in body if s["symbol"] == "BTC-USD")
+    assert btc["closes"] == pytest.approx(
+        [b.close for b in provider.get_history("KRW-BTC", start, date.today())]
+    )
+    assert any(sym == "KRW-BTC" for sym, _, _ in provider.history_calls)
+    assert 0 < len(aapl["closes"]) < len(btc["closes"])  # weekdays vs every day
+
+    assert client.get("/api/portfolio/sparklines?days=3").status_code == 422
+    assert client.get("/api/portfolio/sparklines?days=400").status_code == 422
+
+
+def test_sparklines_read_the_cache_only(db, client, provider):
+    """N-22: the mini charts never re-sync. Once the bars are cached, a call made after the
+    15-minute history TTL still does not touch the provider."""
+    buy(client, "AAPL", 10, 100)
+    krw_trade(client, "BTC", "0.01", "80000000")
+    t = {"now": datetime(2026, 10, 16, 12, 0, tzinfo=UTC)}
+    market = MarketDataService(
+        db,
+        provider,
+        QuoteCache(),
+        now=lambda: datetime.combine(TODAY, datetime.min.time()) + timedelta(hours=21),
+        utc_now=lambda: t["now"],
+    )
+    portfolio = PortfolioService(db, market, today=lambda: TODAY)
+
+    # The first read fills the never-cached gap (one provider call per symbol)...
+    first = portfolio.sparklines(30)
+    assert [s.symbol for s in first] == ["AAPL", "BTC-USD"]
+    assert all(s.closes for s in first)
+    calls = len(provider.history_calls)
+
+    # ...and after the TTL the same bars come straight from the cache: no sparkline symbol is
+    # fetched again. (The ledger's USD/KRW lookup behind `_positions()` is a separate path.)
+    t["now"] += HISTORY_TTL + timedelta(minutes=1)
+    assert portfolio.sparklines(30) == first
+    refetched = {sym for sym, _, _ in provider.history_calls[calls:]}
+    assert refetched.isdisjoint({"AAPL", "KRW-BTC", "BTC-USD"})

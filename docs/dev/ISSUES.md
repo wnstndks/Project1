@@ -50,8 +50,14 @@
 | 031 | 연도별 일관성이 부분 연도를 한 해로 셈 | 낮음 | evaluation-engineer | 미해결 |
 | 032 | 셸에 `VIRTUAL_ENV`가 잡혀 있으면 `py -m uv`가 실패함 | 낮음 | 사용자 | 보류 |
 | 033 | 문서·규칙 불일치(자리표시자, 추출기 기본값, 기록 폴더) | 낮음 | 리드, 사용자 | 미해결 |
-
-합계 33건: 치명 1, 높음 11, 중간 14, 낮음 7. 상태는 미해결 29, 보류 3, 결정됨 1(2026-10-20 verifier 검증 반영 후).
+| 034 | 백테스트 킬스위치 참고 집계가 연말 세금 납부를 일일 손실로 셈 | 낮음 | risk-engineer, evaluation-engineer | 해결됨 |
+| 035 | 유명 투자자 데이터 출처의 품질 문제(ARK 펀드 갱신 중단, SEC User-Agent, 13F 중복 행) | 중간 | data-engineer, 사용자 | 부분 해결(SEC User-Agent는 사용자) |
+| 036 | 스크린샷 가져오기가 수익률을 평균단가로 읽어도 미리보기가 `ok`로 통과시킴 | 높음 | data-engineer | 해결됨 |
+| 037 | 범위 예측 `range_reason`이 검증 결과와 무관하게 `forward_test_pending`이라 화면이 "과거 검증 통과"로 과장 | 높음 | app-engineer(, evaluation-engineer) | 해결됨 |
+| 038 | 홈 모델 상태 문장이 범위 기준선 우위를 "시장 평균보다 나았다"로 표현 | 중간 | app-engineer | 해결됨 |
+| 039 | 1d 예측 `target_date`가 지난 날짜인데 "다음 거래일"로 표시 | 낮음 | app-engineer | 해결됨 |
+| 040 | 추론 캐시 키가 세션 마감을 모르고 보유 주식의 마지막 봉 기준 예측이 하루 동안 만들어지지 않음 | 중간 | app-engineer | 해결됨(② 캐시 키) |
+합계 40건: 치명 1, 높음 13, 중간 17, 낮음 9. 상태는 미해결 29, 해결·부분 해결 7, 보류 3, 결정됨 1(2026-10-23 갱신).
 
 ---
 
@@ -360,3 +366,70 @@
       - 입금은 손실을 가리지 않는다.
     - `test_drawdown_still_counts_taxes_paid`
   - 전체 405개가 통과했다. verifier 재확인 완료(2026-10-22): `_daily_loss`는 1 − (오늘 − flow)/어제이고 summarize가 flow = −세금을 넘기므로 세금이 더해져 손실에서 빠진다. 이 이슈 수치로 계산하면 (121,253,775 + 3,505,083) / 125,082,105 → 손실 0.26%라 발동하지 않는다. 낙폭 규칙과 채택 MDD는 세금을 낸 곡선 그대로다. 운영 킬스위치(`paper.py`의 `kill_switch_triggers`·`portfolio_breach` 호출)에는 flows를 넘기지 않아 동작이 바뀌지 않는다(fail-closed 유지). S2의 낙폭은 10.7%라 새 방식에서 발동은 0회가 맞다.
+
+### [ISSUE-035] 유명 투자자 데이터 출처의 품질 문제(ARK 펀드 파일 갱신 중단, SEC User-Agent, 13F 중복 행)
+- 현상(2026-10-22 확인):
+  - ARK 보유 CSV(`assets.ark-funds.com/fund-documents/funds-etf-csv/`) 6개 중 ARKF·ARKX는 `Last-Modified` 2026-01-02, ARKW는 2026-10-06에서 멈춰 있다. ARKK·ARKG·ARKQ는 당일(10/22) 자료다. 펀드 페이지가 쓰는 `/api/fund/holdings/{id}`는 HTTP 500(HTML)을 돌려줘 대안이 없다. 예전 `ark-funds.com/wp-content/uploads/...` 경로는 301 → 404.
+  - SEC EDGAR는 User-Agent가 `"asset-manager-dev (local test)"`처럼 연락처가 없으면 "Undeclared Automated Tool" 페이지로 거부한다. `앱이름 이메일` 형식이면 통과한다.
+  - 13F 정보표는 같은 종목이 보고 주체(자회사·공동 운용자)별로 반복된다(Berkshire 2026-06-30: 89행 중 Apple 12행). 수정 보고서 `13F-HR/A`는 `amendmentType`이 `NEW HOLDINGS`(비공개였던 종목 추가)인 경우가 있어 원본을 대체하면 안 된다(Berkshire 2025-08-14, Pershing 2025-04-16 모두 NEW HOLDINGS).
+  - Scion(마이클 버리)의 마지막 13F-HR은 2025-11-03 제출(2025-09-30 기준)이고 이후 제출이 없다. Appaloosa는 CIK가 둘인데 `0001006438`(APPALOOSA MANAGEMENT LP)은 2016년 이후 제출이 없고 `0001656456`(Appaloosa LP)이 현재 제출자다.
+  - ARK 티커 열에 Bloomberg 거래소 접미가 붙는 행이 있다(`RKLB UQ`, `DKNG UW`). 현금·사모(OpenAI, Kalshi)·워런트 행은 티커가 비어 있고 CUSIP 자리에 내부 코드(`X9USDGSFT`, `PPOPENAIC`)가 있다. OpenFIGI는 이런 값과 SEDOL(`B3Z5T14`)에 `Invalid idValue format`, 케이맨 CINS(`G6683N103`, NU)에 `No identifier found`를 돌려준다.
+- 원인: 출처 측 사정(ARK의 파일 발행 중단, SEC 접근 정책, 13F 서식 구조). 앱 코드 문제가 아니다.
+- 근거: `curl -D -`로 받은 응답 헤더와 본문, `data.sec.gov/submissions/CIK*.json`, 각 제출의 `primary_doc.xml`(`backend/app/data/guru_provider.py` 모듈 docstring에 요약).
+- 해결(`guru_provider.py`):
+  - 가장 최신 펀드 파일보다 7일 넘게 오래된 펀드는 합산에서 빼고 스냅샷 `note`에 펀드와 날짜를 적는다(`ARK_MAX_FUND_LAG`). 1월 보유를 오늘 보유로 보여 주지 않기 위함. 한 펀드라도 HTTP 실패면 전체를 실패로 두고 이전 데이터를 유지한다.
+  - 13F 행은 CUSIP 기준으로 합산하고 `putCall`(옵션)·`PRN`(채권 원금) 행은 뺀다. `13F-HR/A`는 `amendmentType`을 읽어 `NEW HOLDINGS`면 원본에 더하고 `RESTATEMENT`면 교체한다. 2023-01-03 이전 제출은 천 달러 단위로 환산한다.
+  - User-Agent는 `AM_SEC_USER_AGENT`로 사용자가 채운다(TODO_FOR_ME.md). 비어 있으면 13F 투자자는 동기화하지 않고 사유를 표시한다.
+  - ARK 티커는 첫 토큰만 쓰고, 티커가 없는 행은 `symbol=None`으로 둔다. OpenFIGI 실패·미발견은 `cusip_tickers`에 `symbol=None`으로 적고 30일 뒤 재시도한다.
+- 검증: `tests/test_gurus.py`(고정 CSV/XML 표본, 네트워크 없음). 실제 네트워크 수동 시험 결과는 PROGRESS 보고에 기록. verifier 확인(2026-10-23 백엔드 검증 섹션): 실제 `GET /api/gurus`에서 갱신 중단 ARK 펀드 제외 note와 13F 6명의 `AM_SEC_USER_AGENT 미설정` 사유를 확인.
+
+### [ISSUE-036] 스크린샷 가져오기가 수익률을 평균단가로 읽어도 미리보기가 `ok`로 통과시킴
+- 현상: 증권사 앱(토스증권형) 보유 목록 스크린샷을 가져왔을 때 미국 주식 여러 종목의 `avg_price_usd`가 실제 현재가의 수십~수백분의 1 수준으로 인식됐다. 이 화면에는 평균단가가 없고, 종목마다 둘째 줄에 평가손익(원)과 수익률(%)만 있다. 저장된 "단가"는 수익률(예 −7.89%)의 절댓값(7.89)이 그대로 달러 단가로 들어간 값이었다(전 종목 손실 중). 미리보기는 모두 `ok`였고, 그대로 확정되어 장부의 투자원금이 실제의 수십 분의 1로 기록되고 수익률이 수백~수만 %로 표시됐다.
+- 원인:
+  - 추출 프롬프트가 "per-unit average purchase price in USD" 한 줄만 요구했고, 평균단가가 없는 목록 화면이 있다는 것, 수익률·평가손익·평가금액과 구분하라는 것을 말하지 않았다. 모델이 유일하게 보이는 소수 둘째 자리 숫자(수익률)를 단가 자리에 넣었다.
+  - 미리보기 단가 검사가 두 가지뿐이었다. ① `PRICE_SANITY=(0.001, 1000)` 밴드는 장기 보유 승자(0.005배)까지 허용해야 해서 이런 값은 모두 통과한다. ② `_misread_price`는 원화 금액·원화 총액·보유 총액을 단가로 읽은 경우(비율이 환율·수량의 0.8~1.25배)만 잡는다. 수익률을 단가로 읽으면 어느 규칙에도 걸리지 않았다.
+  - 추출 스키마에 평가금액·평가손익이 없어 서비스가 매입금액을 역산할 길이 없었다.
+- 근거: `backend/app/services/statement_import.py:23`(`PRICE_SANITY`), `_misread_price`(후보 3개), 이전 `backend/app/services/screenshot_extractor.py` `SYSTEM_PROMPT`(단가 설명 한 줄). 프론트엔드 보유 목록은 이미 20배 규칙(`frontend/src/lib/holdings.ts` `SUSPICIOUS_COST_RATIO`)으로 같은 행을 의심 표시하지만, 가져오기 미리보기에는 그 기준이 없었다.
+- 해결(2026-10-22, data-engineer):
+  - 추출 스키마 `ExtractedHolding`에 `market_value_krw`(평가금액), `pnl_krw`(평가손익, 부호 포함), `return_pct`(수익률, 부호 포함) 추가. 셋은 장부에 쓰지 않고 검증·역산에만 쓴다. 시스템 프롬프트에 한국 증권사 앱(키움·토스·삼성·미래에셋·NH·KB·한투·신한) 보유 행의 열 순서와 뜻, "토스·키움 등 목록 화면에는 평균단가가 없을 수 있다. 없으면 avg_price를 null로 두고 평가금액·평가손익·수익률을 부호째 그대로 적어라. 수익률(%)을 단가로 쓰지 마라", `avg_price_usd`는 한 주당 매수가만이고 수익률·평가손익·평가금액·매입금액·비중·현재가가 아니라는 것, 달러 단가는 현재가와 자릿수가 비슷해야 하고 %·± 기호가 붙은 수는 단가가 아니라는 것, 모르면 `null`+`confidence=low`를 명시했다.
+  - 서비스(`statement_import.py` `_row`): 매입금액이 화면에 없으면 `평가금액 − 평가손익`, 없으면 `평가금액 / (1 + 수익률/100)`, 그것도 없으면 `평가손익 / (수익률/100)`으로 `cost_krw`를 역산한다(`_derive_cost_krw`). 부호는 `_signed_decimal`이 `-`·`−`(U+2212)·`–`·`▼`를 음수로 읽는다. 단가(`cost_avg`)는 `cost_krw / 수량 / 오늘 환율`(원화 코인은 환율 없이)이다.
+  - 화면의 단가가 없으면 `cost_avg`를 넣고 `price_estimated=True`, `message`="화면에 평균단가가 없어 {평가금액과 평가손익으로} 계산한 단가입니다(오늘 환율 기준)". `status`는 `ok`.
+  - 화면의 단가가 있으면 먼저 의심 여부를 본다(`_price_doubt`): 수익률과 ±2% 안이면 "수익률", 현재가와 20배 이상 차이(`SUSPICIOUS_RATIO`, 프론트와 같은 기준)면 "다른 숫자". 그 다음 역산 단가와 비교한다(`_cost_agrees`). 달러 행은 역산 단가/화면 단가 비가 오늘 환율 기준 ±50% 안이면 일치(`FX_DRIFT_TOLERANCE`), 원화 행은 ±5%(`DERIVED_PRICE_TOLERANCE`).
+    - 일치하면 의심을 지우고 화면 단가를 그대로 쓴다(매입금액이 뒷받침하는 100배 승자는 진짜다).
+    - 의심 + 불일치면 화면 단가를 버리고 `cost_avg`를 넣는다. `price_estimated=True`, `message`="화면의 단가 $7.89은 수익률로 보여 쓰지 않고, 평가금액과 평가손익으로 계산한 단가를 넣었습니다(오늘 환율 기준)".
+    - 의심 없음 + 불일치면 값은 두고 `warning`="평균단가 $X이 평가금액과 평가손익으로 계산한 단가 $Y과 N% 다릅니다. 둘 중 하나를 잘못 읽었을 수 있으니 확인하세요".
+    - 의심 + 역산 불가(평가금액·손익도 없음)면 값은 두고 `warning`(20배 문구 또는 수익률 문구). 사용자가 단가를 고쳐 가져올 수 있게 `status`는 `ok`.
+  - 리드 지시의 "±5%"를 달러 행에 그대로 쓰지 않은 이유: 원화 평가손익은 환차손익을 포함하므로 올바른 달러 단가와 원화 매입금액에서 역산한 단가는 매수 당시 환율/오늘 환율만큼 다르다(최근 몇 년 사이 매수면 10~25%). ±5%면 정상 행이 대부분 경고를 받는다. 1998년 이후 환율이 약 900~1,600원 사이였으므로 ±50%면 정상 쌍은 항상 안에, 다른 열을 읽은 값은 10배 이상 밖에 있다. 원화 행은 환율이 없어 ±5%를 그대로 쓴다.
+  - 기존 `invalid` 경로(`_misread_price`의 원화·총액 오독, `PRICE_SANITY` 밖)는 그대로 유지하고, `invalid` 행의 `warning`은 항상 None이다. `PreviewRow`·`PreviewRowOut`에 `warning: str | None` 추가.
+  - 프론트엔드(app-engineer 담당): `Import.tsx`에서 `ok` 행에도 `message`(역산 안내)와 `warning`을 표시하고, `warning`이 있는 행은 기본 미선택으로 둔다(`Import.tsx:33`의 `include` 조건, 현재 325행은 `status !== 'ok'`일 때만 message를 보여 준다). `npm run gen:api`로 `schema.d.ts` 재생성.
+- 검증: `tests/test_imports.py` 통과 — 토스형 샘플(평균단가 없음, 평가금액·평가손익·수익률만 → `price_estimated` + 역산 매입금액·단가 일치, 수익률만·손익과 수익률만의 두 공식, 수량 없으면 invalid), 수익률 절댓값이 단가에 들어간 실제 사례 재현(평가금액·손익이 있으면 교정, 없으면 경고), 매입금액이 뒷받침하는 28배 승자는 경고 없음, 20배 경고, 수익률 오독 경고, 불일치 경고(값 유지), 기존 invalid 두 경로 유지, 정상 행·0.3배 손실 행은 `warning` None, 부호 파서. 백엔드 전체 pytest·`ruff check`·`ruff format --check` 통과. 프롬프트 변경은 실제 스크린샷으로 재시험이 필요하다(TODO: 사용자가 같은 스크린샷을 다시 올려 미리보기에서 역산 단가가 들어오는지 확인). verifier 확인 대기.
+
+### [ISSUE-037] 범위 예측의 `range_reason`이 검증 결과와 무관하게 `forward_test_pending`이라 화면이 "과거 검증 통과"로 과장함
+- 현상: `GET /api/forecasts/{symbol}`의 1d·1w·1m `range_reason`이 모두 `forward_test_pending`이다. 그런데 현재 run report의 `stock:range` edge는 1d만 True이고 1w·1m은 False(보정 p 1.0)다. 종목 상세 「앞으로 예상」의 배지는 1w 기준이라 `실전 검증 대기`가 뜨고, 옆 문장은 "과거 검증은 통과했지만 실전 확인이 끝나지 않았어요"라고 적는다. 접기 안 `Verdicts`도 1w·1m 범위를 "실전 검증 대기"로 적는다. 1w·1m 범위는 과거 검증을 통과하지 않았으므로 사실과 다르다(CLAUDE.md: 검정을 통과하지 못하면 '우위 없음'으로 표시).
+- 원인: `report.live_edge_at`(`backend/app/forecast/report.py:488-492`)이 `FORWARD_TEST_KINDS`(rank·range·vol)에 대해 `comp.edge`를 보기 전에 `forward_test_pending`을 돌려준다. 전략 쪽에서는 "전진 검증 전까지 보류"라는 뜻이었는데, 프론트엔드 `edgeLabel`·`BADGE_NOTE`·`REASON_LABEL`(`frontend/src/lib/forecast.ts:47-51`, `frontend/src/components/ForecastPanel.tsx:83-87,180-185`)이 이를 "과거 검증 통과 + 실전 대기"로 해석했다. `services/forecasts.py`는 그 값을 그대로 전달한다.
+- 근거: verifier가 실제 서버에서 대조(2026-10-22 18:40 KST). `GET /api/forecasts/status` report의 `horizons.1w.comparisons["stock:range"].edge == false`(1m도 false, 1d만 true)인데 `GET /api/forecasts/<보유 주식>` 응답은 세 기간 모두 `range_reason == "forward_test_pending"`. `frontend/src/lib/forecast.test.ts` "collapses the two edge flags"와 `backend/tests/test_forecasts_api.py::test_symbol_forecast_has_ordered_ranges_and_verdicts`가 이 동작을 그대로 기대한다.
+- 해결: 리드가 (b)로 결정(2026-10-23, evaluation-engineer 수정, D-028). `report.live_edge_at`이 `comp.edge`를 먼저 읽는다: comparison이 없으면 `no_data`, `edge`가 False면 kind와 무관하게 `not_significant`, True인데 kind가 `FORWARD_TEST_KINDS`(rank·range·vol)이고 `FORWARD_CONFIRMED`에 없으면 `forward_test_pending`(edge False 유지), 그 외 `edge`. `EdgeStatus.edge` 값은 어느 경우에도 바뀌지 않고 reason 문자열만 바뀌므로 S1·S2·`signals.py`와 실서비스 플래그의 동작은 같다. `PointInTimeEdge.status`(백테스트 시점 판정)는 건드리지 않았다: 전진 검증 보류가 없고(과거 시점에서는 의미가 없음) `insufficient_history`·`inconsistent_years`를 따로 내는 등 reason 체계가 원래 다르며, 바꾸면 기록된 백테스트 사유가 재현되지 않는다. 프론트 `BADGE_NOTE.pending`·`REASON_LABEL` 문구는 app-engineer 몫(ISSUE-038과 함께).
+- 검증: `tests/test_forecast.py::test_live_edge_reason_reads_the_walk_forward_verdict_first`(edge False·forward kind → `not_significant`, edge True·forward kind·미확정 → `forward_test_pending`, edge True·direction → `edge`, comparison 없음 → `no_data`, `FORWARD_CONFIRMED`에 넣으면 `edge`, 실패한 비교는 넣어도 `not_significant`). 기대값 수정 2건: `test_live_range_and_vol_edges_wait_for_the_forward_test`의 rank를 `forward_test_pending` → `not_significant`(합성 변동성 데이터에서 rank는 walk-forward 미통과), `tests/test_forecasts_api.py::test_symbol_forecast_has_ordered_ranges_and_verdicts`의 `range_reason`을 report의 `stock:range` edge 플래그에서 계산(동작 변경 없음). 현재 run(20261021T163606) report 기준 자산군 2 × 기간 3 × kind 4 = 24칸 중 16칸이 바뀜: walk-forward를 통과하지 못한 range·rank 전부가 `forward_test_pending` → `not_significant`. `forward_test_pending`으로 남는 것은 `stock:range 1d` 하나, direction 6칸은 `not_significant` 그대로, vol 6칸은 이 run report에 없어 `no_data` 그대로. edge 플래그는 24칸 모두 False로 변화 없음. 백엔드 전체 pytest·`ruff check`·`ruff format --check` 통과. 실제 서버(8001)는 재시작 전이라 화면 대조(1w·1m 배지가 '기준선과 차이 없음', 1d 범위만 '실전 검증 대기')는 verifier가 재시작 뒤 한다. verifier 미확인.
+
+### [ISSUE-038] 홈 모델 상태 문장이 범위 예측의 기준선 우위를 "시장 평균보다 나았다"로 표현함
+- 현상: 홈 「앞으로의 예상 자산」 아래 `modelStatusSentence`가 현재 run에서 "일부 기간에서 시장 평균보다 나았습니다. 실전 검증이 끝날 때까지는 참고만 하세요."를 낸다. 근거는 `1d stock:range` edge 하나다. 이 비교는 GBDT 범위 예측 vs EWMA-t 변동성 기준선의 interval score 비교이고, 방향(오를 확률)은 모든 기간에서 기준선과 차이가 없다. "시장 평균보다 나았다"는 수익률이 시장을 이겼다는 뜻으로 읽힌다.
+- 원인: 용어표가 "기준선"을 "시장 평균"으로 바꿨고(`frontend/src/lib/forecast.ts:62-64`), 범위·방향을 구분하지 않고 한 문장으로 합쳤다. `ForecastPanel.tsx:86`의 `BADGE_NOTE.none`("시장 평균보다 낫다는 증거가 없어요")도 같은 표현이다(이쪽은 보수적이라 과장은 아님).
+- 근거: `GET /api/forecasts/status` report의 comparisons 플래그(verifier 2026-10-22, 18개 중 1d stock:range만 edge True), `frontend/src/lib/forecast.test.ts` "summarizes the report".
+- 해결(2026-10-23, app-engineer 수정 라운드 1): `frontend/src/lib/forecast.ts`의 `modelStatusSentence`가 "시장 평균" 대신 "단순 기준선(과거에 오른 날 비율)"이라 부르고 방향·범위 판정을 따로 적는다. 원래 제안: 무엇이 무엇보다 나았는지 적는다. 예: "1일 뒤 가격 범위는 단순 변동성 기준선보다 정확했지만, 오를지 내릴지는 기준선과 차이가 없습니다(우위 없음). 실전 검증 전까지 참고만 하세요." edge가 없을 때의 문장과 `BADGE_NOTE`의 "시장 평균"도 "기준선"으로 맞춘다.
+- 검증: verifier 발견(2026-10-22). 수정 후 문장은 `live` 판정에서만 나오며(`direction_reason`/`range_reason`), 프론트 verifier가 `grep "시장 평균" src` 0건을 확인한다(2026-10-23 프론트엔드 검증 섹션).
+
+### [ISSUE-039] 1d 예측의 `target_date`가 이미 지난 날짜인데 "다음 거래일"로 표시됨
+- 현상: 2026-10-22(목) 18:40 KST에 `GET /api/forecasts/<보유 주식>`의 1d 기간은 `as_of 2026-10-20`, `target_date 2026-10-21`이다. 종목 상세 「앞으로 예상」 첫 줄이 "다음 거래일 · 2026-10-21 기준"으로, 이미 지난 날짜의 예측을 미래처럼 보여 준다. 가격 차트는 `buildRows`가 마지막 봉 이후 날짜만 그리므로 이 기간을 건너뛴다(정상). 같은 지연 때문에 홈의 "오늘" 변동(`price_as_of` 10-20)도 실제로는 10-19→10-20 세션의 변동이다.
+- 원인(확인된 부분): 같은 시각 `GET /api/market/SPY/quote`(as_of 10-20)와 `GET /api/market/SPY/history`, 보유 종목 history가 모두 10-20 봉에서 끝난다. 공급자 응답에 10-21 봉이 아직 없다. 추론은 `load_inputs` → `_load` → `get_history(final_only=True)`로 마지막 확정 봉을 as_of로 쓰므로, 10-21 봉이 오기 전까지 1d 목표일은 달력상 지난 날짜가 된다. 30분 추론 캐시(`INFERENCE_TTL`, 캐시 키는 run·보유 종목만)는 봉이 도착한 뒤 최대 30분 더 지연시키는 요인이지 지금의 원인은 아니다.
+- 원인(가설): 공급자(yfinance)가 미국 장 마감(05:00 KST) 뒤 13시간이 지나도 전일 봉을 주지 않은 이유(공급자 지연인지 이 환경의 시계 문제인지)는 확인하지 않았다. 어느 쪽이든 "목표일이 지난 1d 예측"은 봉 도착 전 구간에 늘 생긴다.
+- 근거: verifier 조회(2026-10-22 18:40 KST): `/api/forecasts/<보유 주식>` 1d `target_date < today`, `/api/market/SPY/quote` as_of `2026-10-20T00:00:00`, `/api/market/SPY/history?start=2026-10-15` 마지막 봉 10-20. `backend/app/forecast/data.py` `_load`(final_only=True), `backend/app/services/forecasts.py` `INFERENCE_TTL`·`_latest`.
+- 해결(2026-10-23, app-engineer 수정 라운드 1, 화면만): `isPastTarget`/`pendingPhrase`로 목표일이 지난 기간을 "채점 대기 (MM.DD 마감 기준)"으로 표시하고, 홈·종목 상세 변동 라벨은 `quoteTime.ts`의 `changeLabel`이 "오늘"/"전일 대비"/"MM.DD 종가 기준"을 고른다. 원래 제안: `target_date < 오늘`인 기간은 "다음 거래일" 대신 "채점 대기(10-21 마감 기준)"처럼 표시하거나 요약 줄에서 빼고, 홈·종목 상세의 "오늘" 변동은 `price_as_of`가 오늘이 아니면 날짜를 함께 적는다. 백엔드 변경은 필요 없다.
+- 검증: verifier 발견(2026-10-22). 프론트 테스트(`forecast.test.ts`, `quoteTime.test.ts`)와 리드 브라우저 확인(2026-10-23, 홈 라벨 "MM.DD 종가 기준").
+
+### [ISSUE-040] 추론 캐시 키가 세션 마감을 모르고, 보유 주식의 10-21 봉 기준 예측은 하루 내내 한 번도 만들어지지 않음
+- 현상: ISSUE-039의 백엔드 후속. 실제 DB `forecast_log`(읽기 전용 조회, 2026-10-23 10:30 KST)에서 1d 행의 `as_of`는 10-20(10-21 19:36 KST 생성, 그리고 보유 종목이 추가된 10-22 16:59 KST에 다시 생성) 다음이 바로 10-22(10-23 10:28 KST 생성)다. `as_of` 10-21 행은 어느 종목에도 없다. 즉 10-22 05:30 KST(10-21 세션 마감 + 정산 30분)부터 10-23 05:30 KST까지, 추론이 다시 돈 10-22 16:59에도 보유 주식의 마지막 확정 봉은 10-20이었다. 2026-10-23 10:28 KST 조회에서는 1d가 `as_of 10-22, target_date 10-23`으로 정상이다.
+- 원인(확인): 리드가 지목한 두 경로를 코드로 확인했다. ① `load_inputs`(`backend/app/forecast/data.py`)는 보유 종목과 맥락 시리즈를 `max_age=None`으로 읽는다(`stale_ok`는 참조 종목에만 적용). `get_history(final_only=True)`는 마지막 동기화가 15분(`HISTORY_TTL`)을 넘었거나 진행 중이던 봉이 그 사이 마감됐으면(`_closed_since_sync`) 다시 받으므로, 이 경로의 지연 상한은 15분이다. 동기화를 건너뛰지 않는다. ② `ForecastService._latest`의 추론 캐시 키는 `(run_id, 보유 종목)`뿐이라 세션이 마감되어도 바뀌지 않는다. 봉이 캐시에 들어온 뒤에도 최대 30분(`INFERENCE_TTL`) 전 세션 기준 결과(지난 1d 목표일)를 돌려준다. ①+②의 상한은 45분이라 13시간을 설명하지 못한다.
+- 원인(가설): 나머지는 공급자 쪽이다. (a) Yahoo가 10-21 봉을 빼고(또는 종가 NaN으로, `validate_bars`가 버림) 응답했다. verifier가 같은 시각 `period="5d"` 경로인 `/api/market/SPY/quote`에서 as_of 10-20을 받은 것과 맞고, ISSUE-010이 코인에서 본 "자정 뒤 몇 시간 동안 전날 봉이 빠진다"와 같은 형태다. (b) yfinance는 오류를 예외로 올리지 않고 빈 DataFrame을 돌려주는 경우가 있다. 그러면 `_sync`가 "refresh returned no bars; cache left as it was" 경고만 남기고 `synced_at`을 옮기지 않아, 요청이 계속 실패하는 동안 옛 캐시가 조용히 유지된다(예외였다면 `_load`가 종목을 빼서 `insufficient_history`가 났을 것이다). (b)는 quote가 데이터를 돌려준 사실과 맞지 않아 (a)를 유력하게 본다. 당시 공급자 응답 원본과 서버 콘솔 경고는 남아 있지 않아 확정하지 못했다.
+- 근거: 실제 DB `forecast_log`·`symbol_syncs` 읽기 전용 조회(종목명·수량 제외), `backend/app/forecast/data.py` `_load`·`load_inputs`, `backend/app/services/market_data.py` `get_history`·`_sync`·`_closed_since_sync`, `backend/app/data/yfinance_provider.py` `_download`, `backend/app/services/forecasts.py` `_latest`, ISSUE-010·039.
+- 해결: ②만 고쳤다(app-engineer, 2026-10-23). `ForecastService._bar_epoch`가 달력 기준으로 "지금 확정돼 있어야 하는 마지막 주식·코인 봉 날짜"(`calendar.last_final_date`, SPY·BTC-USD 달력, 정산 지연 포함)를 구해 캐시 키에 넣는다. 세션이 마감되면 다음 요청이 바로 다시 계산한다(자산군당 하루 1회 추가 재계산). 공급자가 아직 봉을 안 줬으면 결과는 같고 30분 뒤 다시 시도한다(기존과 같음). ①은 바꿀 것이 없다. 공급자 지연 자체(a·b 구분, 빈 응답 시 경고를 상태로 노출할지)는 data-engineer 영역이고, 지난 목표일의 화면 표시는 ISSUE-039대로 프론트가 처리한다.
+- 검증: `backend/tests/test_forecasts_api.py::test_inference_is_rebuilt_once_a_new_session_has_closed`(마지막 확정 봉 날짜가 바뀌면 `_compute`가 다시 호출되고, 바뀌지 않으면 캐시를 쓴다). 실제 서버는 재시작하지 않았으므로 코드 반영 전이다. verifier 미확인.

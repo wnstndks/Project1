@@ -19,6 +19,7 @@ from app.schemas.forecasts import (
     ForecastBacktestPoint,
     ForecastJobOut,
     ForecastStatusOut,
+    HeldForecastOut,
     PortfolioForecastOut,
     SymbolForecastOut,
     TrackRecordOut,
@@ -58,6 +59,12 @@ def start_training(
 @router.get("/portfolio", response_model=PortfolioForecastOut)
 async def portfolio_forecast(service: ForecastService = Depends(get_forecast_service)):
     return await run_in_threadpool(service.portfolio_forecast)
+
+
+# Registered before "/{symbol}", which would otherwise capture "held" as a ticker.
+@router.get("/held", response_model=list[HeldForecastOut])
+async def held_forecasts(service: ForecastService = Depends(get_forecast_service)):
+    return await run_in_threadpool(service.held_forecasts)
 
 
 @router.get("/track-record", response_model=TrackRecordOut)

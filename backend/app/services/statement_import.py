@@ -21,6 +21,21 @@ ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp"}
 # Average cost / current price outside this range cannot be a real holding. Long-held winners
 # reach 0.005 (NVDA bought in 2016) and big losers 50+, so the band is wide.
 PRICE_SANITY = (Decimal("0.001"), Decimal("1000"))
+# Inside that band, a unit price 20x away from the current price is still rarely a real
+# holding: vision models read the return (%), the P&L or another column as the price. Such rows
+# stay `ok` with a `warning` so the user can type the right price (the frontend leaves them
+# unselected by default). Same threshold as SUSPICIOUS_COST_RATIO in frontend/src/lib/holdings.ts.
+SUSPICIOUS_RATIO = Decimal("20")
+# A unit price within this fraction of the displayed return (%) is the return itself.
+RETURN_MATCH_TOLERANCE = Decimal("0.02")
+# A dollar price and a won cost agree when the purchase rate they imply is within this fraction
+# of today's USD/KRW. The rate has stayed between roughly 900 and 1,600 won since 1998, so a
+# correct pair always lands inside; a column read as the price lands 10x or more outside.
+FX_DRIFT_TOLERANCE = Decimal("0.5")
+# Won rows have no exchange rate in between: cost / quantity must match the won price closely.
+DERIVED_PRICE_TOLERANCE = Decimal("0.05")
+# Purchase rates outside this band are misread numbers, not rates anyone paid.
+IMPLIED_FX_BAND = (Decimal("500"), Decimal("3000"))
 
 RowStatus = Literal["ok", "unsupported", "unknown", "invalid"]
 Diff = Literal["new", "same", "different"]
@@ -36,16 +51,22 @@ class PreviewRow:
     currency: Currency
     # Average purchase price per unit, in `currency`.
     avg_price: Decimal | None
+    # Won cost: read off the screen (매입금액), or derived from the market value and the P&L or
+    # return when a list view shows those instead.
     cost_krw: Decimal | None
     # USD/KRW actually paid, implied by the KRW cost and the USD average price (USD rows).
     implied_fx: Decimal | None
-    # True when a USD price was not shown and was derived from cost_krw at today's rate.
+    # True when the price was not shown (or looked like another column) and was computed from
+    # cost_krw and the quantity, at today's rate for USD rows. `message` then says so.
     price_estimated: bool
     # True when the ticker was inferred from the name rather than printed on screen.
     ticker_guessed: bool
     confidence: str
     status: RowStatus
     message: str | None
+    # A doubt about the unit price that is not certain enough to reject the row (see
+    # SUSPICIOUS_RATIO). Only set on `ok` rows; the frontend leaves such rows unselected.
+    warning: str | None
     current_quantity: Decimal | None
     diff: Diff | None
     # When the screenshot shows more than is held: the extra units, and the price that makes
@@ -108,12 +129,63 @@ def _decimal(raw: str | None) -> Decimal | None:
     return value if value > 0 else None
 
 
+_NEGATIVE_MARKS = ("-", "−", "–", "▼", "▽")
+_POSITIVE_MARKS = ("+", "▲", "△")
+
+
+def _sign_mark(text: str) -> int:
+    """-1, +1 or 0 for the sign marks in a piece of text around a number."""
+    if any(mark in text for mark in _NEGATIVE_MARKS):
+        return -1
+    if any(mark in text for mark in _POSITIVE_MARKS):
+        return 1
+    return 0
+
+
+def _signed_decimal(raw: str | None) -> Decimal | None:
+    """Parse a signed number like "-123,456원", "−7.89%", "+54,000" or "3.2%▼"; zero is
+    allowed. Broker apps put the sign before the number or an arrow after it; a mark
+    before the number wins when the two disagree."""
+    if raw is None:
+        return None
+    cleaned = re.sub(r"[^\d.]", "", raw)
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation:
+        return None
+    digits = list(re.finditer(r"\d", raw))
+    prefix, suffix = raw[: digits[0].start()], raw[digits[-1].end() :]
+    sign = _sign_mark(prefix) or _sign_mark(suffix)
+    return -value if sign < 0 else value
+
+
+def _derive_cost_krw(
+    value: Decimal | None, pnl: Decimal | None, pct: Decimal | None
+) -> tuple[Decimal, str] | None:
+    """The won purchase cost implied by what list views show instead of it, with the words
+    for the message: market value - P&L, market value / (1 + return), or P&L / return."""
+    if value is not None and pnl is not None:
+        cost, how = value - pnl, "평가금액과 평가손익으로"
+    elif value is not None and pct is not None and pct > -100:
+        cost, how = value / (1 + pct / 100), "평가금액과 수익률로"
+    elif pnl is not None and pct:
+        cost, how = pnl / (pct / 100), "평가손익과 수익률로"
+    else:
+        return None
+    return (cost.quantize(Decimal("1"), ROUND_HALF_UP), how) if cost > 0 else None
+
+
+def _in_currency(market_usd: Decimal, currency: Currency, fx: Decimal) -> Decimal:
+    """The current USD price expressed in the row's trade currency."""
+    return market_usd * (fx if currency == Currency.KRW else 1)
+
+
 def _misread_price(
     avg: Decimal, qty: Decimal, market_usd: Decimal, currency: Currency, fx: Decimal
 ) -> str | None:
     """Recognize the ways vision models misread the unit price: a won amount in the dollar
     field, or the position total instead of the per-unit price."""
-    now = market_usd * (fx if currency == Currency.KRW else 1)
+    now = _in_currency(market_usd, currency, fx)
     ratio = avg / now
 
     def near(target: Decimal) -> bool:
@@ -138,6 +210,45 @@ def _misread_price(
     if not PRICE_SANITY[0] <= ratio <= PRICE_SANITY[1]:
         return f"평균단가가 현재가({unit}{now:,.2f})와 너무 다릅니다. 단가를 확인하세요"
     return None
+
+
+def _price_doubt(
+    avg: Decimal, now: Decimal, currency: Currency, return_pct: str | None
+) -> tuple[str, str] | None:
+    """Why the unit price read off the screen looks like another column: (what it looks
+    like, message for the user). Plausible enough to leave the row `ok`, unlike
+    `_misread_price`.
+
+    Two signs: the price equals the displayed return (%), or it is SUSPICIOUS_RATIO away from
+    the current price. A won cost that agrees with the price clears the doubt (see `_row`).
+    """
+    unit = "₩" if currency == Currency.KRW else "$"
+    pct = _decimal(return_pct)
+    ratio = avg / now
+    if (
+        return_pct is not None
+        and pct is not None
+        and abs(avg - pct) <= pct * RETURN_MATCH_TOLERANCE
+    ):
+        shown = return_pct.strip() if "%" in return_pct else f"{return_pct.strip()}%"
+        return "수익률", (
+            f"수익률({shown})을 단가로 읽은 것 같습니다(현재가 {unit}{now:,.2f}). "
+            "매수가를 직접 확인하세요"
+        )
+    if ratio >= SUSPICIOUS_RATIO or ratio <= 1 / SUSPICIOUS_RATIO:
+        times = max(ratio, 1 / ratio).quantize(Decimal("1"), ROUND_HALF_UP)
+        return "다른 숫자", (
+            f"평균단가 {unit}{avg:,.2f}이 현재가 {unit}{now:,.2f}과 {times}배 차이 납니다. "
+            "수익률이나 다른 숫자를 단가로 읽었을 수 있으니 매수가를 직접 확인하세요"
+        )
+    return None
+
+
+def _cost_agrees(read_avg: Decimal, cost_avg: Decimal, currency: Currency) -> bool:
+    """Whether the price read off the screen and the one implied by the won cost describe the
+    same purchase. Dollar rows get room for the exchange rate paid; won rows almost none."""
+    tolerance = FX_DRIFT_TOLERANCE if currency == Currency.USD else DERIVED_PRICE_TOLERANCE
+    return abs(cost_avg / read_avg - 1) <= tolerance
 
 
 class StatementImportService:
@@ -214,37 +325,82 @@ class StatementImportService:
         qty = _decimal(h.quantity)
         avg_usd = _decimal(h.avg_price_usd)
         avg_krw = _decimal(h.avg_price_krw)
-        cost_krw = _decimal(h.cost_krw)
         asset_type = AssetType(h.asset_type)
 
-        estimated = False
-        implied_fx = None
         # Coins on Korean exchanges are bought in won: keep them in KRW (exact won cost).
         krw_coin = asset_type == AssetType.CRYPTO and (avg_krw is not None or avg_usd is None)
-        if krw_coin:
-            currency = Currency.KRW
-            avg = avg_krw
-            if avg is None and cost_krw is not None and qty:
-                avg = (cost_krw / qty).quantize(Decimal("0.01"), ROUND_HALF_UP)
-        else:
-            currency = Currency.USD
-            avg = avg_usd
-            if avg is None and cost_krw is not None and qty:
-                avg = (cost_krw / qty / fx_today).quantize(Decimal("0.0001"), ROUND_HALF_UP)
-                estimated = True
-            if cost_krw is not None and avg is not None and qty and not estimated:
-                implied_fx = (cost_krw / (qty * avg)).quantize(Decimal("0.01"), ROUND_HALF_UP)
-                # A wildly off rate means a misread number, not a real purchase rate.
-                if not (Decimal("500") <= implied_fx <= Decimal("3000")):
-                    implied_fx = None
+        currency = Currency.KRW if krw_coin else Currency.USD
+        read_avg = avg_krw if krw_coin else avg_usd
+        unit = "₩" if krw_coin else "$"
+        # Won per unit of the trade currency, and the precision of a derived unit price.
+        fx = Decimal(1) if krw_coin else fx_today
+        places = Decimal("0.01") if krw_coin else Decimal("0.0001")
+        fx_note = "" if krw_coin else "(오늘 환율 기준)"
+
+        # The won cost: read off the screen (매입금액), else derived from what list views show
+        # instead of it. From it, the unit price the cost implies at today's rate.
+        cost_krw, cost_how = _decimal(h.cost_krw), "매입금액과 수량으로"
+        if cost_krw is None:
+            derived = _derive_cost_krw(
+                _decimal(h.market_value_krw),
+                _signed_decimal(h.pnl_krw),
+                _signed_decimal(h.return_pct),
+            )
+            if derived is not None:
+                cost_krw, cost_how = derived
+        cost_avg = None
+        if cost_krw is not None and qty:
+            cost_avg = (cost_krw / qty / fx).quantize(places, ROUND_HALF_UP)
 
         symbol, status, message, market = self._resolve(h, asset_type)
-        if status == "ok" and (qty is None or avg is None):
+        if status == "ok" and (qty is None or (read_avg is None and cost_avg is None)):
             status, message = "invalid", "수량 또는 평균단가를 읽지 못했습니다"
-        if status == "ok" and market and avg is not None and qty:
-            misread = _misread_price(avg, qty, Decimal(str(market)), currency, fx_today)
+
+        # Is the price read off the screen a different column? Certain misreads reject the
+        # row; plausible ones become a doubt that the won cost may clear or confirm below.
+        doubt = None
+        if status == "ok" and read_avg is not None:
+            market_usd = Decimal(str(market))
+            misread = _misread_price(read_avg, qty, market_usd, currency, fx_today)
             if misread:
                 status, message = "invalid", misread
+            else:
+                now = _in_currency(market_usd, currency, fx_today)
+                doubt = _price_doubt(read_avg, now, currency, h.return_pct)
+
+        avg = read_avg
+        estimated = False
+        implied_fx = None
+        warning = None
+        if status == "ok" and cost_avg is not None:
+            if read_avg is None:
+                avg, estimated = cost_avg, True
+                message = f"화면에 평균단가가 없어 {cost_how} 계산한 단가입니다{fx_note}"
+            elif _cost_agrees(read_avg, cost_avg, currency):
+                # Two independent numbers agree: even a 100x winner is real.
+                doubt = None
+            elif doubt is not None:
+                # The price looked like another column and the cost says it is one.
+                avg, estimated = cost_avg, True
+                message = (
+                    f"화면의 단가 {unit}{read_avg:,.2f}은 {doubt[0]}로 보여 쓰지 않고, "
+                    f"{cost_how} 계산한 단가를 넣었습니다{fx_note}"
+                )
+                doubt = None
+            else:
+                off = (abs(cost_avg / read_avg - 1) * 100).quantize(Decimal("1"), ROUND_HALF_UP)
+                warning = (
+                    f"평균단가 {unit}{read_avg:,.2f}이 {cost_how} 계산한 단가 "
+                    f"{unit}{cost_avg:,.2f}과 {off}% 다릅니다. "
+                    "둘 중 하나를 잘못 읽었을 수 있으니 확인하세요"
+                )
+            if not estimated and currency == Currency.USD:
+                # The rate actually paid, implied by the won cost and the dollar price.
+                implied_fx = (cost_krw / (qty * read_avg)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+                if not IMPLIED_FX_BAND[0] <= implied_fx <= IMPLIED_FX_BAND[1]:
+                    implied_fx = None
+        if doubt is not None:
+            warning = doubt[1]
 
         current, current_cost, held_currency = (
             held.get(symbol, (None, None, None)) if symbol else (None, None, None)
@@ -283,6 +439,7 @@ class StatementImportService:
             confidence=h.confidence,
             status=status,
             message=message,
+            warning=warning,
             current_quantity=current,
             diff=diff,
             delta_quantity=delta_qty,

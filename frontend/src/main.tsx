@@ -7,6 +7,7 @@ import { Layout } from './App'
 import { Muted } from './components/ui'
 import './index.css'
 import { CurrencyProvider } from './lib/currency'
+import { ThemeProvider } from './lib/theme'
 
 // Pages are split so each chart library (recharts, lightweight-charts) loads only where used.
 const page = (load: () => Promise<{ Component: ComponentType }>) => ({ lazy: load })
@@ -21,6 +22,8 @@ const projection = page(() =>
 const assetDetail = page(() =>
   import('./pages/AssetDetail').then((m) => ({ Component: m.AssetDetail })),
 )
+const compare = page(() => import('./pages/Compare').then((m) => ({ Component: m.Compare })))
+const rules = page(() => import('./pages/Rules').then((m) => ({ Component: m.Rules })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +37,8 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: '/', ...dashboard },
+      { path: '/compare', ...compare },
+      { path: '/rules', ...rules },
       { path: '/transactions', ...transactions },
       { path: '/import', ...importPage },
       { path: '/projection', ...projection },
@@ -47,7 +52,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <CurrencyProvider>
-        <RouterProvider router={router} />
+        <ThemeProvider>
+          <RouterProvider router={router} />
+        </ThemeProvider>
       </CurrencyProvider>
     </QueryClientProvider>
   </StrictMode>,

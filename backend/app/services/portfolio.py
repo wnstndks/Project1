@@ -13,9 +13,14 @@ from app.data.provider import Quote
 from app.db.models import AssetType, CorporateAction, Currency, Transaction
 from app.services.corporate_actions import confirmed_events, split_events
 from app.services.ledger import ZERO, Position, build_positions, ordered, timeline, trade_fx
-from app.services.market_data import MarketDataService
+from app.services.market_data import MarketDataService, SymbolNotFoundError
 
 HUNDRED = Decimal("100")
+# How far back to look for the close before the quote's session (covers holidays and weekends).
+PREV_CLOSE_LOOKBACK = timedelta(days=14)
+# Passed as `max_age` so the sparklines never re-sync on the 15-minute history TTL: the home's
+# mini charts read whatever `holdings()` and the other screens have already cached (N-22).
+CACHE_ONLY = timedelta(days=36500)
 
 
 def _dec(x: float) -> Decimal:
@@ -44,6 +49,13 @@ class Holding:
     cost_basis: Decimal
     price: Decimal
     price_as_of: datetime
+    # Close of the last bar before the quote's session, in the pricing currency (USD, or
+    # Upbit won for KRW coins). Equals `price` when no earlier bar is cached.
+    prev_close: Decimal
+    # Today's move: quantity x (price - prev_close); USD and KRW at today's rate.
+    day_change: Decimal
+    day_change_pct: Decimal
+    day_change_krw: Decimal
     market_value: Decimal
     unrealized_pnl: Decimal
     unrealized_pct: Decimal
@@ -72,6 +84,10 @@ class Allocation:
 class Summary:
     market_value: Decimal
     market_value_krw: Decimal
+    # Sum of the holdings' day changes; pct against the value at the previous closes.
+    day_change: Decimal
+    day_change_krw: Decimal
+    day_change_pct: Decimal
     cost_basis: Decimal
     unrealized_pnl: Decimal
     unrealized_pct: Decimal
@@ -101,6 +117,13 @@ class HistoryPoint:
     cost_basis_krw: float
 
 
+@dataclass
+class Sparkline:
+    symbol: str
+    # Closes in the pricing currency (USD, or Upbit won for KRW coins), oldest first.
+    closes: list[float]
+
+
 class PortfolioService:
     def __init__(
         self, db: Session, market: MarketDataService, today: Callable[[], date] = date.today
@@ -126,7 +149,10 @@ class PortfolioService:
         qsyms = {p.symbol: quote_symbol(p.symbol, p.currency) for p in open_positions}
         quotes = self.market.get_quotes(list(qsyms.values()))
         fx = _dec(self.market.usd_krw().price)
-        holdings = [self._value(p, quotes[qsyms[p.symbol]], fx) for p in open_positions]
+        holdings = []
+        for p in open_positions:
+            quote = quotes[qsyms[p.symbol]]
+            holdings.append(self._value(p, quote, self._prev_close(qsyms[p.symbol], quote), fx))
         total = sum((h.market_value for h in holdings), ZERO)
         for h in holdings:
             h.weight = _pct(h.market_value, total)
@@ -142,6 +168,7 @@ class PortfolioService:
 
         market_value, cost_basis = total("market_value"), total("cost_basis")
         value_krw, cost_krw = total("market_value_krw"), total("cost_basis_krw")
+        day_change, day_change_krw = total("day_change"), total("day_change_krw")
         unrealized = market_value - cost_basis
         unrealized_krw = value_krw - cost_krw
         # Realized P&L also counts positions that have been fully sold.
@@ -160,6 +187,9 @@ class PortfolioService:
         return Summary(
             market_value=market_value,
             market_value_krw=value_krw,
+            day_change=day_change,
+            day_change_krw=day_change_krw,
+            day_change_pct=_pct(day_change, market_value - day_change),
             cost_basis=cost_basis,
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, cost_basis),
@@ -264,13 +294,55 @@ class PortfolioService:
             d += timedelta(days=1)
         return points
 
-    def _value(self, p: Position, quote: Quote, fx: Decimal) -> Holding:
+    def sparklines(self, days: int = 30) -> list[Sparkline]:
+        """Recent closes per open position, priced where the position is valued.
+
+        Reads the cached bars only (`CACHE_ONLY`): the provider is asked just to fill a gap
+        the cache has never covered, never to refresh. A symbol with nothing cached gets an
+        empty line rather than failing the whole response.
+        """
+        start = self.today() - timedelta(days=days)
+        out = []
+        for p in sorted(self._positions().values(), key=lambda p: p.symbol):
+            if p.quantity <= ZERO:
+                continue
+            qsym = quote_symbol(p.symbol, p.currency)
+            try:
+                bars = self.market.get_history(qsym, start, max_age=CACHE_ONLY)
+            except SymbolNotFoundError:
+                bars = []
+            out.append(Sparkline(p.symbol, [float(b.close) for b in bars]))
+        return out
+
+    def _prev_close(self, qsym: str, quote: Quote) -> Decimal | None:
+        """Close of the last cached bar before the quote's session date.
+
+        During the session that is yesterday's close; after the close, while the quote still
+        carries today's date, it is yesterday's close as well.
+        """
+        cutoff = quote.as_of.date()
+        try:
+            bars = self.market.get_history(qsym, cutoff - PREV_CLOSE_LOOKBACK, cutoff)
+        except SymbolNotFoundError:
+            return None
+        prior = [b for b in bars if b.date < cutoff]
+        return _dec(prior[-1].close) if prior else None
+
+    def _value(self, p: Position, quote: Quote, prev_close: Decimal | None, fx: Decimal) -> Holding:
         if p.currency == Currency.KRW:
             price_krw = _dec(quote.price)
             price = price_krw / fx
+            prev = price_krw if prev_close is None else prev_close
+            day_change_krw = p.quantity * (price_krw - prev)
+            day_change = day_change_krw / fx
+            day_change_pct = _pct(price_krw - prev, prev)
         else:
             price = _dec(quote.price)
             price_krw = price * fx
+            prev = price if prev_close is None else prev_close
+            day_change = p.quantity * (price - prev)
+            day_change_krw = day_change * fx
+            day_change_pct = _pct(price - prev, prev)
         market_value = p.quantity * price
         market_value_krw = p.quantity * price_krw
         unrealized = market_value - p.cost_basis
@@ -285,6 +357,10 @@ class PortfolioService:
             cost_basis=p.cost_basis,
             price=price,
             price_as_of=quote.as_of,
+            prev_close=prev,
+            day_change=day_change,
+            day_change_pct=day_change_pct,
+            day_change_krw=day_change_krw,
             market_value=market_value,
             unrealized_pnl=unrealized,
             unrealized_pct=_pct(unrealized, p.cost_basis),

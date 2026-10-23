@@ -1,57 +1,99 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens. Light values here, dark values in the media query below.
- * Chart series colors come from a validated categorical palette (CVD-safe in both modes).
- * Korean market convention: gains are red, losses are blue.
+ * Design tokens (Toss-style: gray page, white borderless cards). Light values here, dark values below.
+ * Chart series colors come from a validated categorical palette (CVD-safe in both modes) and are not
+ * part of the Toss palette.
+ * Korean market convention: gains are red, losses are blue. Text tones (--gain, --loss, --muted, --accent)
+ * are the nearest darker (light) / lighter (dark) steps of the Toss hues that reach 4.5:1 on both --surface
+ * and --page; the raw Toss hues stay in --gain-mark / --loss-mark for chart marks (3:1 non-text).
+ *
+ * Theme selection (src/lib/theme.tsx writes `data-theme` on <html>; index.html presets it before paint):
+ * light is the default, like Toss, whatever the OS prefers. Dark applies only for `data-theme="dark"`, or
+ * for `data-theme="system"` when the OS prefers dark. The two dark blocks must stay identical
+ * (theme.test.tsx checks this); plain CSS has no mixin to share them.
  */
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgb(11 11 11 / 0.1);
-  --hover: rgb(11 11 11 / 0.04);
-  --accent: #2a78d6;
+  --page: #f2f4f6;
+  --surface: #ffffff;
+  --fill: #f2f4f6;
+  --chip: #ffffff;
+  --ink: #191f28;
+  --ink-2: #4e5968;
+  --muted: #66707d;
+  --grid: #e5e8eb;
+  --axis: #d1d6db;
+  --border: rgb(25 31 40 / 0.08);
+  --hover: rgb(25 31 40 / 0.04);
+  --accent: #1b64da;
+  --accent-soft: #e8f3ff;
   --series-1: #2a78d6;
   --series-2: #eb6834;
-  --gain: #c62f2f;
-  --loss: #1c5cab;
-  --gain-mark: #e34948;
-  --loss-mark: #2a78d6;
-  --danger: #d03b3b;
+  --gain: #d22030;
+  --loss: #1b64da;
+  --gain-mark: #f04452;
+  --loss-mark: #3182f6;
+  --danger: #d22030;
 }
 
+/* dark tokens: explicit choice */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #17171c;
+  --surface: #202027;
+  --fill: #2c2c35;
+  --chip: #45454f;
+  --ink: #ececef;
+  --ink-2: #c3c3c6;
+  --muted: #8b8b92;
+  --grid: #2c2c35;
+  --axis: #3c3c47;
+  --border: rgb(255 255 255 / 0.08);
+  --hover: rgb(255 255 255 / 0.05);
+  --accent: #449bff;
+  --accent-soft: #26344a;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --gain: #f66570;
+  --loss: #449bff;
+  --gain-mark: #f04452;
+  --loss-mark: #3182f6;
+  --danger: #f66570;
+}
+
+/* dark tokens: following the OS, only when asked to */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root[data-theme='system'] {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --border: rgb(255 255 255 / 0.1);
+    --page: #17171c;
+    --surface: #202027;
+    --fill: #2c2c35;
+    --chip: #45454f;
+    --ink: #ececef;
+    --ink-2: #c3c3c6;
+    --muted: #8b8b92;
+    --grid: #2c2c35;
+    --axis: #3c3c47;
+    --border: rgb(255 255 255 / 0.08);
     --hover: rgb(255 255 255 / 0.05);
-    --accent: #3987e5;
+    --accent: #449bff;
+    --accent-soft: #26344a;
     --series-1: #3987e5;
     --series-2: #d95926;
-    --gain: #e66767;
-    --loss: #5598e7;
-    --gain-mark: #e66767;
-    --loss-mark: #3987e5;
-    --danger: #e66767;
+    --gain: #f66570;
+    --loss: #449bff;
+    --gain-mark: #f04452;
+    --loss-mark: #3182f6;
+    --danger: #f66570;
   }
 }
 
 @theme inline {
   --color-page: var(--page);
   --color-surface: var(--surface);
+  --color-fill: var(--fill);
+  --color-chip: var(--chip);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-muted: var(--muted);
@@ -59,16 +101,20 @@
   --color-line: var(--border);
   --color-hover: var(--hover);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
   --color-danger: var(--danger);
-  --font-sans: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --font-sans: 'Pretendard Variable', Pretendard, system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
 }
 
 body {
   background: var(--page);
   color: var(--ink);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .num {

@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5vl:7b"
     finnhub_api_key: SecretStr | None = None
+    # Well-known investor holdings (services/gurus.py). SEC EDGAR rejects requests without a
+    # declared User-Agent of the form "app-name contact@domain"; leave empty to skip 13F
+    # investors (ARK needs nothing). The OpenFIGI key is optional and only raises rate limits.
+    sec_user_agent: str = ""
+    openfigi_api_key: str = ""
+    # Comma-separated tickers my cash flows are replayed into (services/benchmarks.py).
+    benchmarks: str = "ARKK,BRK-B,SPY,QQQ,BTC-USD"
 
     # Real orders. Only the user turns this on; until then strategies leave paper records only.
     live_trading: bool = False
@@ -56,6 +63,41 @@ class Settings(BaseSettings):
     strategy_budget_crypto: Decimal = Field(Decimal("0.20"), ge=0, le=1)
     # Virtual starting capital of the paper account; unrelated to real holdings.
     paper_initial_capital_krw: Decimal = Field(Decimal("10000000"), gt=0)
+
+    # --- Buy-more / stop-loss rule checks (app/strategy/rules.py, DECISIONS.md D-027) ---
+    # The user's own rules, not signals. Percentages are of the average cost (trailing stop:
+    # of the recent high); day counts are final bars (calendar days for coins, trading days
+    # for stocks). Per-symbol targets are stored by the app, not here.
+    rules_cut_loss_pct: Decimal = Field(Decimal("15"), gt=0, lt=100)
+    rules_trailing_lookback_days: int = Field(60, ge=1)
+    rules_trailing_drop_pct: Decimal = Field(Decimal("20"), gt=0, lt=100)
+    rules_below_ma_days: int = Field(5, ge=1)
+    rules_ma_long: int = Field(60, ge=2)
+    rules_ma_short: int = Field(20, ge=2)
+    # Two steps of 5% keep every add price above the 15% stop-loss (D-027 follow-up).
+    rules_add_step_pct: Decimal = Field(Decimal("5"), gt=0, lt=100)
+    rules_add_max_steps: int = Field(2, ge=0)
+    rules_add_requires_above_ma_short: bool = True
+    rules_target_weight_gap_pt: Decimal = Field(Decimal("5"), ge=0, lt=100)
+    # Asset-class layer for coins, which move several times as much as stocks. Empty in
+    # .env means "use the global value".
+    rules_crypto_cut_loss_pct: Decimal | None = Field(Decimal("25"), gt=0, lt=100)
+    rules_crypto_trailing_drop_pct: Decimal | None = Field(Decimal("30"), gt=0, lt=100)
+    rules_crypto_add_step_pct: Decimal | None = Field(Decimal("8"), gt=0, lt=100)
+    # Loss at the stop-loss price as a share of total assets above which the check warns.
+    rules_max_risk_pct: Decimal = Field(Decimal("2.0"), gt=0, lt=100)
+
+    @field_validator(
+        "rules_crypto_cut_loss_pct",
+        "rules_crypto_trailing_drop_pct",
+        "rules_crypto_add_step_pct",
+        mode="before",
+    )
+    @classmethod
+    def _rules_blank_is_global(cls, v: object) -> object:
+        return None if isinstance(v, str) and not v.strip() else v
+
+    # --- end of rule check settings ---
 
     @field_validator("anthropic_api_key", "finnhub_api_key", "risk_max_order_krw", mode="before")
     @classmethod

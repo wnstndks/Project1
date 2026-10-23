@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   daysAgo,
   displaySymbol,
+  formatDate,
   formatKrwCompact,
+  formatKrwShort,
   formatPct,
   formatQty,
   formatSignedUsd,
@@ -32,6 +34,30 @@ describe('format', () => {
     expect(formatKrwCompact(44_884_150)).toBe('4,488만')
     expect(formatKrwCompact(123_000_000)).toBe('1.2억')
     expect(formatKrwCompact(5_000)).toBe('5,000')
+  })
+
+  it('rounds won for sentences with the unit attached', () => {
+    expect(formatKrwShort(15_372_000)).toBe('1,537만원')
+    expect(formatKrwShort(210_000_000)).toBe('2.10억원')
+    expect(formatKrwShort(-15_372_000)).toBe('−1,537만원')
+    expect(formatKrwShort(5_000)).toBe('5,000원')
+  })
+
+  it('formats percentages to a chosen number of decimals', () => {
+    expect(formatPct(-3.567, true, 1)).toBe('−3.6%')
+    expect(formatPct(4.5, true, 1)).toBe('+4.5%')
+  })
+
+  it('writes dates for people, adding the year only when it is not this year', () => {
+    const today = new Date(2026, 9, 23)
+    expect(formatDate('2026-10-23', 'short', today)).toBe('10.23')
+    expect(formatDate('2026-10-23', 'long', today)).toBe('10월 23일 (금)')
+    expect(formatDate('2026-01-05', 'short', today)).toBe('1.5')
+    expect(formatDate('2025-12-31', 'short', today)).toBe('25.12.31')
+    expect(formatDate('2025-12-31', 'long', today)).toBe('2025년 12월 31일 (수)')
+    // Datetimes are read by their date part; garbage is passed through rather than thrown.
+    expect(formatDate('2026-10-23T14:05:00', 'long', today)).toBe('10월 23일 (금)')
+    expect(formatDate('n/a', 'short', today)).toBe('n/a')
   })
 
   it('computes local dates and display symbols', () => {
