@@ -829,3 +829,49 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - `py -3.11 -m uv run pytest -p no:cacheprovider` / `ruff check .` / `ruff format --check .` / `AM_DATABASE_URL=sqlite:///C:/<scratch>/verify-be3/f2c.db py -3.11 -m uv run alembic upgrade head && alembic heads && alembic check`
 - frontend\: `unset VIRTUAL_ENV; md5sum src/api/openapi.json src/api/schema.d.ts; npm run gen:api; md5sum …; git status --short src/api; npm run build; npm run lint; npm test`
 - 공개 PDF가 없을 때: `curl -A "asset-manager (personal use)" https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{2025|2026}/<doc_id>.pdf`(문서 id는 위 표)
+
+#### 부록 2 추가: N-F2C-1·3·7 후속 수정 확인 (2026-10-26)
+- 판정: **통과(차단 0건).** data-f2c가 f943ca5 위 작업 트리에 남긴 후속 수정 3건(N-F2C-1·3·7)은 주장과 같고 그 이상이 없다. 새 테스트는 구 코드에서 실제로 실패하는 값을 고정한다. 실서버의 458건 재파싱은 끝났다.
+- 범위: HEAD f943ca5 + `git status --short` M 4건(`backend/app/services/congress.py` +39/−14, `backend/app/schemas/congress.py` +3, `backend/tests/test_congress_service.py` +36, `docs/dev/ISSUES.md` 1줄). 그 외 M·?? 없음(gen:api 재실행 뒤에도 같음). 실제 DB `backend/asset_manager.db`는 `mode=ro`로 읽기만, 8001 서버는 GET만, `.env`는 열지 않음.
+
+##### 1. diff 대조 — 통과
+| 주장 | 확인 |
+|---|---|
+| N-F2C-1 `status().docs_pending = _pending_now(total, counts, now)` = `_pending + _to_reparse(now)` | 일치. `status()`는 이미 계산한 같은 `now`를 넘긴다. `_skipped(sync, now)`(시그니처에 `now` 추가, `sync()`의 두 호출 모두 갱신)와 `_run`의 색인 실패 경로(`SyncResult(True, 1, 0,0,0,0, pending, message)`)도 `_pending_now`. |
+| `_run` 성공 경로 불변 | 일치: `docs_pending=_pending(len(due), counts) + reparse_left` 그대로(diff에 hunk 없음). |
+| `_loop` 종료 조건 불변 | 일치: `if result.error or result.docs_pending == 0 or progress == 0: break` 그대로. 색인 실패 경로는 `error`가 있어 어차피 첫 조건에서 멈추므로 `docs_pending` 값 변화가 반복 횟수에 영향 없음. |
+| N-F2C-3 `REPARSE_BEFORE` 10:50 → 11:00 | 일치. 파서 파일 `congress_provider.py` mtime(UTC) `2026-10-23 10:52:54.298` < 11:00. 실제 DB에서 `fetched_at`이 10:50~11:00 사이인 parsed 문서 **0**이라 상수 이동으로 재파싱 대상이 바뀐 문서는 없다. |
+| N-F2C-7 주석 통일, `Field(description=...)` 불변 | 일치. `schemas/congress.py` diff는 `#` 주석 3줄만, `docs_pending: int = Field(description="Still to download; a first sync works in batches")` 그대로(아래 gen:api 불변으로 재확인). `CongressStatus`·`SyncResult`의 `docs_pending` 주석은 같은 한국어 문장. |
+| 새 테스트 1건 | `test_status_counts_documents_waiting_for_a_re_parse_as_pending` 추가만(+36줄), 기존 테스트 변경 없음. |
+
+##### 2. 테스트·린트 — 통과
+| 항목 | 결과 |
+|---|---|
+| pytest | `py -3.11 -m uv run pytest -p no:cacheprovider` **614 passed**(118.8초, exit 0; 직전 부록 613 → +1 = 새 테스트). `pyproject.toml` `addopts = "-q"` 때문에 요약 줄이 파이프 `tail`에 안 잡혀 로그 파일로 확인(`verify-be4\pytest_full.log`). |
+| 콩그레스 | `-o addopts="" --collect-only -q`: `test_congress_service.py` **21**, `test_congress_api.py` **4**, `test_congress.py` 22 → 세 파일 47 passed(2.2초). data-f2c 주장 21·4와 일치. |
+| ruff | `ruff check .` All checks passed / `ruff format --check .` 135 files already formatted |
+| gen:api | `VIRTUAL_ENV` 때문에 `npm run gen:api` 대신 직접 체인: backend `py -3.11 -m uv run python -m app.export_openapi ../frontend/src/api/openapi.json` → frontend `npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts`(7.13.0). 전후 md5 동일(openapi.json `2e0915cc…`, schema.d.ts `90b85696…`, 직전 부록과도 같음), `git status --short frontend/src/api` **비어 있음**. |
+
+##### 3. 새 테스트가 회귀를 잡는가 — 통과
+- 테스트 본문 논리: 첫 sync(`max_batches=1`, 20038002 실패) 뒤 `docs_total=4`(A·B·C·D, E는 창 밖, F 비PTR, G 날짜 없음), counts parsed 2·no_text 1·failed 1 → `_pending`=1. 이어 20039001·20037001·9001234의 `fetched_at`을 `REPARSE_BEFORE − 1h`로 되돌리면 `_to_reparse(NOW=12:00)`는 parsed 2건(no_text 9001234는 제외)이라 새 식 **3**, 구 식(`_pending`만) **1**. 단언 `(docs_pending, docs_parsed, docs_failed) == (3, 2, 1)`은 구 코드에서 `(1, 2, 1)`로 실패한다. `skipped.docs_pending == 3`도 구 `_skipped`에서는 1. `lookback=300d`의 2(20037001 filing 2025-11-01 제외)는 `docs_total`이 sync 행의 4로 고정된 채 `_to_reparse`만 줄어드는 것을 확인한다. 끝의 `due()`·호출 순서 `["20038002","20039001","20037001"]`·`(0, 3, 0)`·`not due()`는 재파싱이 한 번만 돌고 daily TTL로 돌아감을 고정.
+- 시뮬레이션(코드 수정 없이 메모리 DB에서 모듈 함수 `_pending`·`_to_reparse`를 함께 출력, `verify-be4\sim_status.py`): ① 첫 sync 뒤 `status=1 / 구 _pending=1 / _to_reparse=0` ② 되돌린 뒤 **`status=3 / 구 _pending=1 / _to_reparse=2`**, skipped sync `docs_pending=3`, lookback 300d → 2 ③ +10분 `due()=True`, 호출 `['20038002','20039001','20037001']`, 결과 parsed 3·pending 0, 이후 `status=0 / 구 0 / 재파싱 0`, `due()=False`. 구 식과 새 식이 2단계에서 갈라지므로 `_pending_now`를 `_pending`으로 되돌리면 테스트가 실패한다.
+
+##### 4. 실서버·실제 DB(읽기만) — 재파싱 완료
+- `GET http://localhost:8001/api/congress/status`(구 코드로 실행 중): `synced_at 2026-10-26T00:47:17Z`, `index_modified 2026-10-23T13:00:28`, `stale false`, `syncing false`, `error null`, `docs_total 528`, `docs_parsed 462`, `docs_no_text 69`, `docs_failed 0`, `docs_pending 0`, `trades 4804`.
+- DB `congress_docs`: parsed 462 = `fetched_at ≥ 2026-10-26` **460**(모두 00:47:17Z 한 트리거) + `fetched_at < 2026-10-23 11:00` 2(filing 2025-10-23~25, 365일 창 밖 → 설계상 재파싱 대상 아님, N-F2C-3 후반 그대로). no_text 69는 전부 2026-10-23(재파싱 안 함, 설계대로). 일별 히스토그램 `2026-10-23: no_text 69·parsed 2 / 2026-10-26: parsed 460`. `error`(unparsed 행 메모) 있는 parsed 문서 **1**(직전 77).
+- DB `congress_trades`: 총 **4804**, `fetched_at ≥ 2026-10-26` 4803, 구 파서 행 1(창 밖 문서), 자산명 `(`로 시작 **0**(직전 394), `Stock (`로 시작 0, 심볼에 `.`·`/` 0, 문서 없는 고아 행 0. 행 수 상위 심볼은 MSFT·AAPL·GOOGL·NVDA·HD 순(공개 PTR 집계).
+- 새 코드 `status()`를 실제 DB에 `mode=ro`로 직접 실행(`verify-be4\status_real.py`): `docs_pending 0`, `_to_reparse(now) 0`, `due() False` → 리드가 서버를 새 코드로 재시작해도 추가 재파싱·10분 재시도는 생기지 않고 화면 숫자도 구 코드와 같다(백로그가 없을 때 두 식이 같음).
+
+##### 5. 기록 — 통과
+- `git diff docs/dev/ISSUES.md`: ISSUE-045 "회귀 검증(2026-10-26, verifier 부록 2)" 줄 끝에 "N-F2C-1은 `status().docs_pending`에 재파싱 잔량을 더해 해결(2026-10-26)." 한 문장 추가만(+1/−1, 다른 줄 없음).
+
+##### 비차단
+- N-F2C-3 후반(낮음, 기존 기록): 365일 창 밖 parsed 2건의 구 파서 행 1건은 `congress_trades`에 남는다(API 기본 180일 창에는 안 보임). 이번 수정 범위 밖.
+- `status()`가 호출마다 `_to_reparse` COUNT 쿼리 1개를 더 한다(인덱스 있는 작은 표, 무시 가능).
+
+##### 재현
+- 스크래치 `C:\Users\user\AppData\Local\Temp\claude\c--Users-user-Desktop-project\390c67f2-c016-4b04-a641-dbd27eed466f\scratchpad\verify-be4\`: `sim_status.py`(메모리 DB 회귀 시뮬레이션), `status_real.py`(새 `status()`를 실제 DB `mode=ro`로), `dbread4.py`(sqlite3 `mode=ro` 집계), `pytest_full.log`, `pytest_congress.log`, `appendix.md`.
+- `git status --short && git diff` / backend\: `py -3.11 -m uv run pytest -p no:cacheprovider > <scratch>\verify-be4\pytest_full.log 2>&1; tail -n 3 …` / `py -3.11 -m uv run pytest -o addopts="" --collect-only -q tests/test_congress_service.py` / `ruff check .` / `ruff format --check .` / `py -3.11 -m uv run python -X utf8 <scratch>\verify-be4\sim_status.py` / `… status_real.py` / `py -3.11 -I -X utf8 <scratch>\verify-be4\dbread4.py`
+- gen:api: backend\ `unset VIRTUAL_ENV; py -3.11 -m uv run python -m app.export_openapi ../frontend/src/api/openapi.json` → frontend\ `npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts; md5sum src/api/openapi.json src/api/schema.d.ts; git status --short src/api`
+- 실서버: `curl -s http://localhost:8001/api/congress/status` / 파서 mtime: `TZ=UTC stat -c '%y %n' backend/app/data/congress_provider.py`
+- 비고(줄 끝): 이 파일은 git에 LF로 저장된다(HEAD CR 0개, `.gitattributes` `* text=auto eol=lf`, `core.autocrlf=true`). 작업 트리는 588행부터 CRLF(이전 세션 기록)이고 이번 부록 45줄도 CRLF로 붙였다. 커밋 시 git이 LF로 정규화하므로 `git diff --stat`은 +45 삽입만 보인다. MSYS `sed`/`grep`은 읽을 때 CR을 떼므로 줄 끝 확인은 `xxd`·`tr -cd`로 한다.

@@ -430,7 +430,7 @@ S2-1d(예측 변동성으로 SPY·BTC 노출 조절, D-024, STRATEGIES.md S2)를
 ### 핵심 수치
 | 항목 | 화면 개편 커밋 | F-2 |
 |---|---|---|
-| 백엔드 pytest | 562 | 613 (gurus 테스트 +6, congress 3개 모듈 46: 파서 22·서비스 20·API 4) |
+| 백엔드 pytest | 562 | 614 (gurus 테스트 +6, congress 3개 모듈 47: 파서 22·서비스 21·API 4) |
 | 프론트 vitest | 23 파일 129 | 26 파일 150 |
 | alembic | head `6de1dd6fc3d6` | head `3af66f72d79b`(congress_trades), 실제 DB 적용, `alembic check` 추가 작업 없음 |
 | 투자자 | 7 | 18 (동기화는 `AM_SEC_USER_AGENT` 설정 뒤) |

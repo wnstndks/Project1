@@ -435,6 +435,42 @@ def test_documents_parsed_before_a_parser_change_are_read_again_once(db, provide
     assert congress_service.REPARSE_BEFORE < NOW
 
 
+def test_status_counts_documents_waiting_for_a_re_parse_as_pending(db, provider, clock):
+    # One batch per trigger, so the failed document is not retried within the first run.
+    service = CongressService(db, provider, now=clock, max_batches=1)
+    provider.fail_docs.add("20038002")
+    service.sync()
+    assert service.status().docs_pending == 1  # the failed document only
+
+    # As if two parsed documents and the scan had been read before the parser changed.
+    before = congress_service.REPARSE_BEFORE - timedelta(hours=1)
+    for doc_id in ("20039001", "20037001", "9001234"):
+        db.get(CongressDoc, (SOURCE, doc_id)).fetched_at = before
+    db.commit()
+    status = service.status()
+    # Failed 1 + to re-read 2: what the next sync will process. The scan is never re-read, and
+    # the parsed / failed figures do not change until the documents are read again.
+    assert (status.docs_pending, status.docs_parsed, status.docs_failed) == (3, 2, 1)
+    # A skipped run (within the backlog pause) reports the same figure as the status.
+    skipped = service.sync()
+    assert not skipped.fetched and skipped.docs_pending == 3
+    # Documents filed outside the lookback window are not re-read, so they do not count.
+    shorter = CongressService(db, provider, now=clock, lookback=timedelta(days=300))
+    assert shorter.status().docs_pending == 2
+
+    provider.fail_docs.clear()
+    provider.calls.clear()
+    clock.advance(minutes=10)
+    assert service.due()  # the re-parse backlog shortens the wait like a first download
+    result = service.sync()
+    # The failed document first, then the stale ones, newest filing first.
+    assert _doc_calls(provider) == ["20038002", "20039001", "20037001"]
+    assert result.docs_parsed == 3 and result.docs_pending == 0
+    status = service.status()
+    assert (status.docs_pending, status.docs_parsed, status.docs_failed) == (0, 3, 0)
+    assert not service.due()  # nothing waiting: the daily TTL applies again
+
+
 def test_reparsing_a_document_replaces_its_rows_without_duplicates(service, provider, db):
     service.sync()
     doc = db.get(CongressDoc, (SOURCE, "20039001"))

@@ -70,9 +70,11 @@ MAX_BATCHES_PER_SYNC = 10
 BATCH_PAUSE = 1.5  # seconds
 # Once this instant (UTC) has passed, documents parsed before it are downloaded and parsed
 # again, once, after the new and the failed ones: the parser changed on 2026-10-23 (ISSUE-045:
-# rows after an "S O" / "D" label were dropped or their asset name truncated). Move it forward
-# when the parser changes again; `parsed` documents are otherwise never re-read.
-REPARSE_BEFORE = datetime(2026, 10, 23, 10, 50)
+# rows after an "S O" / "D" label were dropped or their asset name truncated; the last edit of
+# congress_provider.py was at 10:52:54Z, so the cut-off is the round hour after it). Move it
+# forward when the parser changes again; `parsed` documents are otherwise never re-read. A
+# document re-read after the cut-off gets a later `fetched_at` and is not read twice.
+REPARSE_BEFORE = datetime(2026, 10, 23, 11, 0)
 
 DOC_PARSED = "parsed"
 DOC_NO_TEXT = "no_text"
@@ -121,7 +123,9 @@ class CongressStatus:
     docs_parsed: int
     docs_no_text: int  # scanned paper filings that cannot be read
     docs_failed: int
-    docs_pending: int  # still to download (first sync works through a backlog in batches)
+    # 다음 동기화가 처리할 문서(처음 받는 것·실패 재시도·파서 변경 뒤 재파싱).
+    # `SyncResult.docs_pending`과 같은 뜻(`_pending_now`).
+    docs_pending: int
     trades: int
 
 
@@ -133,7 +137,9 @@ class SyncResult:
     docs_parsed: int
     docs_no_text: int
     docs_failed: int
-    docs_pending: int  # after the last batch, including documents still to re-read
+    # 다음 동기화가 처리할 문서(처음 받는 것·실패 재시도·파서 변경 뒤 재파싱).
+    # 마지막 배치 뒤 남은 수. `CongressStatus.docs_pending`과 같은 뜻.
+    docs_pending: int
     error: str | None
 
 
@@ -184,7 +190,7 @@ class CongressService:
             docs_parsed=counts.get(DOC_PARSED, 0),
             docs_no_text=counts.get(DOC_NO_TEXT, 0),
             docs_failed=counts.get(DOC_FAILED, 0),
-            docs_pending=_pending(total, counts),
+            docs_pending=self._pending_now(total, counts, now),
             trades=trades or 0,
         )
 
@@ -254,10 +260,10 @@ class CongressService:
         now = self.now()
         sync = self.db.get(CongressSync, SOURCE)
         if not force and not self._is_due(sync, now):
-            return self._skipped(sync)
+            return self._skipped(sync, now)
         with _lock:
             if SOURCE in _in_flight:
-                return self._skipped(sync)
+                return self._skipped(sync, now)
             _in_flight.add(SOURCE)
         try:
             return self._loop(sync)
@@ -315,8 +321,8 @@ class CongressService:
                 self.db.commit()
                 counts = self._doc_counts()
                 total = previous.docs_total if previous else 0
-                failed = SyncResult(True, 1, 0, 0, 0, 0, _pending(total, counts), message)
-                return failed, None
+                pending = self._pending_now(total, counts, now)
+                return SyncResult(True, 1, 0, 0, 0, 0, pending, message), None
         entries, modified = indexed
 
         cutoff = now.date() - self.lookback
@@ -459,7 +465,7 @@ class CongressService:
 
     # --- helpers -------------------------------------------------------------------------
 
-    def _skipped(self, sync: CongressSync | None) -> SyncResult:
+    def _skipped(self, sync: CongressSync | None, now: datetime) -> SyncResult:
         counts = self._doc_counts()
         total = sync.docs_total if sync else 0
         return SyncResult(
@@ -469,9 +475,15 @@ class CongressService:
             docs_parsed=0,
             docs_no_text=0,
             docs_failed=0,
-            docs_pending=_pending(total, counts),
+            docs_pending=self._pending_now(total, counts, now),
             error=sync.error if sync else None,
         )
+
+    def _pending_now(self, total: int, counts: dict[str, int], now: datetime) -> int:
+        """What the next sync will process: documents never downloaded or failed, plus the
+        stored ones parsed before the parser changed. The same figure `_run` reports after a
+        batch, so the screen's "N more to fetch" and its fetch button see the re-parse too."""
+        return _pending(total, counts) + self._to_reparse(now)
 
     def _doc_counts(self) -> dict[str, int]:
         rows = self.db.execute(
@@ -537,7 +549,8 @@ def _to_trade(r: CongressTrade) -> Trade:
 
 
 def _pending(total: int, counts: dict[str, int]) -> int:
-    """Documents still to be read: never downloaded or failed (the status figure)."""
+    """Documents never downloaded or failed; `CongressService._pending_now` adds the ones to
+    re-read after a parser change."""
     done = counts.get(DOC_PARSED, 0) + counts.get(DOC_NO_TEXT, 0)
     return max(total - done, 0)
 

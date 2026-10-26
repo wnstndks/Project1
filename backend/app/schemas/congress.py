@@ -45,6 +45,9 @@ class CongressStatusOut(BaseModel):
     docs_parsed: int
     docs_no_text: int = Field(description="Scanned paper filings that cannot be read")
     docs_failed: int
+    # 다음 동기화가 처리할 문서(처음 받는 것·실패 재시도·파서 변경 뒤 재파싱) =
+    # services.congress.CongressStatus.docs_pending. description은 gen:api 산출물에 들어가므로
+    # 그대로 둔다.
     docs_pending: int = Field(description="Still to download; a first sync works in batches")
     trades: int
     coverage_note: str = COVERAGE_NOTE_KO
