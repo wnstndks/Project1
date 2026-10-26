@@ -17,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.data.guru_provider import (
+    CIK_MISMATCH,
     CusipResolver,
     GuruDataError,
     GuruHolding,
@@ -345,7 +346,11 @@ def _to_holding(r: GuruHoldingRecord) -> GuruHolding:
 
 
 def _interval(guru: Guru, sync: GuruSync) -> timedelta:
-    return FAIL_RETRY if sync.error else SYNC_TTL[guru.source]
+    # A CIK whose EDGAR name does not match is a code error, not a transient one: hitting
+    # EDGAR every hour would not change the answer.
+    if sync.error and not sync.error.startswith(CIK_MISMATCH):
+        return FAIL_RETRY
+    return SYNC_TTL[guru.source]
 
 
 def _as_of(sync: GuruSync | None) -> date | None:

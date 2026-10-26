@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { useAssetInfo, useConvertCurrency, useForecast, useHistory, useHoldings, useUsdKrw } from '../api/hooks'
 import { CandleChart, type CandleMa } from '../components/CandleChart'
+import { CongressMention } from '../components/CongressTrades'
 import { ForecastPanel } from '../components/ForecastPanel'
 import { GuruHolders } from '../components/GuruHolders'
 import { NewsCard } from '../components/NewsCard'
@@ -143,6 +144,8 @@ export function AssetDetail() {
           </div>
         )}
         {position && <GuruHolders symbol={resolved} />}
+        {/* House filings name stock tickers only; coins never match, so skip the request for them. */}
+        {position?.asset_type === 'stock' && <CongressMention symbol={resolved} />}
       </div>
 
       <Card

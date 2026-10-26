@@ -57,7 +57,12 @@
 | 038 | 홈 모델 상태 문장이 범위 기준선 우위를 "시장 평균보다 나았다"로 표현 | 중간 | app-engineer | 해결됨 |
 | 039 | 1d 예측 `target_date`가 지난 날짜인데 "다음 거래일"로 표시 | 낮음 | app-engineer | 해결됨 |
 | 040 | 추론 캐시 키가 세션 마감을 모르고 보유 주식의 마지막 봉 기준 예측이 하루 동안 만들어지지 않음 | 중간 | app-engineer | 해결됨(② 캐시 키) |
-합계 40건: 치명 1, 높음 13, 중간 17, 낮음 9. 상태는 미해결 29, 해결·부분 해결 7, 보류 3, 결정됨 1(2026-10-23 갱신).
+| 041 | Norges Bank 13F의 Q1·Q3 표가 기밀 처리로 비어 있어 최신 분기 스냅샷이 반년 동안 오류·stale | 중간 | data-engineer | 해결됨(직전 분기 fallback) |
+| 042 | pypdf가 하원 PTR 양식의 small-caps 라벨 소문자를 NUL로 뽑아 행 구분이 깨짐 | 중간 | data-engineer | 해결됨(파서가 NUL 제거) |
+| 043 | 백엔드가 `schema.d.ts`를 재생성한 뒤 하원 거래 테스트 픽스처가 `syncing`을 빠뜨려 `npm run build`(tsc)가 실패 | 중간 | app-engineer | 해결됨 |
+| 044 | 하원 거래 카드의 "(하루 60건씩)" 문구가 백엔드 배치 동작·설정값과 다름 | 낮음 | app-engineer | 해결됨 |
+| 045 | 하원 PTR 파서가 페이지 경계로 갈라진 금액 상한 행을 버리고, `D:` 둘째 줄을 가짜 unparsed로 세고, 점 표기 티커(`BRK.B`)를 정규화하지 않음 | 중간 | data-engineer | 해결됨 |
+합계 45건: 치명 1, 높음 13, 중간 21, 낮음 10. 상태는 미해결 29, 해결·부분 해결 12, 보류 3, 결정됨 1(2026-10-23 갱신).
 
 ---
 
@@ -433,3 +438,41 @@
 - 근거: 실제 DB `forecast_log`·`symbol_syncs` 읽기 전용 조회(종목명·수량 제외), `backend/app/forecast/data.py` `_load`·`load_inputs`, `backend/app/services/market_data.py` `get_history`·`_sync`·`_closed_since_sync`, `backend/app/data/yfinance_provider.py` `_download`, `backend/app/services/forecasts.py` `_latest`, ISSUE-010·039.
 - 해결: ②만 고쳤다(app-engineer, 2026-10-23). `ForecastService._bar_epoch`가 달력 기준으로 "지금 확정돼 있어야 하는 마지막 주식·코인 봉 날짜"(`calendar.last_final_date`, SPY·BTC-USD 달력, 정산 지연 포함)를 구해 캐시 키에 넣는다. 세션이 마감되면 다음 요청이 바로 다시 계산한다(자산군당 하루 1회 추가 재계산). 공급자가 아직 봉을 안 줬으면 결과는 같고 30분 뒤 다시 시도한다(기존과 같음). ①은 바꿀 것이 없다. 공급자 지연 자체(a·b 구분, 빈 응답 시 경고를 상태로 노출할지)는 data-engineer 영역이고, 지난 목표일의 화면 표시는 ISSUE-039대로 프론트가 처리한다.
 - 검증: `backend/tests/test_forecasts_api.py::test_inference_is_rebuilt_once_a_new_session_has_closed`(마지막 확정 봉 날짜가 바뀌면 `_compute`가 다시 호출되고, 바뀌지 않으면 캐시를 쓴다). 실제 서버는 재시작하지 않았으므로 코드 반영 전이다. verifier 미확인.
+
+### [ISSUE-041] Norges Bank 13F의 Q1·Q3 표가 기밀 처리로 비어 있어 최신 분기 기준 스냅샷이 반년 동안 오류·stale이 됨
+- 현상: EDGAR 회사 검색(Chrome, 2026-10-23)에서 NORGES BANK(CIK 0001374170)의 13F-HR 제출 크기가 분기마다 4KB와 830~900KB로 번갈아 나온다. 2026-05-11 제출(Q1 2026) `0001374170-26-000023`의 `primary_doc.xml`은 `isConfidentialOmitted=true`, `tableEntryTotal=1507`, additionalInformation에 "pursuant to a request for confidential treatment"이고, 정보 테이블 `Q1_2026_0.xml`은 627바이트(행 없음)다. 같은 날 제출된 13F-HR/A `0001374170-26-000021`은 1년 전 분기(Q1 2025)의 표를 `amendmentType=NEW HOLDINGS`, `reasonForNonConfidentiality=Confidential Treatment Expired`로 공개한다(852KB, 1,743종목). Q2·Q4 원본(2026-08-12, 2026-02-10, 2025-08-13, 2025-02-12)은 전체 표다. 수정 전 `choose_filings`는 보고 분기가 가장 최근인 13F-HR 하나만 고르므로 11~2월·5~8월에는 빈 표를 받아 `_rows_to_snapshot`이 "no equity rows"로 실패하고, 서비스는 마지막 성공 스냅샷을 유지하되 `error`·`stale`로 표시한다. 같은 날의 /A는 accession이 원본보다 작아 amendment 조건에서 빠진다(1년 전 분기라 합치면 안 되므로 결과적으로 맞다).
+- 원인: 제출자의 기밀 처리 요청(확인). 왜 Q1·Q3만인지는 가설: 노르웨이 국내 공시가 반기(연말·반기말)라 그에 맞춰 Q2·Q4만 바로 공개하는 것으로 보인다. 2025~2026 네 분기 연속 같은 패턴을 관찰했다.
+- 근거: EDGAR 회사 검색 결과와 위 두 제출 문서의 `primary_doc.xml`(브라우저로 직접 열어 읽음). `backend/app/data/guru_provider.py`의 수정 전 `choose_filings`·`_rows_to_snapshot`.
+- 해결(data-engineer, 2026-10-23, D-030): `choose_filing_sets`가 보고 분기별 [원본, 이후 amendment…] 묶음을 최신순으로 돌려주고, `Sec13FProvider.fetch`는 최신 묶음의 표가 비어 있으면(`EmptyTableError`) 최대 `MAX_QUARTERS_BACK`=2분기 전까지 물러나 행이 있는 분기를 쓴다. 스냅샷 `note`에 "기밀 처리로 표가 비어 있는 분기 제외: {분기}. {분기} 기준 표를 표시"를 적어 화면이 `sync_note`로 보여 줄 수 있다. 세 분기가 모두 비어 있으면 빈 포트폴리오 대신 오류로 남긴다. `choose_filings`는 첫 묶음을 돌려주는 래퍼로 유지했다.
+- 검증: `tests/test_gurus.py::test_sec_provider_falls_back_to_previous_quarter_when_table_is_confidential`(Q2 빈 표·Q1 전체 표 → `as_of` Q1 말, note에 두 분기 날짜; 전부 빈 표 → `EmptyTableError`), `test_choose_filing_sets_orders_quarters_newest_first`. 실제 EDGAR 호출은 `AM_SEC_USER_AGENT`가 비어 있어 하지 않았다(사용자 설정 대기). verifier 미확인.
+
+### [ISSUE-042] pypdf가 하원 PTR 양식의 small-caps 라벨 소문자를 NUL 문자로 뽑아 행 구분이 깨짐
+- 현상: 하원 서기국 PTR PDF(전자 제출본, 2026-09-09 제출 샘플 1건, 8쪽 78행)에 `extract_text`를 돌리면 양식의 small-caps 라벨이 `"F\x00\x00\x00\x00\x00 S\x00\x00\x00\x00\x00: New"`("Filing Status: New"), `"P\x00… T\x00… R\x00…"`("Periodic Transaction Report")처럼 소문자 자리가 NUL(U+0000)로 나온다. NUL을 모르는 첫 파서는 "F S: New" 행 구분 라벨을 인식하지 못해 구형 레이아웃 경로(거래 필드 기준 분할)로 떨어졌고, 직전 행의 라벨 텍스트가 다음 행 앞에 붙어 Owner 코드 78행이 전부 `SELF`로 나오고 자산명에 라벨 찌꺼기가 섞였다(실제 문서는 78행 모두 `DC`).
+- 원인(확인): 양식의 라벨 글꼴이 small caps라 소문자 글리프에 유니코드 매핑이 없고, pypdf 6.21.x가 매핑 없는 글리프를 NUL로 내보낸다. 시스템 Python(pypdf 6.21.1)과 venv(6.21.2)에서 같다.
+- 근거: 스크래치 `finnhub_probe/dump_text.py`로 뽑은 줄별 repr(라벨 줄에 `\x00` 반복), 수정 전 `validate_parser.py` 결과(owners `SELF` 78, 경고 "unparsed trailing text: F S : New"), 수정 후 결과(owners `DC` 78, 경고 0, 티커 33종, 금액 구간 5종, 페이지를 넘는 행 정상). 스크립트와 샘플 PDF는 세션 스크래치 폴더에만 있고 저장소에는 가상 데이터 fixture만 넣었다.
+- 해결(data-engineer, 2026-10-23): `parse_ptr_text`가 맨 먼저 `text.replace("\x00", "")`로 NUL을 제거하고, 머리글 정규식 `_HEADING`을 글자 사이 공백 1칸 이상(`^(?:[A-Z]\s+)*[A-Z]\s*$`)으로 넓혀 "P T R"·"F I"·"T"를 걷어낸다. 라벨 정규식 `_LABEL`은 "F S: New"·"D : …"를 키 "FS"·"D"로 읽는다. 라벨이 하나도 없는 문서만 구형 경로를 탄다.
+- 검증: `tests/test_congress.py::test_parse_ptr_text_drops_nul_characters_of_small_caps_labels`(NUL 포함 문자열 → owner `DC`, filing_status `New`, 금액 구간), `test_parse_ptr_text_reads_rows_across_wraps_and_pages`(가상 5행: 여러 줄 자산명, 페이지 넘김, `S (partial)`, `Over $50,000,000`, Owner 코드, Amended, 자본이득 Yes, 설명 라벨). 실제 샘플 1건 78행 전부 파싱(경고 0). 종이 제출 스캔본(텍스트 없음; 2026년 PTR 435건 중 7자리 DocID 53건이 그것이라는 것은 가설)은 `no_text`로 기록하고 화면에 건수만 적는다. verifier 미확인.
+
+### [ISSUE-043] 백엔드가 `schema.d.ts`를 재생성한 뒤 하원 거래 테스트 픽스처가 `syncing`을 빠뜨려 `npm run build`가 실패함
+- 현상: 2026-10-23 16:01 `frontend/`에서 `npm run build`(`tsc -b && vite build`)가 TS 오류 2건으로 멈춘다. `src/components/CongressTrades.test.tsx(32,3)` TS2322, `src/pages/Compare.test.tsx(53,7)` TS2741 — 둘 다 "`syncing`이 `CongressStatusOut`에 필수인데 픽스처에 없음". `npm test`(vitest, 타입 검사 없음) 26 파일 150개와 `npm run lint`(oxlint)는 통과한다.
+- 원인(확인): 백엔드가 `CongressStatusOut`에 `syncing: bool`을 추가하고 15:57에 `openapi.json`·`schema.d.ts`를 재생성했다(`app/export_openapi`를 스크래치로 다시 뽑아 `openapi.json`과 비교하면 동일). 프론트 테스트 픽스처(15:43~15:45 작성)는 그 전 스키마를 따랐고, `tsconfig.app.json`이 `include: ["src"]`라 테스트 파일도 `tsc -b`에 들어간다.
+- 근거: 위 tsc 출력, `stat` mtime(`schema.d.ts` 15:57:29, `CongressTrades.test.tsx` 15:45:14), `git diff -- frontend/src/api/schema.d.ts`.
+- 해결: (app-engineer) 두 픽스처에 `syncing: false`를 넣는다. verifier가 16:0x에 app-f2에 전달.
+- 검증: app-f2가 16:03 두 픽스처에 `syncing: false` 추가. verifier 재실행(트리 `3c5f93d2…`) `npm run build` 통과, oxlint 경고 0, vitest 26 파일 150개 통과. 해결.
+
+### [ISSUE-044] 하원 거래 카드의 "(하루 60건씩)" 문구가 백엔드 배치 동작과 다르고 설정값을 프론트에 하드코딩함
+- 현상: `frontend/src/components/CongressTrades.tsx:100`이 `docs_pending > 0`일 때 "`{n}건 더 받는 중(하루 60건씩)`"을 보여 준다.
+- 원인(확인): 백엔드 `app/services/congress.py:60-63`은 한 번 트리거에 `MAX_DOCS_PER_SYNC = 60`건 배치를 `MAX_BATCHES_PER_SYNC = 10`회까지 연속 실행한다(모듈 docstring: "a first visit's year of backlog … is fetched in one background run instead of one batch a day"). 배치 수는 `AM_CONGRESS_MAX_BATCHES`로 바뀐다. 하루 60건이 아니고, 바뀔 수 있는 설정값이 화면 문구에 박혀 있다.
+- 근거: 위 코드 위치, `app/api/congress.py:35` `run_sync(..., max_batches)`.
+- 해결: (app-engineer) 숫자를 빼고 "n건 더 받는 중"만 두거나, 백엔드가 응답에 넣는 값으로 바꾼다. 비차단.
+- 검증: app-f2가 16:03 `CongressTrades.tsx:101`을 "`{n}건 더 받는 중`"으로 바꿈(숫자 제거). 테스트 `:171` 기대 문구도 함께. verifier가 소스·dev 서버 서빙 모듈(`하루` 0건)에서 확인. 해결.
+
+### [ISSUE-045] 하원 PTR 파서가 페이지 경계로 갈라진 금액 상한 행을 버리고, `D:` 둘째 줄을 가짜 unparsed로 세고, 점 표기 티커를 정규화하지 않음
+- 현상: verifier가 실제 공개 PDF 51문서(592행)를 재파싱해 비교한 결과 2행(0.3%)이 DB에 없었고(금액 "$X -"와 "$Y" 사이에 페이지 머리글과 자산명 나머지 줄이 끼는 경우), `congress_docs.error` 4건 중 2건은 `D:` 설명이 두 줄인 문서의 둘째 줄이 `unparsed`로 기록된 것이었으며, `BRK.B`·`MOG.A`처럼 점 표기 티커 5행이 앱 표기(`BRK-B`)와 매칭되지 않았다. 또 `POST /api/congress/sync`가 TTL 24시간 안이면 `syncing: true`만 돌려주고 아무것도 하지 않아 첫 동기화 뒤 남은 백로그 469건이 다음 날까지 그대로였다(VERIFICATION.md F-2 백엔드 섹션 N-F2B-1·2·4·8).
+- 원인: `_AMOUNT_TAIL`이 바로 다음 줄만 봤다. 라벨(`D:` 등) 값의 연속 줄을 합치지 않았다. 심볼 정규화 함수가 없었다. 동기화 due 판정이 pending 문서 수를 보지 않았다.
+- 근거: `backend/app/data/congress_provider.py`(`_AMOUNT_TAIL`, `parse_ptr_text`의 `open_label`), `backend/app/services/congress.py`(`_is_due`, `trades`, `_run`), verifier 재현 스크립트(스크래치 `verify-be/`).
+- 해결(2026-10-23, data-engineer): 금액 꼬리를 다음 3줄 안에서 찾음(`_AMOUNT_TAIL_LINES=3`, 행 시작처럼 보이는 줄은 제외). 라벨 연속 줄을 값에 이어 붙임. `normalize_symbol`(`.`·`/`→`-`, 대문자)을 저장·조회 양쪽에 적용하고 매 배치 기존 행을 SQL UPDATE로 바로잡음. 한 번도 받지 않은 문서가 남아 있으면 TTL과 무관하게 10분 뒤 다시 due(`BACKLOG_RETRY`)이고, 실패 문서만 남으면 24시간 TTL을 따른다(서기국이 못 주는 PDF 하나 때문에 10분마다 색인 ZIP을 다시 받지 않도록). `/sync`·`/trades`는 `due()`일 때만 배경 작업을 걸고 `syncing`은 실제로 작업이 걸렸을 때만 true. `_CAP_GAINS`의 ``도 `(?![A-Za-z])`로 고쳐 줄 끝 ✓·Yes를 인식.
+- 검증: `tests/test_congress.py`(20)·`tests/test_congress_service.py`(19)·`tests/test_congress_api.py`(4), 전체 pytest 610 passed. 실제 서버 백로그 소진은 verifier가 `fetched_at`으로 복원해 확인(VERIFICATION 부록: 8배치 약 40초).
+- 회귀(2026-10-23 저녁, verifier 재확인에서 발견): 위 "라벨 연속 줄을 값에 이어 붙임"이 실제 PTR 레이아웃(행 → `F S:` → `S O:` → `D:` → 다음 행)에서 다음 행의 자산명 첫 줄을 `S O`/`D` 값에 붙여 버렸다. 공개 PDF 14건에서 624행/133 warning(연속 규칙을 끄면 751행/8)으로 행 17%가 빠지고 자산명 394행이 `(GOOG)`처럼 잘렸다. 실제 DB에도 77문서 351행 unparsed·잘린 자산명이 저장돼 있었고, `parsed` 문서는 다시 읽는 경로가 없어 파서만 고치면 DB가 그대로 남는 문제가 함께 드러났다. 픽스처는 `D:`가 `F S:` 앞에 있고 `S O:`가 없어 테스트가 잡지 못했다.
+- 회귀 해결(2026-10-23, data-engineer): `parse_ptr_text`의 라벨 처리를 다시 짰다. 모든 행 뒤에 오는 `F S`(filing status)를 행 경계로 쓰고, 값이 줄바꿈될 수 있는 라벨은 `D`·`C`(`_FREE_TEXT_LABELS`)만으로 한정해 `S O`·`F S` 뒤의 줄은 다음 행으로 넘긴다. 픽스처 `ptr_text_sample.txt`를 실제 순서로 바꾸고 SELF 소유 두 줄 행이 라벨 뒤에 오는 케이스를 `test_labels_under_a_row_never_swallow_the_next_row`로 고정했다. 저장된 문서는 `services/congress.py`의 `REPARSE_BEFORE`(UTC 시각 상수) 이전에 파싱된 `parsed` 문서를 다음 동기화 때 새 문서·실패 문서 뒤 순서로 한 번 다시 받아 그 문서의 행을 한 트랜잭션에서 지우고 다시 넣는다(`_to_reparse`, `_is_due`는 재파싱 잔량이 있으면 10분 뒤 다시 due). 파서를 또 고치면 이 상수를 수정 시각 이후로 옮긴다(D-030 8항).
+- 회귀 검증(2026-10-26, verifier 부록 2): 같은 14건이 757행/0 warning(연속 규칙 끔 751보다 6행 많은 것은 `$2,000.00`·`Spouse/DC Over …` 표기도 읽기 때문), 자산명 `(` 시작 0행, `D:` 53행이 모두 제 행에 붙음. 테스트 22·20·4, 전체 pytest 613 passed, gen:api 산출물 불변. 실제 DB의 parsed 460건 중 365일 창 안 458건이 다음 동기화 때 다시 읽힌다(60×10배치 한 트리거 안). 남은 한계: `status`의 `docs_pending`이 재파싱 잔량을 포함하지 않음(N-F2C-1), 문서 중간 두 줄 `D:` 조각이 다음 행 자산명 앞에 붙을 수 있음(14건에서 0건, TODO_FOR_ME).

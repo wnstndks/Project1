@@ -715,6 +715,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/congress/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trades */
+        get: operations["trades_api_congress_trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/congress/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status__api_congress_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/congress/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync
+         * @description Manual "fetch now". Schedules a run only when one would do something (TTL passed or
+         *     documents pending) and none is running; `syncing` says whether that happened.
+         */
+        post: operations["sync_api_congress_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rules/check": {
         parameters: {
             query?: never;
@@ -955,6 +1010,126 @@ export interface components {
             syncing: boolean;
             /** Gurus */
             gurus: components["schemas"]["GuruCompareOut"][];
+        };
+        /** CongressStatusOut */
+        CongressStatusOut: {
+            /** Source */
+            source: string;
+            /** Synced At */
+            synced_at: string | null;
+            /**
+             * Index Modified
+             * @description Last-Modified of the Clerk's index
+             */
+            index_modified: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Syncing */
+            syncing: boolean;
+            /** Error */
+            error: string | null;
+            /** Docs Total */
+            docs_total: number;
+            /** Docs Parsed */
+            docs_parsed: number;
+            /**
+             * Docs No Text
+             * @description Scanned paper filings that cannot be read
+             */
+            docs_no_text: number;
+            /** Docs Failed */
+            docs_failed: number;
+            /**
+             * Docs Pending
+             * @description Still to download; a first sync works in batches
+             */
+            docs_pending: number;
+            /** Trades */
+            trades: number;
+            /**
+             * Coverage Note
+             * @default 미국 하원 의원의 STOCK Act 거래 공시(PTR)입니다. 거래 뒤 최대 45일 지나 공시되고, 금액은 구간으로만 공개됩니다. 본인·배우자·자녀·공동 계좌 거래가 포함됩니다. 상원은 포함되지 않습니다. 투자 조언이 아닙니다.
+             */
+            coverage_note: string;
+        };
+        /** CongressSyncOut */
+        CongressSyncOut: {
+            /** Syncing */
+            syncing: boolean;
+            status: components["schemas"]["CongressStatusOut"];
+        };
+        /** CongressTradeOut */
+        CongressTradeOut: {
+            /** Symbol */
+            symbol: string | null;
+            /** Asset Name */
+            asset_name: string;
+            /**
+             * Asset Type
+             * @description Clerk asset code, e.g. ST (stock), MF (fund)
+             */
+            asset_type: string | null;
+            /** Member */
+            member: string;
+            /** Chamber */
+            chamber: string;
+            /** State */
+            state: string;
+            /** District */
+            district: string;
+            /**
+             * Party
+             * @description Not in the Clerk's data; reserved for a later source
+             */
+            party: string | null;
+            /**
+             * Owner
+             * @description SELF | SP (spouse) | DC (dependent child) | JT (joint)
+             */
+            owner: string;
+            /**
+             * Side
+             * @description buy | sell | sell_partial | exchange
+             */
+            side: string;
+            /**
+             * Transaction Date
+             * Format: date
+             */
+            transaction_date: string;
+            /** Notification Date */
+            notification_date: string | null;
+            /**
+             * Filing Date
+             * Format: date
+             */
+            filing_date: string;
+            /** Amount Low */
+            amount_low: number;
+            /**
+             * Amount High
+             * @description None for 'Over $X'
+             */
+            amount_high: number | null;
+            /** Amount Label */
+            amount_label: string;
+            /** Cap Gains Over 200 */
+            cap_gains_over_200: boolean | null;
+            /** Doc Id */
+            doc_id: string;
+            /**
+             * Doc Url
+             * @description The original PDF on the Clerk's site
+             */
+            doc_url: string;
+        };
+        /** CongressTradesOut */
+        CongressTradesOut: {
+            /** Syncing */
+            syncing: boolean;
+            status: components["schemas"]["CongressStatusOut"];
+            /** Trades */
+            trades: components["schemas"]["CongressTradeOut"][];
         };
         /** ConvertCurrencyIn */
         ConvertCurrencyIn: {
@@ -3452,6 +3627,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trades_api_congress_trades_get: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated tickers, e.g. my holdings */
+                symbols?: string;
+                /** @description Transactions in the last N days */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CongressTradesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    status__api_congress_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CongressStatusOut"];
+                };
+            };
+        };
+    };
+    sync_api_congress_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CongressSyncOut"];
                 };
             };
         };

@@ -15,6 +15,11 @@ Source quirks found on 2026-10-22 and handled below:
   Values are whole dollars since the 2023-01-03 EDGAR release; older filings used thousands.
 - A 13F-HR/A is either a RESTATEMENT (replaces the table) or NEW HOLDINGS (adds rows that
   were confidential), so the amendment type decides whether to merge or replace.
+- Some filers (Norges Bank, 2026-10-23) file a quarter under confidential treatment: the
+  original 13F-HR has an empty table and the rows appear a year later as a NEW HOLDINGS
+  amendment. The newest quarter with rows is used instead, at most MAX_QUARTERS_BACK back.
+- The submissions JSON names the filer (`name`, `formerNames`); a CIK whose name does not
+  contain the investor's `expected_name` is refused ("CIK 불일치") before any table is read.
 - SEC rejects requests without a declared User-Agent of the form "app contact@domain".
 """
 
@@ -42,6 +47,17 @@ ATTEMPTS = 2  # one retry
 
 class GuruDataError(Exception):
     """A holdings source failed, is misconfigured or returned something unparseable."""
+
+
+class EmptyTableError(GuruDataError):
+    """A 13F information table with no equity rows (confidential treatment)."""
+
+
+# Error prefix for a CIK whose EDGAR name does not match the investor; the service does not
+# retry these hourly since only a code change can fix them.
+CIK_MISMATCH = "CIK 불일치"
+# Quarters to step back when the newest 13F table is empty.
+MAX_QUARTERS_BACK = 2
 
 
 @dataclass(frozen=True)
@@ -282,9 +298,9 @@ class TableRow:
     shares: float
 
 
-def choose_filings(recent: dict) -> list[Filing]:
-    """The original 13F-HR for the newest reported quarter, followed by its later amendments
-    in filing order. Amendments to older quarters are ignored."""
+def choose_filing_sets(recent: dict) -> list[list[Filing]]:
+    """Per reported quarter, newest first: the original 13F-HR (the latest one when a quarter
+    was filed twice) followed by its later amendments in filing order."""
     forms = recent.get("form") or []
     filings = []
     for i, form in enumerate(forms):
@@ -301,21 +317,33 @@ def choose_filings(recent: dict) -> list[Filing]:
                 report_date=date.fromisoformat(report),
             )
         )
-    originals = [f for f in filings if f.form == "13F-HR"]
-    if not originals:
-        return []
-    original = max(originals, key=lambda f: (f.report_date, f.filing_date))
-    amendments = sorted(
-        (
-            f
-            for f in filings
-            if f.form == "13F-HR/A"
-            and f.report_date == original.report_date
-            and (f.filing_date, f.accession) > (original.filing_date, original.accession)
-        ),
-        key=lambda f: (f.filing_date, f.accession),
-    )
-    return [original, *amendments]
+    originals: dict[date, Filing] = {}
+    for f in filings:
+        if f.form == "13F-HR":
+            current = originals.get(f.report_date)
+            if current is None or f.filing_date > current.filing_date:
+                originals[f.report_date] = f
+    sets = []
+    for report_date in sorted(originals, reverse=True):
+        original = originals[report_date]
+        amendments = sorted(
+            (
+                f
+                for f in filings
+                if f.form == "13F-HR/A"
+                and f.report_date == report_date
+                and (f.filing_date, f.accession) > (original.filing_date, original.accession)
+            ),
+            key=lambda f: (f.filing_date, f.accession),
+        )
+        sets.append([original, *amendments])
+    return sets
+
+
+def choose_filings(recent: dict) -> list[Filing]:
+    """The newest quarter's original 13F-HR and its later amendments; [] without a 13F-HR."""
+    sets = choose_filing_sets(recent)
+    return sets[0] if sets else []
 
 
 def _local(tag: str) -> str:
@@ -372,10 +400,10 @@ def _amendment_type(primary_doc: bytes) -> str:
     return "RESTATEMENT"
 
 
-def _rows_to_snapshot(rows: list[TableRow], as_of: date) -> GuruSnapshot:
+def _rows_to_snapshot(rows: list[TableRow], as_of: date, note: str | None = None) -> GuruSnapshot:
     total = sum(r.value_usd for r in rows)
     if not rows or total <= 0:
-        raise GuruDataError("13F table: no equity rows")
+        raise EmptyTableError("13F table: no equity rows")
     holdings = sorted(
         (
             GuruHolding(
@@ -391,7 +419,24 @@ def _rows_to_snapshot(rows: list[TableRow], as_of: date) -> GuruSnapshot:
         key=lambda h: h.value_usd,
         reverse=True,
     )
-    return GuruSnapshot(as_of=as_of, source="13f", holdings=holdings)
+    return GuruSnapshot(as_of=as_of, source="13f", holdings=holdings, note=note)
+
+
+def check_filer_name(guru: Guru, submissions: dict) -> None:
+    """Refuse a CIK whose EDGAR name (current or former) lacks the investor's keyword."""
+    if not guru.expected_name:
+        return
+    current = str(submissions.get("name") or "")
+    names = [current] + [
+        str(f.get("name") or "")
+        for f in (submissions.get("formerNames") or [])
+        if isinstance(f, dict)
+    ]
+    if not any(guru.expected_name in n.upper() for n in names):
+        raise GuruDataError(
+            f"{CIK_MISMATCH}: EDGAR 이름 '{current}'에 '{guru.expected_name}'가 없음 "
+            f"(CIK {guru.cik})"
+        )
 
 
 class Sec13FProvider:
@@ -412,12 +457,36 @@ class Sec13FProvider:
         cik = guru.cik.zfill(10)
         res = _get(self.http, SEC_SUBMISSIONS.format(cik=cik), f"EDGAR submissions {cik}")
         try:
-            recent = res.json()["filings"]["recent"]
+            submissions = res.json()
+            recent = submissions["filings"]["recent"]
         except (ValueError, KeyError, TypeError) as exc:
             raise GuruDataError(f"EDGAR submissions {cik}: unexpected JSON") from exc
-        filings = choose_filings(recent)
-        if not filings:
+        check_filer_name(guru, submissions)
+        sets = choose_filing_sets(recent)
+        if not sets:
             raise GuruDataError(f"EDGAR {cik}: no 13F-HR filing")
+        # A quarter filed under confidential treatment has an empty table; show the newest
+        # quarter that has rows and say so, rather than an empty portfolio or nothing.
+        empty: list[date] = []
+        for filings in sets[: 1 + MAX_QUARTERS_BACK]:
+            rows = self._rows(cik, filings)
+            note = None
+            if empty:
+                skipped = ", ".join(d.isoformat() for d in empty)
+                note = (
+                    f"기밀 처리로 표가 비어 있는 분기 제외: {skipped}. "
+                    f"{filings[0].report_date.isoformat()} 기준 표를 표시"
+                )
+            try:
+                return _rows_to_snapshot(rows, filings[0].report_date, note)
+            except EmptyTableError:
+                empty.append(filings[0].report_date)
+        raise EmptyTableError(
+            f"EDGAR {cik}: 13F table: no equity rows in the last {len(empty)} quarter(s)"
+        )
+
+    def _rows(self, cik: str, filings: list[Filing]) -> list[TableRow]:
+        """The quarter's table with its amendments applied."""
         rows = self._table(cik, filings[0])
         for amendment in filings[1:]:
             base = SEC_ARCHIVE.format(cik=int(cik), acc=amendment.acc_nodash)
@@ -430,7 +499,7 @@ class Sec13FProvider:
                 rows = rows + [r for r in amended if r.cusip not in known]
             else:
                 rows = amended
-        return _rows_to_snapshot(rows, filings[0].report_date)
+        return rows
 
     def _table(self, cik: str, filing: Filing) -> list[TableRow]:
         base = SEC_ARCHIVE.format(cik=int(cik), acc=filing.acc_nodash)

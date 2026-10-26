@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     openfigi_api_key: str = ""
     # Comma-separated tickers my cash flows are replayed into (services/benchmarks.py).
     benchmarks: str = "ARKK,BRK-B,SPY,QQQ,BTC-USD"
+    # US House trade disclosures (services/congress.py): batches of 60 PDFs one background
+    # trigger works through back to back before stopping (a first visit has a year's backlog).
+    congress_max_batches: int = Field(10, ge=1, le=100)
 
     # Real orders. Only the user turns this on; until then strategies leave paper records only.
     live_trading: bool = False

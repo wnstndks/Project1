@@ -2,7 +2,19 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, Index, String, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, DecimalText
@@ -353,3 +365,72 @@ class RuleSettingsRow(Base):
     global_json: Mapped[dict] = mapped_column(JSON)
     targets_json: Mapped[dict] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
+class CongressTrade(Base):
+    """One transaction from a US House member's periodic transaction report (STOCK Act),
+    as parsed from the Clerk's PDF (services/congress.py, DECISIONS.md D-030).
+
+    `symbol` is None for assets without a ticker (funds, bonds); `amount_high` is None for
+    "Over $X"; `party` is not in the Clerk's data and stays None until another source adds it.
+    """
+
+    __tablename__ = "congress_trades"
+    __table_args__ = (
+        UniqueConstraint("source", "doc_id", "row_no"),
+        Index("ix_congress_trades_symbol_date", "symbol", "transaction_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(8))  # "house"
+    year: Mapped[int] = mapped_column(Integer)  # index year, part of the document URL
+    doc_id: Mapped[str] = mapped_column(String(16))
+    row_no: Mapped[int] = mapped_column(Integer)
+    member: Mapped[str] = mapped_column(String(120))
+    chamber: Mapped[str] = mapped_column(String(6))
+    state: Mapped[str] = mapped_column(String(2))
+    district: Mapped[str] = mapped_column(String(6))  # "MD06"
+    party: Mapped[str | None] = mapped_column(String(1))
+    owner: Mapped[str] = mapped_column(String(4))  # SELF | SP | DC | JT
+    asset_name: Mapped[str] = mapped_column(String(300))
+    asset_type: Mapped[str | None] = mapped_column(String(4))  # Clerk code, e.g. ST
+    symbol: Mapped[str | None] = mapped_column(String(20))
+    side: Mapped[str] = mapped_column(String(12))  # buy | sell | sell_partial | exchange
+    transaction_date: Mapped[date] = mapped_column(Date)
+    notification_date: Mapped[date | None] = mapped_column(Date)
+    filing_date: Mapped[date] = mapped_column(Date)
+    amount_low: Mapped[int] = mapped_column(Integer)  # USD
+    amount_high: Mapped[int | None] = mapped_column(Integer)
+    amount_label: Mapped[str] = mapped_column(String(40))  # "$1,001 - $15,000"
+    cap_gains_over_200: Mapped[bool | None] = mapped_column(Boolean)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
+class CongressDoc(Base):
+    """Processing state of one House filing: parsed, scanned without a text layer
+    (`no_text`, never retried) or failed (retried on a later sync)."""
+
+    __tablename__ = "congress_docs"
+
+    source: Mapped[str] = mapped_column(String(8), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    year: Mapped[int] = mapped_column(Integer)
+    member: Mapped[str] = mapped_column(String(120))
+    filing_date: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(10))  # parsed | no_text | failed
+    rows: Mapped[int] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(String(300))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
+class CongressSync(Base):
+    """Last sync attempt per source. `error` set means the stored trades are from an earlier
+    success; `docs_total` is the number of reports in the lookback window at that sync."""
+
+    __tablename__ = "congress_syncs"
+
+    source: Mapped[str] = mapped_column(String(8), primary_key=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+    index_modified: Mapped[datetime | None] = mapped_column(DateTime)  # Clerk's Last-Modified
+    docs_total: Mapped[int] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(String(300))

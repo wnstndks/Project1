@@ -585,3 +585,247 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - `npm run build` 통과(청크 구성 동일: recharts는 `ComposedChart-*.js`, lightweight-charts는 `AssetDetail-*.js`, `index-*.js`에는 둘 다 0건). `npx oxlint` 종료 코드 0·경고 0. `npx vitest run` 23 파일 127개 통과.
 - 트리 해시(`frontend/src` + `index.html` + `package.json`) `4129b161595f8f81a7a25ce7d2590b1cf8b29891`. 리드가 이후 프론트 파일은 더 바뀌지 않는다고 알렸다.
 - `holdings.test.ts` 변경은 예시 숫자만 바뀐 것으로 확인(함수 호출 두 줄, 기대값 true 그대로). 보고서의 N-FE-5 비율도 합성값 기준으로 고쳤다.
+
+## F-2 유명 투자자 확장·하원 의원 거래 (2026-10-23) — 프론트엔드
+
+검증자 verify-f2-frontend. 대상은 ded199d 이후 미커밋 변경 중 `frontend/`: 새 `src/lib/congress.ts`(+test), `src/components/CongressTrades.tsx`(+test), `src/pages/Compare.test.tsx`; 수정 `src/api/client.ts`(`congressApi`), `src/api/hooks.ts`(`useCongressTrades`·`useCongressStatus`·`useSyncCongress`), `src/pages/Compare.tsx`, `src/pages/AssetDetail.tsx`, `src/lib/gurus.ts`(+test, 15:54 SHORT_NAME 11명 추가), `src/api/openapi.json`·`schema.d.ts`(백엔드가 15:57 재생성). 기준 규칙은 CLAUDE.md 프론트엔드·문구·색상·유명 투자자 단락과 DECISIONS.md D-030. 화면 데이터 수치는 실제 DB라 인용하지 않았다.
+
+### 판정: 실패(차단 1건, 수정 대기) — ISSUE-043
+- **차단 1건** `npm run build` 실패(아래 1). 그 외 항목은 모두 통과.
+- **비차단 4건** N-F2-FE-1~4(아래). 그중 하나는 ISSUE-044.
+- 검증 트리 해시(`frontend/src` + `index.html` + `package.json`, sha1 of sha1sums) `0444ad0638457d0b8ee1923a043b11ef79067e44` (16:01). 검증 도중 소스가 바뀌었다(15:54 `gurus.ts`·테스트, 15:57 `openapi.json`·`schema.d.ts`). 수치는 모두 바뀐 뒤 트리에서 다시 돌린 값이다.
+
+### 1. 빌드·린트·테스트
+- `npm run build`: **실패**. `tsc -b`가 TS2322(`CongressTrades.test.tsx:32`)·TS2741(`Compare.test.tsx:53`) — 재생성된 `schema.d.ts`에서 `CongressStatusOut.syncing: boolean`이 필수가 됐는데 두 테스트 픽스처가 `syncing` 없이 `CongressStatus`를 만든다. `tsconfig.app.json`이 `include: ["src"]`라 테스트 파일도 타입 검사된다. 15:57 재생성 직전(15:56)에는 빌드가 통과했다(`CongressTrades-*.js` 5.38 kB 별도 청크, Compare 15.34 kB). ISSUE-043, app-f2에 전달.
+- `openapi.json` 신선도: `app.export_openapi`를 스크래치로 뽑아 `diff -q` → 동일. `schema.d.ts`에도 `syncing`이 있어 두 생성 파일은 서로 맞다. 즉 생성 파일이 아니라 픽스처가 뒤처진 것이다.
+- `npm run lint`(oxlint): 종료 코드 0, 경고 0.
+- `npm test`(vitest run): 26 파일 150개 통과(직전 보고 26/149 + `gurus.test.ts`의 SHORT_NAME 1개). vitest는 타입 검사를 하지 않아 위 tsc 오류를 잡지 못한다.
+
+### 2. 문구·정직성 — 통과
+- `coverage_note`는 `CongressTrades.tsx:103`에서 `status.coverage_note`를 그대로 렌더한다. 프론트에 대체 문구 없음. 백엔드 `app/schemas/congress.py:6-10` 기본 문구에 하원·45일·금액 구간·본인/배우자/자녀/공동 계좌·상원 미포함·투자 조언 아님이 모두 들어 있고, 테스트는 다른(짧은) 가상 문구를 넣어 "그대로 표시"를 확인한다(`CongressTrades.test.tsx:9,122`).
+- '신호'·'추천'·'예측': `grep -n "신호\|추천\|예측" CongressTrades.tsx congress.ts Compare.tsx` → 0건. 컴포넌트 테스트도 `document.body.textContent`에서 `/신호|추천/` 부재를 확인(`:158`).
+- 매수/매도 배지: `CongressTrades.tsx:150` `bg-fill text-ink` 중립 배지. `text-gain`·`text-loss`·`▲▼`·`PnL`은 주석 두 줄에만 등장. 테스트 `:144-148`이 클래스·텍스트로 확인.
+- 상단 안내(`Compare.tsx:36-40`): "트럼프 등 대통령·개인의 계좌는 공시되는 포트폴리오가 없어(연 1회 재산 공개는 금액 구간만) 비교 대상에 없습니다. 의원 거래는 하원 공시만 보여 줍니다." 포함. 카드 제목 "내 종목을 최근 거래한 미국 하원 의원".
+- 미동기화 13F 투자자: `Compare.tsx:162-163` `needsSecUserAgent`(error에 `AM_SEC_USER_AGENT` 포함)로 나눠 `SecMissingCard` 한 장(`:199-209`)에 이름 목록 + 응답 `guru.error` 문구 + `.env` 안내(`SEC_HINT`). 백엔드 `app/data/gurus.py` 13F 17명(`source="13f"` 17줄)이 그 대상. 상위 20 종목 선택기(`HoldingsSection`)도 같은 필터로 제외. 테스트 `Compare.test.tsx:94-114`.
+
+### 3. 데이터·훅 — 통과
+- `useCongressTrades`(`hooks.ts:326-335`): `congressSymbolKey` = 대문자 → `Set` 중복 제거 → `sort()` → `,` join. `enabled: key.length > 0`(빈 배열이면 비활성), `queryKey: ['congress','trades',key,days]`, `queryFn`은 정규화된 심볼로 요청, `refetchInterval`은 `data.syncing`일 때 15초 아니면 false, `staleTime` 5분. `useSyncCongress`(`:347-353`) `onSuccess`에서 `['congress']` 무효화.
+- Compare: `CongressSection`(`Compare.tsx:54-68`) `useHoldings().data.filter(asset_type === 'stock').map(symbol)` → 주식만. 테스트 `Compare.test.tsx:118-131` 가상 보유 3개(주식 2·코인 1) → 심볼 2개만 전달 확인. AssetDetail(`:148`) `position?.asset_type === 'stock' && <CongressMention/>` — 코인 상세·미보유 종목에서는 컴포넌트가 마운트되지 않아 훅 자체가 없다(코드 확인; 브라우저 네트워크 탭은 보지 않음). `AssetType` enum은 `stock|crypto`.
+- `doc_url`(`CongressTrades.tsx:156-164`): `target="_blank"` + `rel="noopener noreferrer"` + `aria-label="{member} 공시 원문 (새 탭)"`. 테스트 `:151-154`.
+- 독립 검산(스크래치 `check_congress.mjs`, Node 24가 `.ts`를 직접 import): `amountRange(1001,15000)`="$1,001~$15,000", `(250001,500000)`="$250,001~$500,000", `(50000000,null)`="$50,000,000 이상", `(1000001,null)`="$1,000,001 이상"; `ownerLabel` SP→배우자, dc→자녀(대문자 정규화), SELF→본인, 모르는 코드는 그대로; `sideLabel` sell_partial→"일부 매도", exchange→"교환", 모르는 값 그대로; `memberLine` 지역구→"Jane Doe (CA12) · 공동 계좌", 지역구 없으면 주(州), 둘 다 없으면 괄호 생략; `groupBySymbol` 최근 거래 종목 먼저·대소문자 무시; `distinctMembers` 2. 18/18 일치. 백엔드 파서(`congress_provider.py:283-286`)가 빈 owner를 항상 `SELF`로 채우므로 빈 owner 표시(" ·  계좌")는 실제 경로에 없다.
+- `days`: 프론트 `CONGRESS_DAYS = 180`, 백엔드 `Query(180, ge=1, le=730)` 일치.
+
+### 4. 서빙 모듈 일치 — 통과
+- `curl -s http://localhost:5173/src/<file>`로 4개 파일 비교: `CongressTrades.tsx` `coverage_note` 2/2, `Compare.tsx` `대통령` 1/1, `hooks.ts` `refetchInterval` 3/3, `AssetDetail.tsx` `CongressMention` 2/2·`asset_type === 'stock'` 1/1. dev 서버가 현재 소스를 서빙한다(재시작 안 함). `congress` 단순 카운트는 Vite 변환(HMR import)으로 소스보다 많지만 토큰 비교는 일치.
+
+### 5. 색상·접근성 — 통과
+- 새 파일 hex 색 0건(`grep -nE "#[0-9a-fA-F]{3,8}"`). 쓰인 클래스 `bg-fill`·`text-ink(-2)`·`text-muted`·`text-danger`·`text-accent`·`divide-line`·`border-line`·`hover:bg-hover`는 모두 `index.css:94-107`의 `--color-*: var(--*)` 변수.
+- 중첩 `<a>` 없음: 종목 `Link`는 `<header>` 안, 원문 `<a>`는 `<li>` 안, `CongressMention`은 `<p><Link/></p>`. 버튼은 텍스트 "지금 받기"(`type="button"`), 섹션 `aria-label="{심볼} 하원 의원 거래"`, 상태 문구 `role="status"`.
+
+### 6. 커밋 후보 — 통과
+- `git check-ignore -v`: `frontend/.vitest/` → `frontend/.gitignore:27`, `*.db` → `.gitignore:11`, `.env` → `.gitignore:19`, `frontend/dist` → `frontend/.gitignore:11`. `git status --porcelain`에 `.db`·`.env`·`dist` 없음.
+
+### 비차단
+- N-F2-FE-1(app, ISSUE-044): `CongressTrades.tsx:100` "(하루 60건씩)"은 백엔드 동작(한 트리거에 60건×최대 10배치, `AM_CONGRESS_MAX_BATCHES`로 설정)과 다르고 설정값을 화면에 하드코딩했다. 숫자를 빼거나 응답값으로.
+- N-F2-FE-2(app, 가설): `CongressTrades.tsx:130,137` TradeRow key가 `doc_id:transaction_date:member:side:amount_low`. 한 PTR에 같은 종목·날짜·방향·구간 거래가 두 줄이면 React 중복 key 경고. DB는 `row_no`로 구분하지만 API에 없다. 백엔드 픽스처 `ptr_text_sample.txt`를 파서로 돌려 보면 5행 중 충돌 없음 → 재현된 사례는 없다. 배열 index나 `symbol`을 key에 더하면 사라진다.
+- N-F2-FE-3(app): `Compare.tsx:65` 보유 조회가 실패하면 `symbols=[]`를 넘겨 카드가 "보유한 주식이 없어 보여 줄 거래가 없습니다."를 보여 준다. 실패와 보유 없음이 같은 문구다. 홀딩 오류는 같은 페이지 다른 섹션(`OverlapSection`)이 `ErrorBox`로 보여 주므로 사용자가 전혀 모르는 것은 아니다.
+- N-F2-FE-4(기록): `CongressTrades.tsx:30`은 응답 루트 `trades.data.syncing`만 보고 `status.syncing`(이번 재생성으로 생김)은 쓰지 않는다. 심볼이 없어 status 쿼리만 도는 경우 동기화 중 표시가 없지만, 그때는 보여 줄 거래도 없어 영향이 없다.
+
+### 재현
+- `cd frontend && unset VIRTUAL_ENV && npm run build && npm run lint && npm test`
+- 신선도: `cd backend && py -m uv run python -m app.export_openapi <scratch>/openapi.fresh.json && diff -q <scratch>/openapi.fresh.json ../frontend/src/api/openapi.json`
+- grep: `grep -n "신호\|추천\|예측" src/components/CongressTrades.tsx src/lib/congress.ts src/pages/Compare.tsx`; `grep -nE "#[0-9a-fA-F]{3,8}" src/components/CongressTrades.tsx src/lib/congress.ts`; `grep -n "text-gain\|text-loss\|▲\|▼" src/components/CongressTrades.tsx`
+- 독립 검산: 스크래치 `check_congress.mjs`가 `file:///.../frontend/src/lib/congress.ts`를 import(Node 24 타입 제거). `node check_congress.mjs`
+- 서빙 비교: `curl -s http://localhost:5173/src/components/CongressTrades.tsx | grep -c coverage_note` 등 4개 파일
+- 커밋 후보: `git check-ignore -v frontend/.vitest/ backend/app.db backend/.env frontend/dist`, `git status --porcelain`
+
+### 최종 재실행 (app-f2 수정 뒤, 16:03 트리)
+- app-f2가 16:03에 고쳤다: 두 픽스처에 `syncing: false`(`CongressTrades.test.tsx:37`, `Compare.test.tsx:58`), `CongressTrades.tsx:101` 문구를 "`{n}건 더 받는 중`"으로(배치 수 제거, 주석에 "backend settings"라고 적음), TradeRow key 끝에 배열 index 추가(`:130` `…:${i}`, `:137` `…:${SHOWN + i}`) — N-F2-FE-2 가설도 해소.
+- 트리 해시 `3c5f93d2409b605b69272fc126f2c58b64da9a88`. `npm run build` 통과(`CongressTrades-*.js` 5.38 kB 별도 청크, `Compare-*.js` 15.34 kB). `npm run lint` 종료 코드 0·경고 0. `npm test` 26 파일 150개 통과.
+- 재검사: '신호'·'추천'·'예측' 0건, hex 0건, 손익 색·▲▼ 0건(주석 제외). dev 서버 서빙 `CongressTrades.tsx` `더 받는 중` 2/2·`하루` 0/0·`coverage_note` 2/2 — 수정분이 서빙 중이다.
+- 커밋 후보에 `.db`·`.env`·`dist` 없음. `backend/.env.example`(템플릿) 수정만 있다.
+- **판정 변경: 통과.** ISSUE-043·044 해결 확인. 남은 비차단은 N-F2-FE-3(보유 조회 실패 시 문구)·N-F2-FE-4(기록)만이다.
+
+## F-2 유명 투자자 확장·하원 의원 거래 (2026-10-23) — 백엔드
+- 판정: **통과. 차단 문제 없음.** 비차단 12건(N-F2B-1~12; 그중 파서 누락 2행은 실제 공시 PDF로 재현함). 프론트엔드는 다른 verifier가 본다.
+- 범위: 미커밋 작업(브랜치 agent-team, ded199d 이후)의 백엔드·CLAUDE.md·docs/dev. 실제 DB(`asset_manager.db`)·`.env`는 읽기만(`mode=ro`), 8001 서버에는 GET만 보냈다. 보고에 실제 보유 종목·수량·금액은 없다(의원 거래는 공개 자료라 적되 보유 종목과 연결하지 않음).
+- 검증 도중(15:53~15:57) `services/congress.py`·`api/congress.py`·`schemas/congress.py`·`deps.py`·`config.py`·`.env.example`·`tests/test_congress_service.py`·`tests/test_congress_api.py`·`frontend/src/api/*`가 다른 팀원에 의해 바뀌었다(한 트리거의 배치 반복 `max_batches`, 상태 `syncing`). 아래 수치는 모두 그 뒤(16:03) 최종 상태 기준이고, 변경 파일 집합의 md5 묶음 해시는 `5039ae6c9e3b78f87b94fe360c1acde2`(`git ls-files -mo --exclude-standard -- backend CLAUDE.md docs/dev | sort | xargs md5sum | md5sum`, VERIFICATION.md 제외).
+
+### 확인한 항목
+| 항목 | 결과 |
+|---|---|
+| pytest / ruff / format | `py -3.11 -m uv run pytest` **602 passed**(122초, 15:57~15:59, 마지막 코드 변경 15:54 이후). 직전 보고 598 + 배치 반복·`syncing` 테스트 4개. `ruff check .` All checks passed, `ruff format --check .` 135 files already formatted(16:03 재실행) |
+| alembic | 임시 DB `sqlite:///<scratchpad>/f2.db`에 `upgrade head` → `… → 6de1dd6fc3d6 → 3af66f72d79b(congress_trades)`. `alembic heads` = `3af66f72d79b` 하나. `alembic check` "No new upgrade operations detected". 생성된 `congress_trades`에 `UNIQUE(source, doc_id, row_no)`(`uq_congress_trades_source`)·`ix_congress_trades_symbol_date(symbol, transaction_date)`, `congress_docs` PK(source, doc_id), `congress_syncs` PK(source). 모델(`models.py`)과 마이그레이션의 컬럼·nullable 일치 |
+| 의존성 | `pyproject.toml`에 `pypdf>=6.21.2`, `uv.lock`에 pypdf 6.21.2. `py -3.11 -m uv lock --check` "Resolved 100 packages"(갱신 필요 없음) |
+| openapi | 15:57 재생성본 md5 `8e0cada1…`(openapi.json)·`5bb5c063…`(schema.d.ts). 내가 `npm run gen:api`를 다시 돌려도 md5 동일 → 작업 트리가 현재 백엔드 스키마와 같다. HEAD 대비 `git diff --numstat`는 396/245줄 추가(이번 작업의 congress 3경로·4스키마)라 비어 있을 수 없다. `client.ts`·`hooks.ts` 변경은 gen:api 산출물이 아니라 app 팀원 수정 |
+| 1. 투자자 목록 | `GURUS` 18명 = ARK 1 + 13F 17(D-030의 11명 추가: 소로스·아이칸·막스·클라먼·리 루·게이츠 재단·파브라이·테리 스미스·댄 롭·NPS·Norges; 르네상스·그린라이트 제외 사유는 docstring). 17명 모두 `cik` 10자리 숫자·서로 다름, `expected_name` 비어 있지 않은 대문자(`test_guru_list_is_consistent`가 18·17·대문자·ARK는 None을 고정). CIK 숫자 자체는 EDGAR를 호출하지 않아(UA 미설정, 사용자 이메일 사용 금지) 독립 확인하지 않았다(N-F2B-12) |
+| 1. 제출자 이름 검사 | `Sec13FProvider.fetch`(guru_provider.py 447-452): submissions JSON 파싱 직후 `check_filer_name` → 그 다음에야 `choose_filing_sets`·`_rows`(표 요청). `check_filer_name`은 `name`+`formerNames[*].name`을 upper로 비교하고 실패 시 `GuruDataError("CIK 불일치: EDGAR 이름 '…'에 '…'가 없음 (CIK …)")`. `test_sec_provider_refuses_cik_whose_edgar_name_does_not_match`가 MockTransport로 요청 수 1(표 미요청)을 고정, `test_filer_name_check_accepts_former_names_and_skips_without_keyword`가 formerNames 일치·키워드 없는 Guru 통과·빈 이름 실패를 확인 |
+| 1. Norges fallback | `choose_filing_sets`가 보고 분기별 [원본, 이후 /A…] 묶음을 최신순으로 돌려주고, `fetch`는 `sets[:1+MAX_QUARTERS_BACK]`(=3분기)를 돌며 `EmptyTableError`면 다음 분기로, 성공 시 note "기밀 처리로 표가 비어 있는 분기 제외: …. … 기준 표를 표시", 셋 다 비면 `EmptyTableError`(빈 포트폴리오를 현재로 보여 주지 않음). `test_sec_provider_falls_back_to_previous_quarter_when_table_is_confidential`(Q2 빈 표→Q1, as_of 2026-03-31, note에 두 분기; 전부 빈 표→예외) |
+| 1. 서비스 재시도·유지 | `services/gurus.py:_interval`: error가 `CIK 불일치`로 시작하면 FAIL_RETRY(1h) 대신 SYNC_TTL(13F 7일). `_apply` 예외 경로는 `guru_holdings`를 지우지 않고 `guru_syncs.error`만 갱신(as_of·note는 이전 값 유지). `test_cik_mismatch_is_not_retried_hourly` |
+| 1. 실제 서버 | `GET /api/gurus` 18명. 캐시 우드 `ark, as_of 2026-10-22, stale False, 87종목`; 13F 17명 모두 `error="AM_SEC_USER_AGENT 미설정", stale True, holdings 0`. `GET /api/gurus/norges-bank/holdings?top=3` 빈 목록+같은 error, `GET /api/gurus/nobody/holdings` 404. `.env`의 `AM_SEC_USER_AGENT`는 비어 있음(값은 읽지 않음) |
+| 1. 개인정보 | 사용자 이메일·`@gmail` 문자열: `backend/app`·`tests`·`.env.example`·`frontend/src`·`docs`·CLAUDE.md·이번 diff·untracked 파일에 0건. `congress_provider.USER_AGENT = "asset-manager (personal use)"`(`test_house_provider_fetches_index_and_ptr`·`test_default_client_declares_user_agent_without_contact`가 `@` 없음을 고정) |
+| 2. 외부 HTTP·pypdf 격리 | `import httpx2`는 `congress_provider.py`·`guru_provider.py`·기존 3파일(news_sources·upbit_provider·screenshot_extractor)뿐, `pypdf` import는 `congress_provider.py`(29-30행)뿐. `services/congress.py`·`api/congress.py`·`schemas/congress.py`에 HTTP·pypdf 없음 |
+| 2. 파서(코드 읽기) | `parse_ptr_text`는 첫 줄에서 NUL 제거(ISSUE-042), 머리글·"Filing ID #"·"P T R" 류 제거 뒤 "F S:" 라벨마다 flush. `_TXN`은 `(?<![A-Za-z])`로 단어 끝 P/S/E 오인 방지, `S (partial)`→`sell_partial`, `P (partial)`→`buy`, `E`→`exchange`. `parse_amount`: "Over $X"→(X, None). Owner 코드 SP/DC/JT, 없으면 SELF. `[XX]` 코드는 마지막 것을 asset_type으로, 티커는 자산명 끝 `(TICK)`만. Amended는 `filing_status`. 라벨이 없는 문서만 구형 경로 |
+| 2. 파서 경계(내 입력 18건, 스크래치 `verify-be/probe_parser.py`) | 통과: 자산명 3줄 + `[ST]` 별도 줄 → 한 행·티커 유지, `Over $50,000,000`→high None, `[MF]` 티커 없음→symbol None, 알림일 없음→None, `P (partial)`→buy, `D :`+`F S : Amended`, 자산명 안의 날짜(국채 만기)·`$1,001-$15,000`(공백 없음)·자산 텍스트 안의 NUL·마지막 라벨 없는 행(filing_status None) 모두 정상, 달력에 없는 날짜 `13/45/2026`은 예외 아닌 warning. 한계: N-F2B-5(✓/Yes 다음 줄), N-F2B-6(한 글자 줄), N-F2B-7(SP로 시작하는 자산명), 타입 글자만 한 줄이면 warning(누락이지만 조용하지 않음) |
+| 2. 실제 PDF 재파싱(공개 자료 6건, 스크래치 `verify-be-dl/`) | `congress_docs.error`가 있는 4건(20035390·20035491·20035445·20035553)+중복 의심 2건(20035464·20035434)을 서기국에서 받아 `extract_text`→`parse_ptr_text`. 6건 모두 "F S:" 라벨 수 = 행 수 + warning 수(57+1, 98+1, 1+1, 1+1, 5+0, 17+0), 행 수는 DB와 일치. 같은 문서 안의 동일 행 중복(BSX ×3, MSFT ×2 등 8문서)은 원문의 별도 행(각 행 아래 `S O: <계좌>` 소유 계좌 라벨이 다름)이라 파서 버그 아님. 자산명 'Ro'(OL, 소유 계좌 "TPT RO Affiliate I LLC")·`[MF}` 오타는 원문 그대로. 누락 2행은 N-F2B-1, 가짜 warning 2건은 N-F2B-2 |
+| 2. 서비스 | `sync()`: TTL(24h, 실패 뒤 1h) → `_lock`으로 `_in_flight` 예약 → `_loop`. `_run` 한 배치: ①색인(올해·작년, 올해 404만 허용) ②`due`(PTR·filing_date ≥ now−365d, 최신순)에서 미저장 + 실패 재시도 60건 ③문서 전부 네트워크·파싱(메모리) ④`_store`(doc별 delete→add_all)+`_upsert_sync` → **commit 1회**. 색인 실패는 sync 행만 쓰고 commit(`test_nothing_is_written_when_the_first_index_fetch_fails`: trades·docs 0). `no_text`는 재시도 안 함, `failed`는 다음 배치 뒤쪽에. 새 `_loop`: 한 트리거가 색인은 1회만 읽고 최대 `max_batches`(기본 10, `AM_CONGRESS_MAX_BATCHES` 1~100) 배치를 1.5초 간격으로 반복, error·pending 0·진전 0이면 중단(`test_one_trigger_works_through_the_backlog_in_batches_with_a_pause`, `test_batching_stops_on_index_error_and_without_progress`). `status().syncing`은 `_lock` 아래 `_in_flight` 조회(`test_status_reports_syncing_while_a_run_is_in_flight`). 동시 호출은 `test_concurrent_sync_is_skipped_while_one_is_running` |
+| 2. 스키마·API | `schemas/congress.py`: Decimal 필드 없음(int·date·str)이라 `Num` 불필요. `COVERAGE_NOTE_KO`에 "미국 하원"·"최대 45일"·"구간"·"본인·배우자·자녀·공동 계좌"·"상원은 포함되지 않습니다"·"투자 조언이 아닙니다" 모두 있음. 라우트 3개(`/api/congress/trades`·`/status`·`/sync`, 서버 openapi 확인). 핸들러는 provider를 직접 부르지 않고 `BackgroundTasks.add_task(run_sync)`만, `run_sync`는 `get_session_factory()`의 자기 세션. `/trades`는 `synced_at None and not syncing`일 때만 작업 추가. `days`는 1~730(`days=0`→422 확인) |
+| 2. 테스트 네트워크·가상 데이터 | `test_congress.py`(17): `httpx.MockTransport`, PDF는 테스트 안에서 생성(`tiny_pdf`), 실 요청 없음(`HouseClerkProvider()` 기본 클라이언트는 헤더만 확인). `test_congress_service.py`(15)·`test_congress_api.py`(3): `FakeCongressProvider`. fixture 의원 Jane Doe·John Roe Jr.·Rich Aaronson, 지역 ST01, 티커 QQXA·ZYXW·WXYZ·FZZB·KNWN은 가상(단 ACMR은 실제 상장 티커, N-F2B-10) |
+| 3. 실제 서버 상태 | `GET /api/congress/status`(16:02): synced_at 2026-10-23T06:33:54Z, index_modified 2026-10-22T13:00:38Z, stale false, syncing false, error null, docs_total 529, docs_parsed 51, docs_no_text 9, docs_failed 0, docs_pending 469, trades 588. 받은 60건 중 no_text 9건 = **15%**(D-030의 "약 12%, 가설"과 비슷). no_text 9건은 모두 7자리 DocID, parsed 51건은 모두 8자리(종이 제출 = 7자리 가설과 일치) |
+| 3. 실제 거래 필드(읽기 전용 SQL + API) | 588행 전부: transaction ≤ notification ≤ filing 위반 0, amount_low < amount_high 위반 0, notification null 0, side ∈ {buy 243, sell 153, sell_partial 184, exchange 8}, owner ∈ {SELF 316, JT 122, DC 91, SP 59}, asset_type 상위 ST 512·GS 59, 금액 구간 6종, symbol 266종(null 72행 = 채권·펀드), 의원 33명·18개 주. 보유 종목이 아닌 `MSFT`로 `GET /api/congress/trades?symbols=MSFT&days=365`: 13행, doc_url 모두 `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2026/<8자리>.pdf`, 날짜 순서·금액 정상(예: Lisa McClain MI09 SP buy 2026-09-30/10-01/10-12 $1,001-$15,000). `days=5`→0행, symbols 없음→0행. `cap_gains_over_200`은 588행 모두 None(N-F2B-5) |
+| 4. docs | ISSUES.md 표 42행, 심각도 1+13+19+9=42, 상태 29+9+3+1=42로 합계 줄과 일치. ISSUE-041·042는 현상·원인·근거·해결·검증 5항목, 미확인 원인은 "가설" 표시(041 왜 Q1·Q3만인지, 042 7자리 DocID). CLAUDE.md 유명 투자자 단락: 18명·17명 이름·`expected_name`·Norges 2분기·`congress_*` 3테이블·3엔드포인트·`coverage_note`가 코드와 일치. "한 번에 최대 60문서"는 배치 반복 추가 뒤 불완전(N-F2B-9) |
+| 4. 안전·커밋 대상 | `config.py:45` `live_trading: bool = False`, `.env.example` `AM_LIVE_TRADING=false`, True로 두는 코드 0건. `git status --untracked-files=all`에 `*.db`·`.env`·`artifacts/`·`.vitest/` 없음(`git check-ignore`: 루트 .gitignore 11·19·24행, frontend/.gitignore 27행) |
+
+### 발견한 문제
+- 차단: 없음.
+- 비차단:
+  - N-F2B-1(data-engineer, 재현됨): 금액 하한 "$X -"와 상한 "$Y"가 **페이지 경계**로 갈라지고 그 사이에 자산명 나머지 줄이 오면 행을 버린다. `_parse_chunk`의 `_AMOUNT_TAIL`이 `^\s*\$`로 바로 뒤만 보기 때문(congress_provider.py:206, 269-272). 실제 20035491 원문: `JT Devon Energy Corporation Common S (partial) 09/02/2026 09/15/2026 $100,001 -` / [페이지 머리글] / `Stock (DVN) [ST] $250,000` → warning "amount upper bound missing", DB에 DVN 09/02 행 없음. 20035390의 LAMR 08/19 행도 같은 패턴(DB에는 LAMR 08/20·08/24·08/25만). 51문서 592행 중 2행(0.3%). 제안: 상한을 `re.search(r"\$[\d,]+", text[end:])`로 찾고 그 앞 텍스트는 자산명에 붙이기, 테스트에 "페이지 넘김 + 상한 분리" 케이스 추가.
+  - N-F2B-2(data-engineer): `D:` 설명 라벨이 두 줄로 넘어가면 둘째 줄이 새 chunk가 되어 "no transaction fields" warning → `congress_docs.error = "1 row(s) unparsed"`가 실제 누락 없이 기록되고 설명은 첫 줄에서 잘린다(20035553 "…in San" / "Francisco, CA.", 20035445). 4건의 error 중 2건이 이것. 제안: 라벨 뒤 다음 라벨·거래 필드 전까지의 줄은 마지막 라벨 값에 이어 붙이기.
+  - N-F2B-3(data/app): 상태 응답에 "읽지 못한 행 수"가 없다(`congress_docs.error`에만 있음). 화면은 `docs_no_text`(문서 단위)만 말할 수 있다. N-F2B-1·2를 고치면 현재 샘플에서는 0이 되지만, 레이아웃 변화 감지용으로 `rows_unparsed` 합계를 status에 넣기를 권한다.
+  - N-F2B-4(data-engineer): 티커가 점 표기로 저장된다(`BRK.B` 3행, `MOG.A` 2행). 앱 심볼은 Yahoo 표기(`BRK-B`)라 보유 종목과 매칭되지 않는다. 저장 시 또는 조회 시 `.`→`-` 정규화(또는 둘 다 비교) 권장. 13F의 `_pick_figi`가 `/`→`-`로 바꾸는 것과 같은 규칙.
+  - N-F2B-5(data-engineer, 가설): `_CAP_GAINS = ^[ \t]*(Yes|No|✓)\b`의 `\b`는 ✓ 뒤에 글자가 없으면 성립하지 않아 줄 끝 ✓는 매치되지 않고, ✓·Yes가 다음 줄에 오면 자산명에 붙어 티커가 사라진다(내 입력: 자산명 `Acme Co (ACME)  ✓`, symbol None). 실제 6건 PDF 텍스트에는 Yes/No/✓가 전혀 없고 588행 모두 `cap_gains_over_200=None`. 양식의 체크 표시가 pypdf로 추출되지 않는 글리프라는 가설. 화면은 이 필드에 의존하지 않아야 한다.
+  - N-F2B-6(data-engineer, 낮음): `_HEADING`(`^(?:[A-Z]\s+)*[A-Z]\s*$`)이 자산명 줄바꿈으로 생긴 한 글자 줄도 지운다("Alphabet Inc - Class" / "A" / "(GOOGL) [ST]" → 자산명 "Alphabet Inc - Class (GOOGL)", 티커는 유지). 실제 데이터에서는 관찰하지 못함.
+  - N-F2B-7(data-engineer, 낮음·가설): 소유자 칸이 비고 자산명이 `SP `·`JT `·`DC `로 시작하면 소유자로 오인한다("SP Plus Corp …" → owner SP, 자산명 "Plus Corp …"). 588행 중 그런 자산명 0건.
+  - N-F2B-8(app/data): `POST /api/congress/sync`는 `syncing: true`를 고정으로 돌려주지만 작업은 TTL(24h) 안이면 아무것도 하지 않는다(`test_status_and_manual_sync` 마지막 assert가 이를 고정). 실제 서버는 06:33Z 동기화 뒤 469건 pending인데, 새 배치 반복은 다음 트리거(10-24 06:33Z 이후)에야 돈다. 제안: pending > 0이면 TTL 대신 FAIL_RETRY급 최소 간격만 두거나 수동 엔드포인트는 `force=True`, 응답 `syncing`은 실제 in-flight 여부로.
+  - N-F2B-9(리드, docs): CLAUDE.md "TTL 24시간·한 번에 최대 60문서"는 15:53 변경(한 트리거 = 60문서 × 최대 `AM_CONGRESS_MAX_BATCHES`(기본 10) 배치, 1.5초 간격) 전 문구다. `.env.example`에는 설정이 있다. D-030에도 배치 반복 결정이 없다.
+  - N-F2B-10(data-engineer, 낮음): fixture 티커 `ACMR`("Acme Rocket Co")는 실제 나스닥 상장 티커(ACM Research)다. 다른 fixture 티커는 가상.
+  - N-F2B-11(기록): test_gurus.py는 34→39(새 함수 5개 + `test_guru_list_is_consistent` 확장)로, 리드 메시지의 "+6"과 세는 방식이 다르다. 전체 602 = 직전 598 + 배치 반복·syncing 테스트 4개.
+  - N-F2B-12(기록): CIK 17개는 EDGAR 미호출로 독립 확인하지 않았다(UA 미설정, 사용자 이메일 사용 금지). 잘못된 CIK는 `expected_name` 검사로 저장 전에 막히므로 위험은 "표시 안 됨"에 그친다.
+
+### 재현
+- backend\에서 `unset VIRTUAL_ENV; py -3.11 -m uv run pytest -p no:cacheprovider` / `py -3.11 -m uv run ruff check .` / `py -3.11 -m uv run ruff format --check .` / `py -3.11 -m uv lock --check`
+- `AM_DATABASE_URL=sqlite:///<scratchpad>/f2.db py -3.11 -m uv run alembic upgrade head && alembic heads && alembic check`
+- frontend\에서 `unset VIRTUAL_ENV; npm run gen:api; md5sum src/api/openapi.json src/api/schema.d.ts`(재실행 전후 비교)
+- 실제 DB 읽기: `py -3.11 -I -c "import sqlite3; c=sqlite3.connect('file:asset_manager.db?mode=ro', uri=True); ..."`(symbol·side·owner 분포, 날짜 순서·금액 위반 count, `congress_docs` status/error)
+- 서버(GET만): `curl http://localhost:8001/api/congress/status`, `.../api/congress/trades?symbols=MSFT&days=365`, `.../api/gurus`, `.../api/gurus/norges-bank/holdings?top=3`
+- 파서 경계: `PYTHONPATH=. PYTHONIOENCODING=utf-8 py -3.11 -m uv run python <scratchpad>\verify-be\probe_parser.py`
+- 실제 PDF 재파싱: `<scratchpad>\verify-be-dl\`에 `curl -A "asset-manager (personal use)" https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2026/<doc_id>.pdf`로 받은 뒤 `... python <scratchpad>\verify-be\probe_pdfs.py <dl dir>`(라벨 수 vs 행+warning; 누락 행 원문 줄은 `probe_pdfs3.py`)
+- grep: `grep -rn "import httpx2\|from pypdf\|import pypdf" app tests`, `grep -rn "<이메일 앞부분>\|@gmail" ...`(0건), `grep -n "live_trading" app/config.py`
+
+### 부록: N-F2B-1·2·4·8 수정 재확인과 최종 수치 (2026-10-23 저녁)
+- 판정: **실패(차단 1건). N-F2B-2 수정(라벨 연속 줄 이어 붙이기)이 실제 공시 레이아웃에서 행의 17%를 떨어뜨리고 자산명을 잘라 저장하는 회귀.** N-F2B-1·4·8 수정은 재현해 통과. 전체 pytest·ruff·alembic·프론트 빌드는 통과. 커밋은 파서 수정과 저장된 문서 재파싱 뒤로 미루기를 권한다. 근거는 data-f2b에 보냈고 ISSUE 등록은 담당자가 한다.
+- 범위·기준: HEAD ded199d, 작업 트리 해시 `850c19ae…`(`git ls-files -mo --exclude-standard -- backend CLAUDE.md docs/dev scripts | grep -v VERIFICATION.md | sort | xargs md5sum | md5sum`), `congress_provider.py`·`services/congress.py`는 16:34 수정본. 실제 DB·`.env`는 읽기만(`mode=ro`), 8001 서버에는 GET만. 공개 PDF 14건(직전 6건 `verify-be-dl/` + 이번 8건 `verify-be2-dl/`)은 서기국에서 받아 `python -I`로 격리해 파싱했다. 보고에 사용자 보유 종목·금액은 없다(의원 거래 티커는 공개 자료).
+
+#### 전체 점검
+| 항목 | 결과 |
+|---|---|
+| pytest / ruff / format | `py -3.11 -m uv run pytest -p no:cacheprovider` **610 passed**(dot 610개, exit 0. `addopts = "-q"`라 `-q`를 겹치면 요약줄이 없다). `ruff check .` All checks passed, `ruff format --check .` 135 files already formatted |
+| alembic | 임시 DB `sqlite:///C:/<scratchpad>/f2final.db` `upgrade head` → `… 6de1dd6fc3d6 → 3af66f72d79b`(congress_trades). `alembic heads` 하나(3af66f72d79b), `alembic check` "No new upgrade operations detected". POSIX `/c/...` 경로는 sqlite가 열지 못해 Windows 경로로 지정해야 한다 |
+| gen:api | 재실행 전후 md5 동일(openapi.json `2e0915cc…`, schema.d.ts `90b85696…`) → 작업 트리가 현재 백엔드 스키마와 같다. HEAD 대비 `git diff --stat frontend/src/api/`는 4파일 +703줄(openapi.json 397·schema.d.ts 249는 congress 추가분, client.ts 16·hooks.ts 41은 app 팀원 수정) |
+| 프론트 | `npm run build` OK(388ms), `npm run lint`(oxlint) OK, `npm test` **26 files / 150 tests passed** |
+| 커밋 후보 | `git status --untracked-files=all`에 `*.db`·`.env`·`artifacts/`·`.vitest/` 없음(`git check-ignore -v`: .gitignore 11·19·24행, frontend/.gitignore 27행). `git diff backend/pyproject.toml`은 `"pypdf>=6.21.2",` 한 줄 추가, `uv.lock` +11줄 `name = "pypdf"` 블록만. 새 untracked `scripts/dev-backend.ps1`(18:03)은 N-F2B-14 |
+| 기록 | ISSUES.md 표 45행, 심각도 1+13+21+10=45, 상태 29+12+3+1=45로 합계 줄과 일치. 테스트 수 test_congress.py 20·test_congress_service.py 19·test_congress_api.py 4(ISSUE-045 기재와 일치) |
+
+#### N-F2B-1 (금액 상한을 다음 3줄 안에서 찾기) — 통과, 단서 2
+- 내 입력(`verify-be2/probe.py` A): `$250,000`이 `$100,001 -` 줄의 +1·+2·+3번째 줄에 있으면 `amount_high=250000`, +4·+5번째면 "amount upper bound missing" warning으로 행을 보고하고 추측하지 않는다. `_TXN`의 `-\s*`가 첫 줄바꿈을 먹으므로 `after[:tail.start()].count("\n") >= 3`(congress_provider.py:282)이 +4줄부터 거부한다. 페이지 머리글 7줄·`Filing ID #`는 `_is_furniture`로 먼저 빠져 창을 소비하지 않는다(A2: 머리글+자산명 2줄 뒤 상한 → 정상).
+- 실제 PDF: 20035491의 DVN 09/02 JT S(partial) `$100,001 - $250,000` 행과 20035390의 LAMR 08/19 SELF S(partial) `$15,001 - $50,000` 행이 이제 파싱된다(직전 검증에서 누락된 2행).
+- 단서 ①(data-engineer): **DB에는 두 행이 아직 없다.** 두 문서는 06:33:54Z에 `parsed`로 저장된 뒤 다시 받지 않았고(`fetched_at` 그대로, error `1 row(s) unparsed` 유지), `_run`의 재시도 목록은 `failed`만 담는다(services/congress.py:304). 파서를 고쳐도 `parsed` 문서를 한 번 다시 받는 경로가 없으면 DB는 바뀌지 않는다. N-F2B-2 회귀로 저장된 460문서에도 같은 문제가 적용된다.
+- 단서 ②(낮음): 꼬리 탐색은 창 안의 어떤 `$[\d,]+`든 집는다. B: `... S 09/02/2026 09/15/2026 $100,001 -` / `4.5% $1000 par due 2030 (912828XX) [GS] $250,000` → amount `$100,001 - $1000`(high<low), 자산명 끝에 `$250,000` 잔류. ISSUE-045의 "행 시작처럼 보이는 줄은 제외"는 꼬리 탐색이 아니라 라벨 연속 규칙(`_looks_like_row_text`)에만 해당한다. 실제 DB 4,450행에서 `amount_low >= amount_high`는 0건이라 관찰되지는 않았다.
+
+#### N-F2B-2 (`D:` 둘째 줄을 설명에 이어 붙이기) — **실패: 회귀**
+- 실제 레이아웃(20035464·20033455 원문 덤프, `probe2.py`): 행 텍스트 → `F S: New` → `S O: <계좌>` → `D: <설명>` → 다음 행. 라벨 셋이 모두 행 **뒤**에 오고 `F S`가 첫 라벨이다. 픽스처 `tests/fixtures/congress/ptr_text_sample.txt`는 `D:`가 `F S:` 앞에 있고(42-44행) `S O:`가 없어 테스트가 실제 순서를 보지 못한다.
+- 메커니즘: `F S`에서 flush(congress_provider.py:386-388) → `S O`·`D`가 **다음 행**의 labels에 열림(`open_label`, 390행) → 다음 행 첫 줄이 SELF 소유라 owner 코드가 없고 `[ST]`·거래 필드가 둘째 줄에 있으면 `_looks_like_row_text`(324-331)에 걸리지 않아 라벨 값에 붙는다(392-395). 자산명이 한 줄이면 chunk에 `[ST] P 09/08/2026 ...`만 남아 "asset name missing"으로 행이 사라지고, 두 줄이면 `(GOOG)`·`Stock (MSFT)`처럼 잘린다. 내 입력 C(`D:` 뒤 두 줄 자산명 → 자산명 `(BTAI)`, 설명에 "Beta Industries Class A" 붙음)·C3(`S O:` 뒤 → 같은 현상) 재현.
+- 수치(14 PDF, `_looks_like_row_text`를 항상 True로 바꿔 연속 규칙만 끈 결과와 비교): 현재 코드 **624행/133 warning** ↔ 규칙 끔 **751행/8 warning**. 즉 연속 규칙이 **127행(17%)을 떨어뜨리고 394행의 자산명을 자른다.** 문서별(현재 ↔ 규칙 끔): 20035390 50/8 ↔ 58/0(직전 검증 57+1), 20030977 182/42 ↔ 224/0, 20033619 142/36 ↔ 178/0, 20033455 101/20 ↔ 121/0, 20034106 21/12 ↔ 33/0, 20034709 8/6 ↔ 14/0, 20035464 3/2 ↔ 5/0, 20035491 98/1 ↔ 99/0. 모든 문서에서 `F S` 라벨 수 = 행 + warning.
+- 실제 DB(07:30Z 소진분 포함 460문서·4,450행, 읽기만): error 있는 문서 **77건, unparsed 합계 351행**, `rows=0`인 parsed 문서 4건. 자산명이 `(`로 시작 **515행**, `Stock (`·`Common Stock (`·`Shares (`·`Class X (`로 시작 **737행**(예 `Stock (MSFT)` 41행, `(AMZN)` 22행, `(NVDA)` 20행). 샘플 8문서의 DB warning 수(42·36·20·12·6·4·1·1)가 현재 코드 재파싱과 정확히 같다 → DB는 현재 파서의 결과다.
+- 남은 8 warning: 직전 N-F2B-2 그대로 2건(`D:` 둘째 줄 "Francisco, CA.", 20035445) + 별개 파서 공백 6건(N-F2B-13).
+- 부수(기존 동작): `description`은 `F S` flush 뒤에 읽히므로 다음 행에 붙는다(20033455: `D: Ticker 2802 JP`(아지노모토 행의 설명)가 BABA 행에). `CongressTrade`에 description 컬럼이 없어 DB 영향은 없지만 수정 설계 때 함께 봐야 한다.
+- 전달한 제안(판단은 담당자): ① 연속 규칙을 되돌리고, flush 시점에 chunk에 거래 필드가 전혀 없고 직전 라벨이 `D`면 설명으로 흡수(가짜 warning 2건 해소) / ② `F S`가 아니라 "다음 행 시작"에서 flush해 `F S`·`S O`·`D`를 앉은 행에 붙이기. 어느 쪽이든 픽스처에 실제 순서(행 → F S → S O → D → owner 코드 없는 두 줄 자산명 행)를 넣고, 저장된 `parsed` 문서를 한 번 다시 받는 경로를 마련할 것.
+
+#### N-F2B-4 (심볼 정규화) — 통과
+- 코드: 파싱 시 `normalize_symbol`(congress_provider.py:261-263, `.`·`/`→`-`·upper; 311행에서 적용), 조회 시 `trades()`가 입력을 같은 함수로 정규화(services/congress.py:189), 배치마다 기존 행을 SQL `UPDATE … replace(replace(symbol,'.','-'),'/','-')`(319-330). API `_symbols`도 upper. 내 입력 D: `BRK.B`·`brk/b`→`BRK-B`, ` MOG.A `→`MOG-A`, `BF.B`→`BF-B`, `RDS/A`→`RDS-A`.
+- 실제 DB(4,450행): `symbol like '%.%' or like '%/%'` **0건**, 소문자 0건, `[^A-Z0-9-]` 글자 0건. 소진 뒤에도 0.
+
+#### N-F2B-8 (백로그 10분 재시도·실제 `syncing`) — 통과
+- 코드: `_is_due`(services/congress.py:218-224) = `error` 없고 `_unfetched`(= `docs_total` − 저장된 doc 전부, 498-501) > 0이면 `min(TTL, BACKLOG_RETRY 10분)`, 실패 문서만 남으면 `_unfetched` 0 → 24h, error면 FAIL_RETRY 1h. `/sync`·`/trades`는 `service.due()`일 때만 `background.add_task`, 응답 `syncing = current.syncing or scheduled`(api/congress.py:85-91, 112-116). `due()`는 `_in_flight`면 False(213-216). 테스트: `test_pending_backlog_resumes_within_the_ttl_after_a_short_pause`, `test_backlog_does_not_shorten_the_retry_after_an_error`, `test_failed_documents_wait_for_the_daily_ttl_not_the_backlog_pause`, `test_status_reports_syncing_while_a_run_is_in_flight`, `test_status_and_manual_sync`(TTL 안·pending 0이면 `syncing False`·provider 호출 없음), `test_manual_sync_resumes_a_pending_backlog_within_the_ttl`.
+- 실제 서버: 리드의 17:14 재시작 **전에** 백로그가 이미 소진되어 폴링으로 볼 변화가 없었다. `congress_docs.fetched_at`(배치 시작 시각)으로 복원한 타임라인: 06:33:54Z 60건(첫 배치, 직전 검증 시점) → **07:30:35Z 60 → :42 60 → :47 60 → :51 60 → :56 60 → 07:31:01 60 → :07 60 → :12 49 = 469건, 8배치 약 40초**(배치 간격 4.6~7.0초 = 내려받기+1.5초 pause, 한 트리거의 `_loop`). 최종: docs_total 529, parsed 460, no_text 69(13%, 전부 7자리 DocID), failed 0, pending 0, trades 4,450, synced_at 07:31:12Z. 재시작 뒤 `POST /api/congress/sync`(backend.log 17:15) → 202이지만 synced_at 불변·`syncing false` = pending 0이라 `due()` False로 아무것도 걸지 않은 정상 동작(수정 전에는 `syncing: true`를 고정으로 돌려줬다).
+- 30초 간격 폴링(`GET /api/congress/status`):
+  - 08:38:28Z(내 첫 GET): syncing false, pending 0, parsed 460, no_text 69, failed 0, trades 4,450, synced_at 07:31:12Z, error null.
+  - 10:49:23Z~10:51:39Z 5회(30초 간격): 모두 `WinError 10061` 연결 거부. 11:19Z에도 8001 포트 LISTEN 없음(`netstat`), `backend/.dev-backend*.log` 없음 → 리드 쪽에서 서버를 내린 상태로 보여(가설) 폴링 표본을 얻지 못했다. 최종 수치는 08:38Z 응답과 읽기 전용 DB 집계가 같다(parsed 460·no_text 69·trades 4,450).
+- 낮음(코드 읽기, 재현 안 함): `_pending`·`_unfetched`는 `congress_docs` **전체** 수와 365일 창의 `docs_total`을 비교한다. 저장된 문서가 창을 벗어나기 시작하면(약 1년 뒤) 미수신 문서가 `max(…, 0)`에 가려져 0으로 집계될 수 있다. 창 밖 문서를 집계에서 빼거나 지우는 쪽을 권한다.
+
+#### 추가 비차단
+- N-F2B-13(data-engineer): 파서가 모르는 금액 표기 — 정확 금액 `$2,000.00`(20033320)·`$2,722.50`(20034999), 라벨 `Spouse/DC Over $1,000,000`(20033695, 4행). "no transaction fields"로 보고되어 조용한 누락은 아니다. 14문서 중 6행.
+- N-F2B-14(리드, `scripts/`): `scripts/dev-backend.ps1`(18:03, untracked)이 `backend/.dev-backend.log`·`.dev-backend.err.log`를 만드는데 `.gitignore`에 `*.log` 규칙이 없다(`git check-ignore` 불일치, 파일은 아직 없음). uvicorn 접근 로그에는 `GET /api/congress/trades?symbols=<보유 종목>` 같은 URL이 남으므로 커밋 전에 ignore 규칙을 넣어야 한다.
+- N-F2B-15(기록): 날짜 순서 위반 12행(거래일>알림일 또는 알림일>공시일; 예 20030977 UHS 거래 10/23/2025·알림 08/11/2025, 20033889 거래일 2026-12-26). 원문 PDF가 그렇게 적혀 있어(20030977 재파싱에서 동일) 파서 문제가 아니다. 화면은 날짜 순서를 가정하지 말 것.
+- N-F2B-3 재강조(data/app): status에 unparsed 행 합계가 없어 이번 351행 누락이 `docs_failed 0 · pending 0`으로만 보였다. `rows_unparsed`(= `congress_docs.error` 합계)를 status에 넣기를 권한다.
+
+#### 재현
+- backend\: `unset VIRTUAL_ENV; py -3.11 -m uv run pytest -p no:cacheprovider`(dot 610) / `py -3.11 -m uv run ruff check .` / `py -3.11 -m uv run ruff format --check .`
+- `AM_DATABASE_URL=sqlite:///C:/<scratchpad>/f2final.db py -3.11 -m uv run alembic upgrade head && alembic heads && alembic check`
+- frontend\: `unset VIRTUAL_ENV; md5sum src/api/openapi.json src/api/schema.d.ts; npm run gen:api; md5sum …; git diff --stat frontend/src/api/; npm run build; npm run lint; npm test`
+- 파서: `py -3.11 -m uv run python -I -X utf8 <scratchpad>\verify-be2\probe.py <pdf dir…>`(경계 A·A2, `$` B, 라벨 연속 C·C2·C3, normalize D, 실제 PDF E) / `probe2.py <pdf dir…>`(연속 규칙 on/off 비교, 원문 순서 덤프). PDF는 `curl -A "asset-manager (personal use)" https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{2025|2026}/<doc_id>.pdf`(DocID 2003xxxx 일부는 2025 경로)
+- DB 읽기: `py -3.11 -I -X utf8 <scratchpad>\verify-be2\dbread.py`·`dbread2.py`(`file:asset_manager.db?mode=ro`)
+- 서버(GET만): `curl http://localhost:8001/api/congress/status`
+
+### 부록 2: 연속 줄 규칙 재설계·REPARSE_BEFORE 재파싱 재확인 (2026-10-26)
+- 판정: **통과(차단 0건).** 직전 부록의 차단 1건(N-F2B-2 회귀: 라벨 연속 줄 규칙이 다음 행을 흡수)은 data-f2b의 `parse_ptr_text` 재설계로 해소됐다. 공개 PDF 14건 재측정 **757행 / 0 warning**(목표 ≥751 / ≤8), 자산명이 `(`·`Stock (`로 시작하는 행 **0**(직전 394). 저장된 `parsed` 문서는 `REPARSE_BEFORE`(2026-10-23 10:50Z) 재파싱 경로로 다음 동기화 때 다시 읽힌다(실제 DB 기준 **458건**). 전체 pytest 613·ruff·alembic·gen:api 불변·프론트 빌드/린트/테스트 모두 통과. 비차단 N-F2C-1~7은 아래. ISSUE-045에 이번 회귀·재설계 기록은 **누락**(리드가 적는다).
+- 범위·기준: HEAD ded199d 위 작업 트리(`congress_provider.py` 2026-10-23 19:52 KST, `services/congress.py` 21:04 KST 수정본). 실제 DB `backend/asset_manager.db`는 `mode=ro`로 읽기만, `.env`는 열지 않음, 8001 서버는 내려가 있어 띄우지 않았다(실서버 항목은 "서버 중단으로 미확인"). 공개 PDF 14건은 직전 verifier가 받아 둔 `verify-be-dl/`(6)·`verify-be2-dl/`(8)을 그대로 `python -I`로 격리해 파싱했다(새로 내려받은 파일 없음). 사용자 보유 종목·금액은 읽지도 적지도 않았다(의원 거래 티커는 공개 자료).
+
+#### 1. 공개 PDF 14건 전·후 (행/warning)
+| 문서 | DB에 저장된 값(구 파서) | 직전 부록 당시 코드 | 연속 규칙 끔(직전 기준) | **현재 트리** |
+|---|---|---|---|---|
+| 20030977 | 182/42 | 182/42 | 224/0 | **224/0** |
+| 20033320 | 0/1 | (0/1) | — | **1/0** |
+| 20033455 | 101/20 | 101/20 | 121/0 | **121/0** |
+| 20033619 | 142/36 | 142/36 | 178/0 | **178/0** |
+| 20033695 | 0/4 | (0/4) | — | **4/0** |
+| 20034106 | 21/12 | 21/12 | 33/0 | **33/0** |
+| 20034709 | 8/6 | 8/6 | 14/0 | **14/0** |
+| 20034999 | 0/1 | (0/1) | — | **1/0** |
+| 20035390 | 57/1 | 50/8 | 58/0 | **58/0** |
+| 20035434 | 17/0 | (17/0) | — | **17/0** |
+| 20035445 | 1/1 | (1/1) | — | **1/0** |
+| 20035464 | 5/0 | 3/2 | 5/0 | **5/0** |
+| 20035491 | 98/1 | 98/1 | 99/0 | **99/0** |
+| 20035553 | 1/1 | (1/1) | — | **1/0** |
+| **합계** | 633/126 | 624/133 | 751/8 | **757/0** |
+- 괄호는 직전 부록에 문서별 수치가 없어 DB 값으로 대신한 것(DB 값 = 당시 파서 출력이었음을 직전 부록이 확인). 현재가 751보다 6행 많은 것은 N-F2B-13(정확 금액 `$2,000.00`·`$2,722.50`, `Spouse/DC Over $1,000,000` 4행)도 함께 파싱되기 때문이다.
+- 불변식: 14문서 모두 `F S` 라벨 수 = 행 + warning(757 = 757 + 0). 자산명이 `(`로 시작 0행, `Stock (`·`Common Stock (`·`Shares (`·`Class X (`로 시작 0행, probe2의 TRUNC 정규식 0행(직전 394). 소문자로 시작하는 자산명 1행(`lululemon athletica inc. - Common Stock (LULU)`, 원문이 그렇다). 설명(`D:`)이 붙은 행 53(= 원문 `D` 라벨 53개). 20033455의 `D: Ticker 2802 JP`가 직전엔 BABA 행에 붙었는데 이제 AJINF(아지노모토) 행에 붙는다(라벨이 앉은 행에 붙음).
+- 라벨 종류(14 PDF, 머리글 제거 뒤): `FS` 757·`SO` 734·`D` 53·`L`(Location, 예 `L: US`) 4. 값이 빈 라벨 0건. `L`은 `_FREE_TEXT_LABELS`에 없어 한 줄 값으로만 처리되며 실제 문서에서 모두 한 줄이었다.
+- 픽스처: `ptr_text_sample.txt`(실제 순서 행 → F S → S O → D → owner 코드 없는 두 줄 자산명 행, 문서 끝 두 줄 `D:`) 8행/0 warning, r8 설명이 "… in San Francisco, CA."로 합쳐짐. `ptr_text_legacy.txt`(F S 없음) 2행. 내 입력(`verify-be3/probe3_inputs.py` 14종): `S O`/`D` 뒤 SELF 두 줄 행(직전 회귀 케이스) → 행·자산명 보존; `D` 둘째 줄이 문서 끝 → 설명에 합침; 문서 끝 `D` 뒤 거래 필드 없는 줄은 설명으로 흡수되고 `S O` 뒤면 warning(설계대로); 첫 행 앞 고아 라벨 → 무시; 한 행에 `D` 둘(뒤가 덮어씀); `F      S     : Amended` 인식.
+- 알려진 한계(TODO_FOR_ME 44행과 일치): `D:`가 문서 **중간**에서 두 줄이면 둘째 줄 조각이 다음 행 자산명 앞에 붙는다(`Francisco, CA. Beta Industries Class A (BTAI)`, 티커 보존). 14 PDF에서 0건(자유 텍스트 라벨 다음 줄이 소문자로 시작하는 경우 0). `S O :` 값이 비고 계좌명이 다음 줄에 오면 다음 행 자산명 앞에 붙는다(내 입력 #6) — 실제 문서에서 빈 값 라벨 0건.
+
+#### 2. 재파싱 경로(`REPARSE_BEFORE`) — 통과
+- (a) due: `_to_reparse(now)`(services/congress.py)는 `now < reparse_before`면 0, 지나면 `status='parsed' and fetched_at < reparse_before and filing_date >= now − lookback`인 문서 수. `_is_due`는 `error`가 없고 `_unfetched > 0 or _to_reparse > 0`이면 `min(TTL, BACKLOG_RETRY 10분)`. 테스트 `test_documents_parsed_before_a_parser_change_are_read_again_once`(마감 10분 전 due False → 지나면 True) + 내 시뮬레이션(`verify-be3/sim_reparse.py`, 메모리 DB·Fake provider): 마감 전 3회 배치 뒤 마감+1분에 `to_reparse=4, due=True`.
+- (b) 교체: `_store`가 같은 트랜잭션에서 `delete(CongressTrade where doc_id)` 뒤 `add_all`, `_run` 끝의 `commit()` 한 번. 시뮬레이션: 문서 100의 행이 `[(0,'BBB'),(1,'CCC')]`로 바뀌고 `(doc_id,row_no)` 중복 0. 테스트 `test_reparsing_a_document_replaces_its_rows_without_duplicates`(failed 경로)·위 테스트(reparse 경로, ZYXW 행 소멸).
+- (c) 한 번만: `_upsert_doc`가 `fetched_at = now`(배치 시작 시각, `stale()`이 `now >= reparse_before`를 요구하므로 마감 이후). 시뮬레이션: 재파싱 뒤 `to_reparse=0`, `due=False`, +10분·+25시간(테스트) 모두 문서 호출 없음. 색인에서 사라진 stale 문서는 `fetched_at=now`로 표시해 10분마다 헛도는 것을 막는다(테스트의 D 문서).
+- (d) `no_text`·`failed`: `stale()`은 `status == parsed`만 보므로 `no_text`는 그대로(시뮬레이션 103의 `fetched_at` 09:10 유지), `failed`는 종전처럼 `retry` 목록(daily TTL). 변경 없음.
+- (e) `/api/congress/status`의 `docs_pending`: **재파싱 잔량을 포함하지 않는다.** `status()`는 `_pending(total, counts)` = total − (parsed + no_text)만 쓰고, `reparse_left`는 `SyncResult.docs_pending`에만 더해진다(`_run`). 시뮬레이션: 마감 뒤 `status.docs_pending=1`(failed 1건)인데 `to_reparse=4`. 동기화 자체는 `due()`로 `/trades`·`/sync`가 배경 작업을 걸어 `syncing: true`를 돌려주므로 진행된다. 비차단 N-F2C-1.
+- 실제 DB(읽기만): parsed 460·no_text 69·failed 0, `fetched_at` 전부 2026-10-23 06:33~07:31Z(< 10:50Z) → `fetched_at ≥ 10:50Z`인 parsed 문서 **0**. 365일 창(2026-10-26 기준 `filing_date ≥ 2025-10-26`) 안 **458건**이 다음 동기화 때 다시 읽힌다(60건×최대 10배치 = 600 ≥ 458이라 한 트리거로 끝남). `filing_date` 2025-10-23~25인 2건은 창 밖이라 다시 읽지 않고 구 파서 행이 남는다(N-F2C-3). 지금 DB의 자산명 `(` 시작 515행·`Stock (`류 729행, error 문서 77건·unparsed 351행이 재파싱 대상이다.
+- 설계 판단(비차단): 시각 상수는 단일 사용자 로컬 앱에서 충분하다. 모든 문서에 `fetched_at`이 있고(NULL 0), UTC naive로 일관되며, 재파싱은 수렴한다. 부담·위험: ① 파서를 바꿀 때마다 상수를 손으로 올려야 하고 잊으면 조용히 구 결과가 남는다(TODO_FOR_ME 44행에 절차 기록). ② `REPARSE_BEFORE`(10:50:00Z)가 `congress_provider.py` 최종 수정 시각(19:52:54 KST = 10:52:54Z)보다 약 3분 이르다 — 그 사이 구 코드로 파싱된 문서는 다시 읽히지 않는데, 서버가 내려가 있어 DB에 그런 문서는 0건이다. ③ `parser_version` 컬럼이면 자기 설명적이고 시계와 무관하지만 마이그레이션이 필요하다. 지금은 상수로 두고, 파서를 또 바꾸면 상수를 "수정 커밋 시각 이후"로 올리는 규칙만 지키면 된다.
+
+#### 3. 전체 점검
+| 항목 | 결과 |
+|---|---|
+| pytest | `py -3.11 -m uv run pytest -p no:cacheprovider` **613 passed**(128초, exit 0; 직전 610 → test_congress.py 20→22, test_congress_service.py 19→20, test_congress_api.py 4) |
+| ruff | `ruff check .` All checks passed / `ruff format --check .` 135 files already formatted |
+| alembic | 새 스크래치 DB `sqlite:///C:/<scratchpad>/verify-be3/f2c.db` `upgrade head` → `… 6de1dd6fc3d6 → 3af66f72d79b`, `heads` 단일 `3af66f72d79b (head)`, `check` "No new upgrade operations detected"(마이그레이션 없음 = 스키마 불변) |
+| gen:api | 재실행 전후 md5 동일(openapi.json `2e0915cc…`, schema.d.ts `90b85696…`, 직전 부록과도 같음). `git status --short frontend/src/api`는 HEAD 대비 M 4건(+703줄, F-2 추가분 그대로)이고 gen:api로 새로 바뀐 것은 없다 |
+| 프론트 | `npm run build` OK(1.03s), `npm run lint`(oxlint) OK, `npm test` **26 files / 150 tests passed** |
+| 실서버 | 8001 중단 상태라 `/api/congress/status`·재파싱 진행은 **서버 중단으로 미확인**. 사용자가 `.\scripts\dev-backend.ps1`로 띄우면 첫 `/trades` 또는 `/sync`에서 458건 재파싱이 한 트리거로 돈다(약 8배치, 직전 부록 기준 40초 안팎) |
+
+#### 4. 커밋 후보·공개 저장소
+- `git status --short --ignored`: 커밋 후보(M 27·?? 14)에 `*.db`·`.env`·`backend/artifacts/`·`frontend/.vitest/`·`backend/.dev-backend*.log`·`.claude/` 없음. ignored(`!!`)로 `backend/asset_manager.db(-shm/-wal)`·`demo.db`·`backend/.env`·`backend/artifacts/`·`frontend/.vitest/`·`frontend/dist/`·`.claude/` 확인. `.gitignore` diff는 `backend/.dev-backend*.log` 규칙 추가(N-F2B-14 해소)와 `.claude` 줄 끝 개행만.
+- `git diff backend/pyproject.toml` = `"pypdf>=6.21.2",` 한 줄, `uv.lock` +11줄 `pypdf 6.21.2` 블록만.
+- 개인정보 grep(M·?? 전부 + `docs/dev/*.md` + CLAUDE.md): 이메일 패턴·`@gmail`·이메일 앞부분·git 사용자명 0건(VERIFICATION.md의 "grep 결과 0건" 문구 자체만 매칭). 원화 금액 패턴은 ISSUES.md 354행(S2 백테스트 합성 평가액)과 VERIFICATION.md 544행(포맷 함수 예시)만으로 보유 데이터가 아니다. `backend/.env.example`은 전부 빈 값·주석 자리표시자(`AM_LIVE_TRADING=false` 포함). `scripts/dev-backend.ps1`에 연락처·키 없음. `congress_provider.USER_AGENT = "asset-manager (personal use)"`(`@` 없음, 테스트가 고정).
+- `AM_LIVE_TRADING`: 이번 변경 파일에 등장 없음(`.env.example` 기본 false 그대로).
+
+#### 5. 기록 점검
+- `docs/dev/ISSUES.md` ISSUE-045(470~475행, 2026-10-23 17:08 수정본): "라벨 연속 줄을 값에 이어 붙임"까지만 적혀 있고, 이 규칙이 실제 순서(행 → F S → S O → D)에서 다음 행을 흡수한 회귀(직전 부록 N-F2B-2)와 해결(`open_label` 재설계: 라벨은 앉은 행에, 자유 텍스트 둘째 줄은 문서 끝에서만 합침 + `REPARSE_BEFORE` 재파싱)은 **누락**. "검증" 줄의 테스트 수(20·19·4, 610)도 현재(22·20·4, 613)와 다르다. `REPARSE_BEFORE`·재파싱 언급은 ISSUES/DECISIONS/PROGRESS에 없고 TODO_FOR_ME 44행에만 있다.
+- 표: 45행, 심각도 치명 1·높음 13·중간 21·낮음 10, 상태 미해결 29·해결/부분 12·보류 3·결정됨 1로 합계 줄(65행)과 일치.
+
+#### 비차단
+- N-F2C-1(data-engineer, 중간): `CongressStatus.docs_pending`에 재파싱 잔량이 없다. 화면은 `docs_pending > 0`으로 "N건 더 받는 중"과 수동 받기 버튼(`CongressTrades.tsx` 31·101행)을 판단하므로 458건 재파싱 중에도 0으로 보인다(폴링은 `syncing`으로 계속된다). `status()`의 `_pending(...)`에 `_to_reparse(now)`를 더하거나 별도 필드(`docs_to_reparse`, 스키마 변경이면 `gen:api`)를 권한다. N-F2B-3(`rows_unparsed`)과 묶어 처리하면 좋다.
+- N-F2C-2(data-engineer, 낮음, 기존 동작): `batch = (fresh + retry + reparse)[:max]`라서 백로그(신규 또는 재파싱)가 남아 있는 동안 `failed` 문서는 **매 배치마다** 다시 받는다(시뮬레이션: 한 트리거 5배치에서 104를 5번 호출, `docs_failed` 합계 5). 실제 DB는 failed 0이라 지금 영향은 없다. retry는 트리거당 한 번만 넣는 것을 권한다.
+- N-F2C-3(data-engineer, 낮음): `REPARSE_BEFORE` 10:50:00Z < 파서 파일 최종 수정 10:52:54Z(위 ②). 또 `filing_date`가 365일 창 밖인 parsed 2건(2025-10-23~25)은 다시 읽히지 않아 구 파서 행이 `congress_trades`에 남는다(API 기본 180일 창에는 안 보임).
+- N-F2C-4(리드, 기록): ISSUE-045에 회귀·재설계·`REPARSE_BEFORE` 추가, 테스트 수 갱신. 재파싱 설계(시각 상수 vs `parser_version`)는 DECISIONS에 한 줄 남기길 권한다.
+- N-F2C-5(data-engineer, 낮음, 기록됨): 문서 중간 두 줄 `D:` 조각이 다음 행 자산명 앞에 붙는 한계(TODO 44행). 빈 값 `S O :`도 같은 경로. 두 경우 모두 14 PDF에서 0건.
+- N-F2C-6(기록): `parse_amount("$2,000.00")` = (2000, 2000)이라 정확 금액 행은 `amount_low == amount_high`다(20033320 ANGO). 직전 부록의 "low ≥ high 0건" 불변식은 재파싱 뒤 이 1행으로 깨지며 버그가 아니다.
+- N-F2C-7(app-engineer, 낮음): `CongressStatusOut.docs_pending` 설명("Still to download")과 `SyncResult.docs_pending`("including documents still to re-read")의 뜻이 달라졌다. N-F2C-1과 함께 정리.
+
+#### 재현
+- 스크래치: `C:\Users\user\AppData\Local\Temp\claude\c--Users-user-Desktop-project\390c67f2-c016-4b04-a641-dbd27eed466f\scratchpad\verify-be3\` — `probe3.py`(14 PDF 행/warning/`(`·`Stock (`·TRUNC/설명/low≥high, 출력 `probe3_out.txt`), `probe3_inputs.py`(내 입력 14종 + 픽스처 2종), `probe4.py`(라벨 종류·빈 값·소문자 시작 자산명), `probe5.py`(`L` 라벨 문맥), `sim_reparse.py`(메모리 DB 재파싱 시뮬레이션), `dbread3.py`(실제 DB `mode=ro` 집계), `pytest_full.log`, `frontend_chain.log`, `f2c.db`.
+- backend\: `unset VIRTUAL_ENV; py -3.11 -m uv run python -I -X utf8 <scratch>\verify-be3\probe3.py <scratch>\verify-be-dl <scratch>\verify-be2-dl`(probe2.py는 삭제된 `_looks_like_row_text`를 참조해 현재 트리에서 돌지 않아 사본을 새로 썼다) / `… probe3_inputs.py` / `… probe4.py <pdf dirs>` / `… sim_reparse.py` / `py -3.11 -I -X utf8 <scratch>\verify-be3\dbread3.py`
+- `py -3.11 -m uv run pytest -p no:cacheprovider` / `ruff check .` / `ruff format --check .` / `AM_DATABASE_URL=sqlite:///C:/<scratch>/verify-be3/f2c.db py -3.11 -m uv run alembic upgrade head && alembic heads && alembic check`
+- frontend\: `unset VIRTUAL_ENV; md5sum src/api/openapi.json src/api/schema.d.ts; npm run gen:api; md5sum …; git status --short src/api; npm run build; npm run lint; npm test`
+- 공개 PDF가 없을 때: `curl -A "asset-manager (personal use)" https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{2025|2026}/<doc_id>.pdf`(문서 id는 위 표)

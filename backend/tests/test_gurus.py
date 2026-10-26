@@ -14,7 +14,9 @@ from sqlalchemy import select
 
 from app.data import guru_provider as gp
 from app.data.guru_provider import (
+    CIK_MISMATCH,
     ArkProvider,
+    EmptyTableError,
     FakeCusipResolver,
     FakeGuruProvider,
     GuruDataError,
@@ -22,6 +24,8 @@ from app.data.guru_provider import (
     GuruSnapshot,
     OpenFigiClient,
     Sec13FProvider,
+    check_filer_name,
+    choose_filing_sets,
     choose_filings,
     combine_funds,
     parse_13f_table,
@@ -52,13 +56,19 @@ def _no_in_flight():
 
 
 def test_guru_list_is_consistent():
-    assert len({g.id for g in GURUS}) == len(GURUS)
+    assert len({g.id for g in GURUS}) == len(GURUS) == 18  # 1 ARK + 17 13F filers
+    assert len({g.cik for g in GURUS if g.cik}) == 17  # no CIK listed twice
     for g in GURUS:
         if g.source == "ark":
             assert g.funds and all(f in gp.ARK_FUND_FILES for f in g.funds)
+            assert g.expected_name is None
         else:
             assert g.cik and len(g.cik) == 10 and g.cik.isdigit()
+            # The EDGAR name check needs an upper-case keyword for every 13F filer.
+            assert g.expected_name and g.expected_name == g.expected_name.upper()
     assert find_guru("warren-buffett").cik == "0001067983"
+    assert find_guru("norges-bank").cik == "0001374170"
+    assert find_guru("national-pension-service").expected_name == "NATIONAL PENSION SERVICE"
     assert find_guru("nobody") is None
 
 
@@ -211,15 +221,32 @@ def test_choose_filings_marks_old_filings_as_thousands():
     assert choose_filings(recent)[0].in_thousands
 
 
-def _sec_transport(amendment_type: str = "NEW HOLDINGS"):
+SEC_BASE = "https://www.sec.gov/Archives/edgar/data/1067983/"
+EMPTY_TABLE = (
+    '<informationTable xmlns="http://www.sec.gov/edgar/document/thirteenf/informationtable">'
+    "</informationTable>"
+)
+
+
+def _sec_transport(
+    amendment_type: str = "NEW HOLDINGS",
+    name: str = "BERKSHIRE HATHAWAY INC",
+    former: tuple[str, ...] = (),
+    recent: dict = RECENT,
+    overrides: dict[str, str] | None = None,
+):
     seen = []
     cik = "0001067983"
-    base = "https://www.sec.gov/Archives/edgar/data/1067983/"
+    base = SEC_BASE
     original, amendment = "000119312526352200", "000119312526400000"
     primary = fixture("13f_amendment_primary.xml").replace("NEW HOLDINGS", amendment_type)
     routes = {
         f"https://data.sec.gov/submissions/CIK{cik}.json": json.dumps(
-            {"filings": {"recent": RECENT}}
+            {
+                "name": name,
+                "formerNames": [{"name": n} for n in former],
+                "filings": {"recent": recent},
+            }
         ),
         base + original + "/index.json": json.dumps(
             {"directory": {"item": [{"name": "primary_doc.xml"}, {"name": "56757.xml"}]}}
@@ -231,6 +258,7 @@ def _sec_transport(amendment_type: str = "NEW HOLDINGS"):
         ),
         base + amendment + "/infotable.xml": fixture("13f_amendment_table.xml"),
     }
+    routes.update(overrides or {})
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.append(req)
@@ -268,6 +296,83 @@ def test_sec_provider_reports_http_errors():
     http = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(403)))
     with pytest.raises(GuruDataError, match="HTTP 403"):
         Sec13FProvider(UA, http=http).fetch(find_guru("warren-buffett"))
+
+
+def test_sec_provider_refuses_cik_whose_edgar_name_does_not_match():
+    http, seen = _sec_transport(name="SOME OTHER FUND LP")
+    with pytest.raises(GuruDataError, match=CIK_MISMATCH):
+        Sec13FProvider(UA, http=http).fetch(find_guru("warren-buffett"))
+    assert len(seen) == 1  # stopped at the submissions JSON; no table was read
+
+
+def test_filer_name_check_accepts_former_names_and_skips_without_keyword():
+    gates = find_guru("gates-foundation")
+    check_filer_name(gates, {"name": "GATES FOUNDATION TRUST"})
+    old_name = Guru("x", "x", "x", "13f", cik="0000000001", expected_name="BILL & MELINDA")
+    check_filer_name(
+        old_name,
+        {
+            "name": "GATES FOUNDATION TRUST",
+            "formerNames": [{"name": "BILL & MELINDA GATES FOUNDATION TRUST"}],
+        },
+    )
+    check_filer_name(Guru("x", "x", "x", "13f", cik="0000000001"), {"name": "ANYONE"})
+    with pytest.raises(GuruDataError, match=CIK_MISMATCH):
+        check_filer_name(gates, {"name": "", "formerNames": []})
+    with pytest.raises(GuruDataError, match="0001166559"):
+        check_filer_name(gates, {"name": "melinda french gates llc"})
+
+
+def test_choose_filing_sets_orders_quarters_newest_first():
+    sets = choose_filing_sets(RECENT)
+    assert [[f.accession for f in s] for s in sets] == [
+        ["0001193125-26-352200", "0001193125-26-400000"],
+        ["0001193125-26-226661", "0000950123-26-008361"],
+    ]
+    assert [s[0].report_date for s in sets] == [date(2026, 6, 30), date(2026, 3, 31)]
+
+
+def _confidential_routes(q1_table: str) -> tuple[dict, dict[str, str]]:
+    """Originals only: Q2 2026 filed with an empty (confidential) table, Q1 2026 with rows."""
+    keep = [0, 2, 4]
+    recent = {k: [v[i] for i in keep] for k, v in RECENT.items()}
+    q1 = SEC_BASE + "000119312526226661"
+    overrides = {
+        SEC_BASE + "000119312526352200/56757.xml": EMPTY_TABLE,
+        q1 + "/index.json": json.dumps(
+            {"directory": {"item": [{"name": "primary_doc.xml"}, {"name": "table.xml"}]}}
+        ),
+        q1 + "/table.xml": q1_table,
+    }
+    return recent, overrides
+
+
+def test_sec_provider_falls_back_to_previous_quarter_when_table_is_confidential():
+    recent, overrides = _confidential_routes(fixture("13f_table.xml"))
+    http, _ = _sec_transport(recent=recent, overrides=overrides)
+    snap = Sec13FProvider(UA, http=http).fetch(find_guru("warren-buffett"))
+    assert snap.as_of == date(2026, 3, 31)
+    assert {h.cusip for h in snap.holdings} == {"037833100", "084670702"}
+    assert "2026-06-30" in snap.note and "2026-03-31" in snap.note and "기밀" in snap.note
+
+    # Every quarter empty: an error, never an empty portfolio shown as current.
+    recent, overrides = _confidential_routes(EMPTY_TABLE)
+    http, _ = _sec_transport(recent=recent, overrides=overrides)
+    with pytest.raises(EmptyTableError, match="no equity rows"):
+        Sec13FProvider(UA, http=http).fetch(find_guru("warren-buffett"))
+
+
+def test_cik_mismatch_is_not_retried_hourly():
+    guru = find_guru("warren-buffett")
+
+    def sync(error: str | None) -> GuruSync:
+        return GuruSync(guru_id=guru.id, source="13f", synced_at=NOW, error=error)
+
+    assert gurus_service._interval(guru, sync(None)) == gurus_service.SYNC_TTL["13f"]
+    assert gurus_service._interval(guru, sync("EDGAR: HTTP 503")) == gurus_service.FAIL_RETRY
+    assert (
+        gurus_service._interval(guru, sync(f"{CIK_MISMATCH}: x")) == gurus_service.SYNC_TTL["13f"]
+    )
 
 
 # --- OpenFIGI ----------------------------------------------------------------------------------

@@ -181,6 +181,22 @@ export const compareApi = {
     request<Benchmark>(`/portfolio/benchmark${query({ symbols: symbols.join(',') || undefined, start })}`),
 }
 
+// --- US House members' STOCK Act trade disclosures (Compare page, asset detail) ---
+export type CongressTrade = Schemas['CongressTradeOut']
+export type CongressTrades = Schemas['CongressTradesOut']
+export type CongressStatus = Schemas['CongressStatusOut']
+export type CongressSync = Schemas['CongressSyncOut']
+
+/** Own object like `compareApi`, so edits here never collide with `api`. */
+export const congressApi = {
+  trades: (symbols: string[], days = 180) =>
+    request<CongressTrades>(
+      `/congress/trades${query({ symbols: symbols.join(',') || undefined, days: String(days) })}`,
+    ),
+  status: () => request<CongressStatus>('/congress/status'),
+  sync: () => request<CongressSync>('/congress/sync', { method: 'POST' }),
+}
+
 // --- Forecasts: all held symbols at once (`api.forecastsHeld`) and the live verdict ---
 export type HeldForecast = Schemas['HeldForecastOut']
 export type HeldHorizonForecast = Schemas['HeldHorizonOut']

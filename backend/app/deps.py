@@ -5,6 +5,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.data.congress_provider import CongressProvider, build_congress_provider
 from app.data.fake_provider import FakeProvider
 from app.data.guru_provider import (
     CusipResolver,
@@ -18,6 +19,7 @@ from app.data.upbit_provider import RoutingProvider, UpbitProvider
 from app.db.session import SessionLocal, get_db
 from app.ml.sentiment import FinBertScorer, SentimentScorer
 from app.services.benchmarks import BenchmarkService
+from app.services.congress import CongressService
 from app.services.corporate_actions import CorporateActionService
 from app.services.forecasts import ForecastService, ForecastTraining
 from app.services.guru_compare import GuruCompareService
@@ -199,6 +201,26 @@ def get_guru_compare_service(
     portfolio: PortfolioService = Depends(get_portfolio_service),
 ) -> GuruCompareService:
     return GuruCompareService(gurus, portfolio)
+
+
+# --- US House members' trade disclosures (services/congress.py) -------------------------------
+
+
+@lru_cache
+def get_congress_provider() -> CongressProvider:
+    return build_congress_provider()
+
+
+def get_congress_max_batches() -> int:
+    return get_settings().congress_max_batches
+
+
+def get_congress_service(
+    db: Session = Depends(get_db),
+    provider: CongressProvider = Depends(get_congress_provider),
+    max_batches: int = Depends(get_congress_max_batches),
+) -> CongressService:
+    return CongressService(db, provider, max_batches=max_batches)
 
 
 def get_benchmark_service(

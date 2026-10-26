@@ -150,7 +150,7 @@ def test_sync_returns_202_and_holdings_endpoint_cuts_to_top(gclient, guru_provid
 
     body = gclient.get("/api/gurus/cathie-wood/holdings?top=2").json()
     assert body["total"] == 3
-    assert body["guru"]["name_ko"] == "캐시 우드" and body["guru"]["source"] == "ark"
+    assert body["guru"]["name_ko"] == "캐시 우드 (ARK)" and body["guru"]["source"] == "ark"
     assert [(h["symbol"], h["weight_pct"]) for h in body["holdings"]] == [
         ("TSLA", 50.0),
         ("AAPL", 30.0),

@@ -1731,6 +1731,108 @@
         }
       }
     },
+    "/api/congress/trades": {
+      "get": {
+        "tags": [
+          "congress"
+        ],
+        "summary": "Trades",
+        "operationId": "trades_api_congress_trades_get",
+        "parameters": [
+          {
+            "name": "symbols",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated tickers, e.g. my holdings",
+              "default": "",
+              "title": "Symbols"
+            },
+            "description": "Comma-separated tickers, e.g. my holdings"
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 730,
+              "minimum": 1,
+              "description": "Transactions in the last N days",
+              "default": 180,
+              "title": "Days"
+            },
+            "description": "Transactions in the last N days"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CongressTradesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/congress/status": {
+      "get": {
+        "tags": [
+          "congress"
+        ],
+        "summary": "Status ",
+        "operationId": "status__api_congress_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CongressStatusOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/congress/sync": {
+      "post": {
+        "tags": [
+          "congress"
+        ],
+        "summary": "Sync",
+        "description": "Manual \"fetch now\". Schedules a run only when one would do something (TTL passed or\ndocuments pending) and none is running; `syncing` says whether that happened.",
+        "operationId": "sync_api_congress_sync_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CongressSyncOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rules/check": {
       "get": {
         "tags": [
@@ -2323,6 +2425,301 @@
           "gurus"
         ],
         "title": "CompareOut"
+      },
+      "CongressStatusOut": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "index_modified": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Modified",
+            "description": "Last-Modified of the Clerk's index"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "docs_total": {
+            "type": "integer",
+            "title": "Docs Total"
+          },
+          "docs_parsed": {
+            "type": "integer",
+            "title": "Docs Parsed"
+          },
+          "docs_no_text": {
+            "type": "integer",
+            "title": "Docs No Text",
+            "description": "Scanned paper filings that cannot be read"
+          },
+          "docs_failed": {
+            "type": "integer",
+            "title": "Docs Failed"
+          },
+          "docs_pending": {
+            "type": "integer",
+            "title": "Docs Pending",
+            "description": "Still to download; a first sync works in batches"
+          },
+          "trades": {
+            "type": "integer",
+            "title": "Trades"
+          },
+          "coverage_note": {
+            "type": "string",
+            "title": "Coverage Note",
+            "default": "\ubbf8\uad6d \ud558\uc6d0 \uc758\uc6d0\uc758 STOCK Act \uac70\ub798 \uacf5\uc2dc(PTR)\uc785\ub2c8\ub2e4. \uac70\ub798 \ub4a4 \ucd5c\ub300 45\uc77c \uc9c0\ub098 \uacf5\uc2dc\ub418\uace0, \uae08\uc561\uc740 \uad6c\uac04\uc73c\ub85c\ub9cc \uacf5\uac1c\ub429\ub2c8\ub2e4. \ubcf8\uc778\u00b7\ubc30\uc6b0\uc790\u00b7\uc790\ub140\u00b7\uacf5\ub3d9 \uacc4\uc88c \uac70\ub798\uac00 \ud3ec\ud568\ub429\ub2c8\ub2e4. \uc0c1\uc6d0\uc740 \ud3ec\ud568\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4. \ud22c\uc790 \uc870\uc5b8\uc774 \uc544\ub2d9\ub2c8\ub2e4."
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "synced_at",
+          "index_modified",
+          "stale",
+          "syncing",
+          "error",
+          "docs_total",
+          "docs_parsed",
+          "docs_no_text",
+          "docs_failed",
+          "docs_pending",
+          "trades"
+        ],
+        "title": "CongressStatusOut"
+      },
+      "CongressSyncOut": {
+        "properties": {
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CongressStatusOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "syncing",
+          "status"
+        ],
+        "title": "CongressSyncOut"
+      },
+      "CongressTradeOut": {
+        "properties": {
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "asset_name": {
+            "type": "string",
+            "title": "Asset Name"
+          },
+          "asset_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Type",
+            "description": "Clerk asset code, e.g. ST (stock), MF (fund)"
+          },
+          "member": {
+            "type": "string",
+            "title": "Member"
+          },
+          "chamber": {
+            "type": "string",
+            "title": "Chamber"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "district": {
+            "type": "string",
+            "title": "District"
+          },
+          "party": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party",
+            "description": "Not in the Clerk's data; reserved for a later source"
+          },
+          "owner": {
+            "type": "string",
+            "title": "Owner",
+            "description": "SELF | SP (spouse) | DC (dependent child) | JT (joint)"
+          },
+          "side": {
+            "type": "string",
+            "title": "Side",
+            "description": "buy | sell | sell_partial | exchange"
+          },
+          "transaction_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Transaction Date"
+          },
+          "notification_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notification Date"
+          },
+          "filing_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Filing Date"
+          },
+          "amount_low": {
+            "type": "integer",
+            "title": "Amount Low"
+          },
+          "amount_high": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount High",
+            "description": "None for 'Over $X'"
+          },
+          "amount_label": {
+            "type": "string",
+            "title": "Amount Label"
+          },
+          "cap_gains_over_200": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Gains Over 200"
+          },
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id"
+          },
+          "doc_url": {
+            "type": "string",
+            "title": "Doc Url",
+            "description": "The original PDF on the Clerk's site"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "asset_name",
+          "asset_type",
+          "member",
+          "chamber",
+          "state",
+          "district",
+          "party",
+          "owner",
+          "side",
+          "transaction_date",
+          "notification_date",
+          "filing_date",
+          "amount_low",
+          "amount_high",
+          "amount_label",
+          "cap_gains_over_200",
+          "doc_id",
+          "doc_url"
+        ],
+        "title": "CongressTradeOut"
+      },
+      "CongressTradesOut": {
+        "properties": {
+          "syncing": {
+            "type": "boolean",
+            "title": "Syncing"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CongressStatusOut"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/CongressTradeOut"
+            },
+            "type": "array",
+            "title": "Trades"
+          }
+        },
+        "type": "object",
+        "required": [
+          "syncing",
+          "status",
+          "trades"
+        ],
+        "title": "CongressTradesOut"
       },
       "ConvertCurrencyIn": {
         "properties": {

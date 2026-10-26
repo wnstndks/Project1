@@ -13,6 +13,18 @@ const SHORT_NAME: Record<string, string> = {
   'stanley-druckenmiller': '드러켄밀러',
   'ray-dalio': '달리오',
   'david-tepper': '테퍼',
+  // Keys are the backend's guru ids (app/data/gurus.py); institutions keep a short institution name.
+  'george-soros': '소로스',
+  'carl-icahn': '아이칸',
+  'howard-marks': '하워드 막스',
+  'seth-klarman': '클라먼',
+  'li-lu': '리 루',
+  'gates-foundation': '게이츠 재단',
+  'mohnish-pabrai': '파브라이',
+  'terry-smith': '테리 스미스',
+  'dan-loeb': '댄 롭',
+  'national-pension-service': '국민연금',
+  'norges-bank': '노르웨이 국부펀드',
 }
 
 export const shortName = (g: Pick<Guru, 'id' | 'name_ko'>) => SHORT_NAME[g.id] ?? g.name_ko

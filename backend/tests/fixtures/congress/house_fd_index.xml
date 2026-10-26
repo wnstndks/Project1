@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FinancialDisclosure>
+  <Member>
+    <Prefix>Hon.</Prefix>
+    <Last>Doe</Last>
+    <First>Jane</First>
+    <Suffix />
+    <FilingType>P</FilingType>
+    <StateDst>ST01</StateDst>
+    <Year>2026</Year>
+    <FilingDate>10/1/2026</FilingDate>
+    <DocID>20039001</DocID>
+  </Member>
+  <Member>
+    <Prefix>Hon.</Prefix>
+    <Last>Roe</Last>
+    <First>John</First>
+    <Suffix>Jr.</Suffix>
+    <FilingType>P</FilingType>
+    <StateDst>CA12</StateDst>
+    <Year>2026</Year>
+    <FilingDate>9/15/2026</FilingDate>
+    <DocID>9001234</DocID>
+  </Member>
+  <Member>
+    <Prefix>Hon.</Prefix>
+    <Last>Roe</Last>
+    <First>John</First>
+    <Suffix>Jr.</Suffix>
+    <FilingType>C</FilingType>
+    <StateDst>CA12</StateDst>
+    <Year>2026</Year>
+    <FilingDate>5/15/2026</FilingDate>
+    <DocID>10078001</DocID>
+  </Member>
+  <Member>
+    <Prefix />
+    <Last>Aaronson</Last>
+    <First>Rich</First>
+    <Suffix />
+    <FilingType>W</FilingType>
+    <StateDst>MI04</StateDst>
+    <Year>2026</Year>
+    <FilingDate />
+    <DocID>8070</DocID>
+  </Member>
+  <Member>
+    <Prefix>Hon.</Prefix>
+    <Last>Doe</Last>
+    <First>Jane</First>
+    <Suffix />
+    <FilingType>P</FilingType>
+    <StateDst>ST01</StateDst>
+    <Year>2026</Year>
+    <FilingDate>1/20/2026</FilingDate>
+    <DocID>20038002</DocID>
+  </Member>
+</FinancialDisclosure>

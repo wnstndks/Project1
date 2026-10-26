@@ -1,9 +1,10 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 
 import type { Guru, GuruCompare } from '../api/client'
 import { useBenchmark, useGuruCompare, useGuruHoldings, useHoldings, usePortfolioHistory, useSyncGurus } from '../api/hooks'
 import { BenchmarkChart } from '../components/BenchmarkChart'
+import { CONGRESS_DAYS, CongressTrades } from '../components/CongressTrades'
 import { GuruOverlap } from '../components/GuruOverlap'
 import { Card, ErrorBox, Muted, SegmentedControl, Skeleton } from '../components/ui'
 import {
@@ -18,8 +19,7 @@ import { isLoaded, needsSecUserAgent, pct, sourceLabel } from '../lib/gurus'
 import { MIN_HISTORY_DAYS, historySpanDays } from '../lib/history'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
 
-const SEC_HINT =
-  "backend/.env에 AM_SEC_USER_AGENT를 '앱이름 이메일' 형식으로 넣으면 버핏 등 13F 투자자도 보여요."
+const SEC_HINT = "backend/.env에 AM_SEC_USER_AGENT를 '앱이름 이메일' 형식으로 넣으면 비교할 수 있습니다."
 
 /**
  * Compare page: my value against benchmarks fed with my own cash flows, which of my tickers each
@@ -34,13 +34,35 @@ export function Compare() {
         <h1 className="mt-2 text-2xl font-bold">유명 투자자와 비교</h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-2">
           캐시 우드는 ARK 액티브 ETF의 보유 종목이지 개인 계좌가 아닙니다. 버핏 등 다른 투자자는 SEC 13F 보고서로,
-          분기 말 뒤 최대 45일 지연되고 미국 상장 롱 포지션만 담겨 현금·공매도·옵션은 빠져 있습니다. 공개 자료를 그대로
-          옮긴 참고 정보이며 투자 조언이 아닙니다.
+          분기 말 뒤 최대 45일 지연되고 미국 상장 롱 포지션만 담겨 현금·공매도·옵션은 빠져 있습니다. 트럼프 등
+          대통령·개인의 계좌는 공시되는 포트폴리오가 없어(연 1회 재산 공개는 금액 구간만) 비교 대상에 없습니다. 의원
+          거래는 하원 공시만 보여 줍니다. 공개 자료를 그대로 옮긴 참고 정보이며 투자 조언이 아닙니다.
         </p>
       </header>
       <BenchmarkSection />
       <OverlapSection />
+      <CongressSection />
       <HoldingsSection />
+    </div>
+  )
+}
+
+/**
+ * Section 3: House members' filings naming my stock tickers. `#congress` (linked from the asset
+ * page) scrolls here once the card is on screen; the router does not handle hashes itself.
+ */
+function CongressSection() {
+  const mine = useHoldings()
+  const symbols = mine.data?.filter((h) => h.asset_type === 'stock').map((h) => h.symbol)
+  const { hash } = useLocation()
+  const ref = useRef<HTMLDivElement>(null)
+  const ready = symbols !== undefined
+  useEffect(() => {
+    if (hash === '#congress' && ready) ref.current?.scrollIntoView({ block: 'start' })
+  }, [hash, ready])
+  return (
+    <div id="congress" ref={ref} className="scroll-mt-4">
+      <CongressTrades symbols={mine.error ? [] : symbols} days={CONGRESS_DAYS} />
     </div>
   )
 }
@@ -163,12 +185,25 @@ function OverlapSection() {
           <GuruCard key={g.guru.id} item={g} />
         ))}
       </div>
-      {secMissing.length > 0 && (
-        <p className="mt-4 text-xs text-muted">
-          {SEC_HINT} <span>({secMissing.map((g) => g.guru.name_ko).join(', ')})</span>
-        </p>
-      )}
+      {secMissing.length > 0 && <SecMissingCard items={secMissing} />}
     </Card>
+  )
+}
+
+/**
+ * The 13F investors the server cannot fetch without a SEC User-Agent, folded into one card instead
+ * of one empty card each. The reason is the server's own wording; the names are `name_ko`.
+ */
+function SecMissingCard({ items }: { items: GuruCompare[] }) {
+  const reason = items.find((g) => g.guru.error)?.guru.error ?? 'AM_SEC_USER_AGENT 미설정'
+  return (
+    <section className="mt-4 rounded-xl border border-line p-4" aria-label={`13F 투자자 ${items.length}명 (동기화 안 됨)`}>
+      <h3 className="text-[15px] font-bold text-ink">13F 투자자 {items.length}명</h3>
+      <p className="mt-1 text-xs text-ink-2">{items.map((g) => g.guru.name_ko).join(', ')}</p>
+      <p className="mt-2 text-sm text-ink-2">
+        {reason} — {SEC_HINT}
+      </p>
+    </section>
   )
 }
 
@@ -215,7 +250,7 @@ function GuruHeader({ guru }: { guru: Guru }) {
   )
 }
 
-/** Section 3: pick an investor, see their twenty largest positions. */
+/** Section 4: pick an investor, see their twenty largest positions. */
 function HoldingsSection() {
   const compare = useGuruCompare()
   const mine = useHoldings()

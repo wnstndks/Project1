@@ -36,3 +36,5 @@ Thumbs.db
 
 # Claude Code 개인·임시 파일
 .claude
+# 개발 서버 로그 (scripts/dev-backend.ps1, 접근 로그에 보유 종목 URL이 남음)
+backend/.dev-backend*.log

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import {
   api,
   compareApi,
+  congressApi,
   type ActionStatus,
   type Currency,
   type ImportCommit,
@@ -310,3 +311,43 @@ export const useBenchmark = (symbols: string[], start?: string, enabled = true) 
     placeholderData: keepPreviousData,
     staleTime: 5 * 60_000,
   })
+
+// --- US House members' trade disclosures (Compare page, asset detail). Keys under ['congress']. ---
+
+/** Upper-cased, de-duplicated and sorted, so the same holdings in any order share one cache entry. */
+const congressSymbolKey = (symbols: string[]) =>
+  Array.from(new Set(symbols.map((s) => s.toUpperCase()))).sort().join(',')
+
+/**
+ * House members' trades in my symbols over the last `days`. Disabled with no symbols. A first visit
+ * starts a background sync on the server and answers `syncing: true`; the hook then polls every
+ * 15s until the server says it is done.
+ */
+export const useCongressTrades = (symbols: string[], days = 180) => {
+  const key = congressSymbolKey(symbols)
+  return useQuery({
+    queryKey: ['congress', 'trades', key, days] as const,
+    queryFn: () => congressApi.trades(key.split(','), days),
+    enabled: key.length > 0,
+    staleTime: 5 * 60_000,
+    refetchInterval: (q) => (q.state.data?.syncing ? 15_000 : false),
+  })
+}
+
+/** The trades response carries the same status; this is for screens without symbols to ask about. */
+export const useCongressStatus = (enabled = true) =>
+  useQuery({
+    queryKey: ['congress', 'status'] as const,
+    queryFn: congressApi.status,
+    staleTime: 5 * 60_000,
+    enabled,
+  })
+
+/** Asks the server for the next batch of filings (202); every congress query then refetches. */
+export function useSyncCongress() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: congressApi.sync,
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['congress'] }),
+  })
+}

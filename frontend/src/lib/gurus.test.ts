@@ -56,6 +56,12 @@ describe('overlap summary', () => {
   it('falls back to the Korean name for an unknown investor', () => {
     expect(shortName({ id: 'someone', name_ko: '아무개' })).toBe('아무개')
   })
+
+  it('shortens the newer 13F investors by their backend id, dropping the firm in parentheses', () => {
+    expect(shortName({ id: 'george-soros', name_ko: '조지 소로스 (소로스 펀드)' })).toBe('소로스')
+    expect(shortName({ id: 'national-pension-service', name_ko: '국민연금 (NPS)' })).toBe('국민연금')
+    expect(shortName({ id: 'norges-bank', name_ko: '노르웨이 국부펀드 (Norges Bank)' })).toBe('노르웨이 국부펀드')
+  })
 })
 
 describe('holdersOf', () => {
