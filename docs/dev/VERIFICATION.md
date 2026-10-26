@@ -875,3 +875,51 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - gen:api: backend\ `unset VIRTUAL_ENV; py -3.11 -m uv run python -m app.export_openapi ../frontend/src/api/openapi.json` → frontend\ `npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts; md5sum src/api/openapi.json src/api/schema.d.ts; git status --short src/api`
 - 실서버: `curl -s http://localhost:8001/api/congress/status` / 파서 mtime: `TZ=UTC stat -c '%y %n' backend/app/data/congress_provider.py`
 - 비고(줄 끝): 이 파일은 git에 LF로 저장된다(HEAD CR 0개, `.gitattributes` `* text=auto eol=lf`, `core.autocrlf=true`). 작업 트리는 588행부터 CRLF(이전 세션 기록)이고 이번 부록 45줄도 CRLF로 붙였다. 커밋 시 git이 LF로 정규화하므로 `git diff --stat`은 +45 삽입만 보인다. MSYS `sed`/`grep`은 읽을 때 CR을 떼므로 줄 끝 확인은 `xxd`·`tr -cd`로 한다.
+
+### 종목 상세 차트 툴팁: 일자별 고가·저가·전일 대비 (2026-10-26)
+
+대상: app-engineer의 미커밋 변경(수정 12 파일 +327/−40, 신규 `BarReadout.tsx`·`BarReadout.test.tsx`·`CandleChart.test.tsx`). 리드가 브라우저에서 찾은 "캔들 읽기판이 캔버스 아래에 깔림"(ISSUE-046)의 `z-10` 수정까지 포함한 최종 상태를 검증했다. 브라우저 확인은 리드.
+
+**판정: 통과**(반박 실패). 백엔드·`openapi.json`·`schema.d.ts` 변경 없음(`git status --short -- backend frontend/src/api` 비어 있음, `BarOut`에 `high`·`low`가 이미 있음).
+
+#### 재현(절대 경로, bash, `unset VIRTUAL_ENV`)
+| 시점 | 명령 | 결과 | 보고 |
+|---|---|---|---|
+| 1차(z-10 전, 15:17) | `npm run build && npm run lint && npm test` | build exit 0 · oxlint exit 0(0건이면 출력 없음) · vitest **27 files / 165 tests** | 27/165 일치 |
+| 2차(최종, 15:26:59 시작 — `CandleChart.tsx` 15:23:11·`CandleChart.test.tsx` 15:24:18 수정 뒤) | 같음 | build exit 0 · lint exit 0 · vitest **28 files / 167 tests**(4.27초) | 28/167 일치 |
+| 테스트 증분 | `git show HEAD:<test> \| grep -cE '^\s*(it\|test)\('` vs 작업 트리 | HEAD 150 → 167 = **+17**(PriceForecastChart +4, ui +1, format +1, priceChart +6, BarReadout 3, CandleChart 2) | 1차 보고 "+18"은 실제 +15. 최종 숫자는 일치하므로 비차단 |
+| 줄 끝 | `git ls-files --eol`(수정 12) / `grep -c $'\r'`(신규 3) | 모두 `w/lf` / CR 0 | — |
+
+#### 확인한 항목
+| 항목 | 확인 |
+|---|---|
+| `buildRows` 첫 봉 | `prev = i > 0 ? bars[i-1].close : prevClose`. `prevClose` 없으면 `closeChange`가 `undefined`를 돌려 스프레드로 `change`·`changePct` 키 자체가 없다(0으로 보이지 않음). 하락일 음수(테스트 `-1`, `-4/104`), `up`은 같은 `prev`로 판단해 `change` 부호와 일관(`withPrev.up === false`). |
+| 예측 행 % 기준 | `midPct = pctFrom(anchor, p50·anchor/base) = (p50/base − 1)·100`. 스케일 `k`가 약분되어 통화·진행 중 봉과 무관하고, `ForecastPanel.tsx:176`의 `move = (h.p50/h.base_price − 1)*100`과 같은 수. "마지막 종가 대비" 라벨과 일치. |
+| 정직성(예측) | `PriceTooltipContent`는 `row.close === undefined`일 때만 예측 분기이고 거기엔 `formatPct(v, true, 1)` 문자열 `TipRow`만 있다. `PnL`은 과거 분기에만 쓰인다. 테스트가 예측 행에 `[▲▼]` 없음·`.text-gain, .text-loss` 없음·`고가`·`전일 대비` 없음을 단언. 마지막 봉(띠 시작점, `mid`·`band` 있음)은 `close`가 있어 거래일로 표시된다. |
+| 정직성(과거) | `PnL` → `changeMark(direction)`(단일 출처) + `signed()`: 부호·▲▼·`text-gain/text-loss` 셋 다 나온다(`▼−4원(−3.85%)`, `▲+2원(+2.00%)`). `BarReadout`도 같은 `PnL`. 홈·헤더도 `PnL`을 쓰므로 어긋남 없음. `NewsCard`의 ▲▼는 뉴스 감성 표시(대비 수치 아님). |
+| 통화 | 두 차트 모두 `AssetDetail`의 `useMoney().format`을 prop으로 받아 그대로 쓴다. 원화 재계산 없음. `prevClose = bars[from-1].close`는 `scale`을 곱한 배열에서 꺼내므로 보이는 봉과 같은 통화이고 memo 의존성에 `scale` 포함. |
+| `priceDomain` 허용 목록 | `close/mid/band/ma*`만 — 기존 키 집합에서 제외 규칙(`t/volume/up`)을 뒤집은 것과 동치. 새 키(`open/high/low/change/changePct/midPct/bandPct`)는 축에 안 들어간다. 기존 `priceChart.test.ts` 11건 변경 없이 통과(17건으로 추가만), 평균단가·52주 extras 경로 변경 없음. |
+| `CandleChart` 콜백 | `onCrosshair`는 `candle`(차트 수명 동안 고정된 const)과 `setHoverDate`만 캡처 → stale closure 없음. `bars`는 렌더에서 읽는다. 정리 함수가 `unsubscribeCrosshairMove` 뒤 `chart.remove()`. 빈 `seriesData`(마우스 이탈) → `null` → 마지막 봉, `hoverDate`가 `bars`에 없으면(기간 변경) 마지막 봉. 같은 문자열이면 React가 재렌더를 생략. |
+| `timeKey` | lightweight-charts 5.2.1 typings: `seriesData` "Values of the map are original data items" → 우리가 넣은 `'YYYY-MM-DD'` 문자열이 그대로 온다. 문자열·BusinessDay 둘 다 처리(테스트). 숫자(UTCTimestamp) 분기는 현재 쓰이지 않는 경로. |
+| 첫 봉 거래량 색 | 캔들 `volumes`도 `prev = i > 0 ? … : prevClose`로 선 보기 `up`과 같은 기준. 의존성에 `prevClose` 추가. |
+| ISSUE-046 `z-10` | 번들에 `zIndex = '1'` 3곳·`'2'` 3곳(절대 배치 캔버스). dist CSS에 `.z-10{z-index:10}`, `bg-surface/85` → `color-mix(in oklab, var(--surface) 85%, transparent)` 생성 확인(Tailwind 4.3.3). 새 테스트가 `z-10`·`pointer-events-none`을 고정. |
+| 색 | 변경 파일에 `#rrggbb` 리터럴 없음(`translucent` 정규식만, 기존). 토큰 클래스·CSS 변수만. `console.`·`debugger` 없음. |
+| 합성 데이터 | 테스트 값은 99/104/98/101, 2026-10-19~21, 거래량 1,000·25,000,000 등 합성값. 실제 보유 종목·수량·금액 없음. |
+| 기록 | CLAUDE.md 한 문장(툴팁·읽기판·`prevClose`·예측 날 부호만) 코드와 일치. `DECISIONS.md` D-031은 리드 작성. |
+
+#### 발견한 문제
+- ISSUE-046(리드가 브라우저에서 발견, app-engineer `z-10`으로 수정, verifier는 번들·dist CSS·테스트로 확인). 그 외 차단 문제 없음.
+
+#### 비차단
+- 1차 보고의 "+18 tests"는 실제 +15(최종 +17). 최종 27→28 files / 165→167 tests는 보고와 일치.
+- `timeKey`의 숫자 분기는 `toISOString()`(UTC 날짜)이라 UTCTimestamp를 쓰게 되면 로컬 날짜와 어긋날 수 있다. 지금은 문자열만 넣어 dead path.
+- D-031에 실제 포트폴리오의 손실 확률(55~60%)·변동성(연 40~50%) 범위가 적혀 있다. 종목·수량·금액은 아니라 규칙 안이지만 공개 저장소 기준은 리드 판단.
+- 보합(변동 0)인 날은 `PnL`이 중립·화살표 없음인데 거래량 막대는 `>=` 규칙으로 상승색. 기존 규칙이고 이번 변경이 만든 것 아님.
+- 업비트 코인 거래량(코인 단위, 소수)이 `formatKrwCompact`로 `1,234.568`·`만` 단위로 보인다. 선 보기 툴팁의 기존 동작이 읽기판에도 그대로 옴. 표기 문제.
+
+#### 재현 명령
+- `cd /c/Users/user/Desktop/project && git status --short && git diff --stat && git status --short -- backend frontend/src/api`
+- `cd /c/Users/user/Desktop/project/frontend && unset VIRTUAL_ENV && npm run build && npm run lint && npm test`
+- `git ls-files --eol <수정 파일>` / `grep -c $'\r' <신규 파일>`
+- `grep -oE "\.z-10\{[^}]*\}|\.bg-surface[^{]*\{[^}]*\}" frontend/dist/assets/*.css` / `grep -oE "zIndex = '[0-9]+'" frontend/node_modules/lightweight-charts/dist/lightweight-charts.development.mjs | sort | uniq -c`
+- 로그: 스크래치 `fe_run.log`(1차)·`fe_run2.log`(2차).

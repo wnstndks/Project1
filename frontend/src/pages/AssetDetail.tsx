@@ -71,7 +71,9 @@ export function AssetDetail() {
     const from = found < 0 ? 0 : found
     const closes = bars.map((b) => b.close)
     const ma: MaLine[] = periods.map((n) => ({ n, values: sma(closes, n).slice(from) }))
-    return { all: bars, visible: bars.slice(from), ma, extremes: fiftyTwoWeek(bars) }
+    // The bar before the visible window gives the first visible bar its day change.
+    const prevClose = from > 0 ? bars[from - 1].close : undefined
+    return { all: bars, visible: bars.slice(from), prevClose, ma, extremes: fiftyTwoWeek(bars) }
   }, [allBars, scale, start, periods])
 
   if (info.error) return <ErrorBox error={info.error} />
@@ -189,6 +191,7 @@ export function AssetDetail() {
             {view === 'line' ? (
               <PriceForecastChart
                 bars={bars}
+                prevClose={chart.prevClose}
                 ma={chart.ma}
                 horizons={forecast.data?.horizons}
                 avgCost={avgCost}
@@ -197,7 +200,7 @@ export function AssetDetail() {
                 compact={compact}
               />
             ) : (
-              <CandleChart bars={bars} ma={candleMa} avgCost={avgCost} />
+              <CandleChart bars={bars} ma={candleMa} avgCost={avgCost} prevClose={chart.prevClose} format={format} />
             )}
           </div>
         )}

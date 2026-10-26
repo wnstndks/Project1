@@ -34,6 +34,20 @@ export function formatPct(v: number, signed = true, digits = 2): string {
   return `${sign}${Math.abs(v).toFixed(digits)}%`
 }
 
+export type ChangeTone = 'text-gain' | 'text-loss' | 'text-ink-2'
+
+/**
+ * Direction cue for a change figure (day move, profit, forecast is NOT one). Korean convention:
+ * gains red with ▲, losses blue with ▼, flat neutral with no arrow. Colour is never the only
+ * cue, so callers print the signed number beside the arrow. One source for every "대비" figure
+ * (home list, asset header, chart tooltips) so they cannot drift apart.
+ */
+export function changeMark(direction: number): { tone: ChangeTone; arrow: '▲' | '▼' | '' } {
+  if (direction > 0) return { tone: 'text-gain', arrow: '▲' }
+  if (direction < 0) return { tone: 'text-loss', arrow: '▼' }
+  return { tone: 'text-ink-2', arrow: '' }
+}
+
 /** Rounded won for sentences: 1,537만원 / 2.10억원. Below 1만 falls back to 1,234원. */
 export function formatKrwShort(v: number): string {
   const abs = Math.abs(v)

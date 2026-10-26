@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useMoney } from '../lib/currency'
-import { formatPct, signed } from '../lib/format'
+import { changeMark, formatPct, signed } from '../lib/format'
 
 export function Card({ title, actions, children, className = '' }: {
   title?: string
@@ -25,22 +25,25 @@ export function Card({ title, actions, children, className = '' }: {
 }
 
 /**
- * Gains red, losses blue (Korean convention). Sign and arrow carry the direction too.
+ * Gains red, losses blue (Korean convention, `changeMark`). Sign and arrow carry the direction too.
  * `value` must already be in the selected currency (see useMoney().pick).
  * `pctOnly` shows just the arrow and percentage (compact list rows) and takes its direction from `pct`.
  * `digits` is the percentage precision (2 by default; 1 for forecast moves).
+ * `format` overrides the selected-currency formatter when the caller already holds the one its
+ * chart uses (tooltips), so the figure and the axis never disagree.
  */
-export function PnL({ value, pct, pctOnly = false, digits = 2, className = '' }: {
+export function PnL({ value, pct, pctOnly = false, digits = 2, className = '', format: formatOverride }: {
   value: number
   pct?: number
   pctOnly?: boolean
   digits?: number
   className?: string
+  format?: (v: number) => string
 }) {
-  const { format } = useMoney()
+  const money = useMoney()
+  const format = formatOverride ?? money.format
   const direction = pctOnly ? (pct ?? 0) : value
-  const tone = direction > 0 ? 'text-gain' : direction < 0 ? 'text-loss' : 'text-ink-2'
-  const arrow = direction > 0 ? '▲' : direction < 0 ? '▼' : ''
+  const { tone, arrow } = changeMark(direction)
   return (
     <span className={`whitespace-nowrap ${tone} ${className}`}>
       {arrow && <span aria-hidden="true" className="mr-0.5 text-[0.75em]">{arrow}</span>}

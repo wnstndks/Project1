@@ -41,4 +41,9 @@ describe('PnL', () => {
     )
     expect(screen.getByText(/−397,000원/)).toHaveClass('text-loss')
   })
+
+  it('uses a given formatter over the selected currency (chart tooltips)', () => {
+    renderIn('KRW', <PnL value={2.5} pct={1.25} format={(v) => `$${v.toFixed(2)}`} />)
+    expect(screen.getByText(/\+\$2\.50/)).toHaveTextContent('▲+$2.50(+1.25%)')
+  })
 })

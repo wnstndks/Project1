@@ -11,11 +11,14 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type LineData,
+  type MouseEventParams,
+  type Time,
 } from 'lightweight-charts'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { Bar } from '../api/client'
 import { MA_STYLE } from '../lib/priceChart'
+import { BarReadout } from './BarReadout'
 import { CandleSwatch, ChartLegend, LineSwatch, VolumeSwatch } from './ui'
 
 /** A moving average to draw: values aligned with `bars`, color as a CSS variable name (`--ink-2`). */
@@ -42,7 +45,25 @@ function translucent(color: string): string {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}80` : color
 }
 
-export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: CandleMa[]; avgCost?: number }) {
+/** The bar date (YYYY-MM-DD) behind a lightweight-charts time, whichever shape it comes back in. */
+function timeKey(t: Time): string {
+  if (typeof t === 'string') return t
+  if (typeof t === 'number') return new Date(t * 1000).toISOString().slice(0, 10)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${t.year}-${pad(t.month)}-${pad(t.day)}`
+}
+
+type Props = {
+  bars: Bar[]
+  ma?: CandleMa[]
+  avgCost?: number
+  /** Close of the bar just before `bars`, so the first candle has its day change too. */
+  prevClose?: number
+  /** The page's price formatter (display currency), for the corner readout. */
+  format: (v: number) => string
+}
+
+export function CandleChart({ bars, ma = [], avgCost, prevClose, format }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -52,6 +73,8 @@ export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: Cand
   // Bumped when the theme changes (the app's <html data-theme>, or the OS scheme while on
   // "system") so every series re-reads the CSS variables.
   const [theme, setTheme] = useState(0)
+  // Date of the bar under the crosshair; null when the pointer is off the data (readout shows the last bar).
+  const [hoverDate, setHoverDate] = useState<string | null>(null)
 
   useEffect(() => {
     if (!container.current) return
@@ -77,6 +100,14 @@ export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: Cand
     volumeRef.current = volume
     maRef.current = maSeries
 
+    // The readout follows the candle under the crosshair; seriesData carries the original item,
+    // whose time is the bar date we set. Off the data (or on mouse leave) it falls back to null.
+    const onCrosshair = (param: MouseEventParams) => {
+      const item = param.seriesData.get(candle) as CandlestickData | undefined
+      setHoverDate(item ? timeKey(item.time) : null)
+    }
+    chart.subscribeCrosshairMove(onCrosshair)
+
     const scheme = window.matchMedia('(prefers-color-scheme: dark)')
     const onScheme = () => setTheme((n) => n + 1)
     scheme.addEventListener('change', onScheme)
@@ -86,6 +117,7 @@ export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: Cand
     return () => {
       scheme.removeEventListener('change', onScheme)
       observer.disconnect()
+      chart.unsubscribeCrosshairMove(onCrosshair)
       chart.remove()
       chartRef.current = null
       candleRef.current = null
@@ -124,15 +156,14 @@ export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: Cand
       low: b.low,
       close: b.close,
     }))
-    const volumes: HistogramData[] = bars.map((b, i) => ({
-      time: b.date,
-      value: b.volume,
-      color: translucent(b.close >= (bars[i - 1]?.close ?? b.open) ? c.up : c.down),
-    }))
+    const volumes: HistogramData[] = bars.map((b, i) => {
+      const prev = i > 0 ? bars[i - 1].close : prevClose
+      return { time: b.date, value: b.volume, color: translucent(b.close >= (prev ?? b.open) ? c.up : c.down) }
+    })
     candle.setData(candles)
     volume.setData(volumes)
     chart.timeScale().fitContent()
-  }, [bars, theme])
+  }, [bars, prevClose, theme])
 
   // One line series per enabled average, created on demand and removed when toggled off.
   useEffect(() => {
@@ -198,9 +229,30 @@ export function CandleChart({ bars, ma = [], avgCost }: { bars: Bar[]; ma?: Cand
   ]
   if (avgCost !== undefined) legend.push({ label: '내 평균단가', swatch: <LineSwatch color="var(--ink-2)" dash="3 3" /> })
 
+  // The bar the readout describes: the hovered one, else the last. A hover date that is no
+  // longer in `bars` (range just changed) also falls back to the last bar.
+  const hovered = hoverDate === null ? -1 : bars.findIndex((b) => b.date === hoverDate)
+  const focusIndex = hovered >= 0 ? hovered : bars.length - 1
+  const focus = bars[focusIndex]
+
   return (
     <div>
-      <div ref={container} className="h-80 w-full" role="img" aria-label="캔들 차트" />
+      <div className="relative">
+        <div ref={container} className="h-80 w-full" role="img" aria-label="캔들 차트" />
+        {focus && (
+          // Top-left, clear of the price scale on the right; pointer events pass through to the canvas.
+          // lightweight-charts stacks its canvases at z-index 1 and 2 with an opaque background, so
+          // the readout needs its own z-index or it is painted over (DOM order alone is not enough).
+          <div className="pointer-events-none absolute top-2 left-2 z-10 max-w-[calc(100%-88px)] rounded-md bg-surface/85 px-2 py-1">
+            <BarReadout
+              bar={focus}
+              prevClose={focusIndex > 0 ? bars[focusIndex - 1].close : prevClose}
+              ma={ma.map((m) => ({ n: m.n, value: m.values[focusIndex] ?? null }))}
+              format={format}
+            />
+          </div>
+        )}
+      </div>
       <ChartLegend items={legend} />
     </div>
   )

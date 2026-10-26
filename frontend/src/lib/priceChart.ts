@@ -17,7 +17,7 @@ export const MA_STYLE: Record<number, { cssVar: string; dash?: string; label: st
 }
 
 export type MaLine = { n: number; values: (number | null)[] }
-export type ChartBar = { date: string; open: number; close: number; volume: number }
+export type ChartBar = { date: string; open: number; high: number; low: number; close: number; volume: number }
 export type ForecastPoint = {
   target_date: string
   base_price: number
@@ -30,14 +30,26 @@ export type ForecastPoint = {
 
 export type Row = {
   t: number
+  open?: number
+  high?: number
+  low?: number
   close?: number
   volume?: number
   /** Close at or above the previous close: colors the volume bar. */
   up?: boolean
+  /** Close minus the previous close (amount in the display currency), and the same as a percent. */
+  change?: number
+  changePct?: number
   mid?: number
   band?: [number, number]
+  /** Forecast rows: the median and band edges as percent moves from the last close drawn. */
+  midPct?: number
+  bandPct?: [number, number]
   [ma: `ma${number}`]: number | undefined
 }
+
+/** Fields that live on the price axis; everything else (volume, percents, flags) stays off it. */
+const onPriceAxis = (key: string) => key === 'close' || key === 'mid' || key === 'band' || key.startsWith('ma')
 
 export const DAY_MS = 86_400_000
 
@@ -51,6 +63,19 @@ export function todayStart(): number {
   return d.getTime()
 }
 
+/** Percent move from `from` to `to`; the same arithmetic everywhere a "대비" figure is shown. */
+export const pctFrom = (from: number, to: number) => ((to - from) / from) * 100
+
+/**
+ * A bar's move against the previous close: the amount and the percent. Undefined without a
+ * usable previous close (first bar of the whole history), so the caller can hide the line
+ * rather than show a zero that looks like a flat day.
+ */
+export function closeChange(close: number, prevClose: number | undefined): { change: number; changePct: number } | undefined {
+  if (prevClose === undefined || !Number.isFinite(prevClose) || prevClose <= 0) return undefined
+  return { change: close - prevClose, changePct: pctFrom(prevClose, close) }
+}
+
 /**
  * Chart rows: one per bar, then one per forecast horizon. The fan starts at the last close
  * (mid = close, band collapsed) so it grows out of the price line. The model forecasts
@@ -58,14 +83,23 @@ export function todayStart(): number {
  * on the last close drawn, so the band stays continuous when the last bar is still trading
  * or the chart is in won. Horizons whose target date is not after the last bar are skipped;
  * without any usable horizon the rows carry no fan at all (no stray anchor dot).
+ *
+ * `prevClose` is the close of the bar just before `bars` (the caller fetches more history than
+ * it shows), so the first visible bar still has its day change; without it that bar's change
+ * is left undefined.
  */
-export function buildRows(bars: ChartBar[], ma: MaLine[], horizons: ForecastPoint[] = []): Row[] {
+export function buildRows(bars: ChartBar[], ma: MaLine[], horizons: ForecastPoint[] = [], prevClose?: number): Row[] {
   const rows: Row[] = bars.map((b, i) => {
+    const prev = i > 0 ? bars[i - 1].close : prevClose
     const row: Row = {
       t: dayStart(b.date),
+      open: b.open,
+      high: b.high,
+      low: b.low,
       close: b.close,
       volume: b.volume,
-      up: b.close >= (bars[i - 1]?.close ?? b.open),
+      up: b.close >= (prev ?? b.open),
+      ...closeChange(b.close, prev),
     }
     for (const m of ma) row[`ma${m.n}`] = m.values[i] ?? undefined
     return row
@@ -81,7 +115,15 @@ export function buildRows(bars: ChartBar[], ma: MaLine[], horizons: ForecastPoin
   last.band = [anchor, anchor]
   for (const h of future) {
     const k = anchor / h.base_price
-    rows.push({ t: dayStart(h.target_date), mid: h.p50 * k, band: [h.p10 * k, h.p90 * k] })
+    const mid = h.p50 * k
+    const band: [number, number] = [h.p10 * k, h.p90 * k]
+    rows.push({
+      t: dayStart(h.target_date),
+      mid,
+      band,
+      midPct: pctFrom(anchor, mid),
+      bandPct: [pctFrom(anchor, band[0]), pctFrom(anchor, band[1])],
+    })
   }
   return rows
 }
@@ -97,7 +139,7 @@ export function priceDomain(rows: Row[], extras: number[] = []): [number, number
   let max = -Infinity
   for (const r of rows) {
     for (const [k, v] of Object.entries(r)) {
-      if (k === 't' || k === 'volume' || k === 'up' || v === undefined || v === null) continue
+      if (!onPriceAxis(k) || v === undefined || v === null) continue
       for (const x of Array.isArray(v) ? v : [v]) {
         if (typeof x !== 'number' || !Number.isFinite(x)) continue
         if (x < min) min = x

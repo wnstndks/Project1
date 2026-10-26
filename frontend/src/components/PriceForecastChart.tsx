@@ -16,7 +16,7 @@ import {
 } from 'recharts'
 
 import { COVERAGE_PHRASE } from '../lib/forecast'
-import { formatDate, formatKrwCompact, isoDate } from '../lib/format'
+import { formatDate, formatKrwCompact, formatPct, isoDate } from '../lib/format'
 import type { Extreme } from '../lib/indicators'
 import {
   buildRows,
@@ -33,11 +33,13 @@ import {
   type ForecastPoint,
   type Row,
 } from '../lib/priceChart'
-import { BandSwatch, ChartLegend, LineSwatch, VolumeSwatch } from './ui'
+import { BandSwatch, ChartLegend, LineSwatch, PnL, VolumeSwatch } from './ui'
 
 type Props = {
   /** Visible bars, already in the display currency. */
   bars: ChartBar[]
+  /** Close of the bar just before `bars`, so the first visible bar has its day change too. */
+  prevClose?: number
   /** Enabled moving averages, values aligned with `bars`. */
   ma: MaLine[]
   horizons?: ForecastPoint[]
@@ -50,8 +52,8 @@ type Props = {
 export const BAND_LEGEND = `예측 범위(${COVERAGE_PHRASE}) · 점선은 예상 중간값`
 export const NO_DIRECTION_NOTE = '예측 띠는 변동 폭만 참고하세요. 오를지 내릴지는 우위 없음입니다.'
 
-export function PriceForecastChart({ bars, ma, horizons = [], avgCost, extremes, format, compact }: Props) {
-  const rows = buildRows(bars, ma, horizons)
+export function PriceForecastChart({ bars, prevClose, ma, horizons = [], avgCost, extremes, format, compact }: Props) {
+  const rows = buildRows(bars, ma, horizons, prevClose)
   const first = rows[0]?.t ?? 0
   const lastBar = bars.at(-1)
   const lastT = rows.at(-1)?.t ?? 0
@@ -220,17 +222,22 @@ export function PriceForecastChart({ bars, ma, horizons = [], avgCost, extremes,
   )
 }
 
-function PriceTooltip({
-  active,
-  payload,
-  label,
-  ma,
-  format,
-}: TooltipContentProps & { ma: MaLine[]; format: (v: number) => string }) {
+function PriceTooltip({ active, payload, ma, format }: TooltipContentProps & { ma: MaLine[]; format: (v: number) => string }) {
   if (!active || !payload?.length) return null
-  const row = payload[0].payload as Row
-  const date = formatDate(isoDate(new Date(Number(label))), 'long')
+  return <PriceTooltipContent row={payload[0].payload as Row} ma={ma} format={format} />
+}
+
+/**
+ * The tooltip body, apart from recharts so it can be rendered directly in tests. A past day
+ * shows the close, its move against the previous close (`PnL`: sign, ▲▼ and gain/loss colour
+ * together), the day's high/low/open, the enabled averages and the volume. A forecast day shows
+ * the median and band with their percent from the last close, as plain signed numbers: a
+ * forecast is not a gain or a loss, so no ▲▼ and no colour (CLAUDE.md).
+ */
+export function PriceTooltipContent({ row, ma, format }: { row: Row; ma: MaLine[]; format: (v: number) => string }) {
+  const date = formatDate(isoDate(new Date(row.t)), 'long')
   const forecast = row.close === undefined
+  const pct = (v: number) => formatPct(v, true, 1)
   return (
     <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-sm">
       <div className="mb-1 text-muted">{forecast ? `${date} 예측` : date}</div>
@@ -240,10 +247,19 @@ function PriceTooltip({
           {row.band && (
             <TipRow label={`${COVERAGE_PHRASE} 범위`} value={`${format(row.band[0])}~${format(row.band[1])}`} />
           )}
+          {row.midPct !== undefined && row.bandPct && (
+            <TipRow label="마지막 종가 대비" value={`${pct(row.midPct)} (${pct(row.bandPct[0])}~${pct(row.bandPct[1])})`} />
+          )}
         </>
       ) : (
         <>
           <TipRow label="종가" value={format(row.close!)} strong />
+          {row.change !== undefined && (
+            <TipRow label="전일 대비" value={<PnL value={row.change} pct={row.changePct} format={format} />} />
+          )}
+          {row.high !== undefined && <TipRow label="고가" value={format(row.high)} />}
+          {row.low !== undefined && <TipRow label="저가" value={format(row.low)} />}
+          {row.open !== undefined && <TipRow label="시가" value={format(row.open)} />}
           {ma.map((m) => {
             const v = row[`ma${m.n}`]
             return v === undefined ? null : (
@@ -257,7 +273,7 @@ function PriceTooltip({
   )
 }
 
-function TipRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function TipRow({ label, value, strong = false }: { label: string; value: ReactNode; strong?: boolean }) {
   return (
     <div className="flex justify-between gap-4">
       <span className="text-ink-2">{label}</span>

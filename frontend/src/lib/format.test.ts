@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  changeMark,
   daysAgo,
   displaySymbol,
   formatDate,
@@ -64,5 +65,13 @@ describe('format', () => {
     expect(daysAgo(1, new Date(2026, 0, 1))).toBe('2025-12-31')
     expect(displaySymbol('BTC-USD')).toBe('BTC')
     expect(displaySymbol('AAPL')).toBe('AAPL')
+  })
+})
+
+describe('changeMark', () => {
+  it('pairs red with ▲ for gains, blue with ▼ for losses, and a neutral tone with no arrow when flat', () => {
+    expect(changeMark(0.5)).toEqual({ tone: 'text-gain', arrow: '▲' })
+    expect(changeMark(-3)).toEqual({ tone: 'text-loss', arrow: '▼' })
+    expect(changeMark(0)).toEqual({ tone: 'text-ink-2', arrow: '' })
   })
 })
