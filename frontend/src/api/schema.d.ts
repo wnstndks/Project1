@@ -409,6 +409,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Manual
+         * @description Holdings typed in by hand, reviewed in the same table as screenshot rows. Needs no
+         *     extractor: the service only quotes prices here, so it works without an API key.
+         */
+        post: operations["preview_manual_api_imports_manual_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/commit": {
         parameters: {
             query?: never;
@@ -1608,6 +1629,29 @@ export interface components {
             /** Range */
             range: string;
         };
+        /** ManualIn */
+        ManualIn: {
+            /** Rows */
+            rows: components["schemas"]["ManualRowIn"][];
+        };
+        /**
+         * ManualRowIn
+         * @description A holding typed in on the import page instead of read from a screenshot.
+         */
+        ManualRowIn: {
+            asset_type: components["schemas"]["AssetType"];
+            /** Symbol */
+            symbol: string;
+            /** Quantity */
+            quantity: number | string;
+            /**
+             * Avg Price
+             * @description In currency
+             */
+            avg_price?: number | string | null;
+            /** @default USD */
+            currency: components["schemas"]["Currency"];
+        };
         /** Metrics */
         Metrics: {
             /** Samples */
@@ -1747,6 +1791,11 @@ export interface components {
             delta_quantity: number | null;
             /** Delta Price */
             delta_price: number | null;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "screenshot" | "manual";
         };
         /** ProjectionIn */
         ProjectionIn: {
@@ -3139,6 +3188,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_preview_screenshot_api_imports_screenshot_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_manual_api_imports_manual_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualIn"];
             };
         };
         responses: {

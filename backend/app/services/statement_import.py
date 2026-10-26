@@ -6,7 +6,12 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 
-from app.data.assets import UnsupportedSymbolError, normalize_symbol
+from app.data.assets import (
+    CRYPTO_ASSETS,
+    UPBIT_MARKETS,
+    UnsupportedSymbolError,
+    normalize_symbol,
+)
 from app.db.models import AssetType, Currency, Side, Transaction
 from app.schemas.transactions import TransactionIn
 from app.services.errors import DomainError
@@ -37,8 +42,15 @@ DERIVED_PRICE_TOLERANCE = Decimal("0.05")
 # Purchase rates outside this band are misread numbers, not rates anyone paid.
 IMPLIED_FX_BAND = (Decimal("500"), Decimal("3000"))
 
+# Shown on a row typed in without an average price; the current price stands in for it.
+FILLED_WITH_MARKET_PRICE = (
+    "평균단가를 입력하지 않아 현재가로 채웠어요. 수익률이 0%에서 시작하니 "
+    "실제 평균단가를 알면 거래 내역에서 고치세요."
+)
+
 RowStatus = Literal["ok", "unsupported", "unknown", "invalid"]
 Diff = Literal["new", "same", "different"]
+Origin = Literal["screenshot", "manual"]
 
 
 @dataclass
@@ -73,12 +85,24 @@ class PreviewRow:
     # the moving-average cost after the buy equal the screenshot's average price.
     delta_quantity: Decimal | None
     delta_price: Decimal | None
+    origin: Origin = "screenshot"
 
 
 @dataclass
 class Preview:
     broker: str | None
     rows: list[PreviewRow]
+
+
+@dataclass
+class ManualRow:
+    """A holding typed in by hand on the import page."""
+
+    asset_type: AssetType
+    symbol: str
+    quantity: Decimal
+    avg_price: Decimal | None = None
+    currency: Currency = Currency.USD
 
 
 @dataclass
@@ -173,6 +197,17 @@ def _derive_cost_krw(
     else:
         return None
     return (cost.quantize(Decimal("1"), ROUND_HALF_UP), how) if cost > 0 else None
+
+
+def _quote_decimal(price: float, currency: Currency) -> Decimal:
+    """A current price rounded the way a user would type it as a unit price: won prices
+    to the won (2 places under 1,000 won), dollar prices to the cent (4 places under $10)."""
+    value = Decimal(str(price))
+    if currency == Currency.KRW:
+        places = Decimal("0.01") if value < 1000 else Decimal("1")
+    else:
+        places = Decimal("0.0001") if value < 10 else Decimal("0.01")
+    return value.quantize(places, ROUND_HALF_UP)
 
 
 def _in_currency(market_usd: Decimal, currency: Currency, fx: Decimal) -> Decimal:
@@ -281,19 +316,27 @@ class StatementImportService:
         images = checked
 
         statement = self.extractor.extract(images)
-        held = {
-            h.symbol: (
-                h.quantity,
-                h.cost_basis_krw if h.currency == Currency.KRW else h.cost_basis,
-                h.currency,
-            )
-            for h in self.portfolio.holdings()
-        }
+        held = self._held()
         fx_today = Decimal(str(self.market.usd_krw().price))
         return Preview(
             broker=statement.broker,
             rows=[self._row(h, held, fx_today) for h in statement.holdings],
         )
+
+    def preview_manual(self, rows: list[ManualRow]) -> Preview:
+        """Holdings typed in by hand, checked exactly like screenshot rows.
+
+        Each input becomes an `ExtractedHolding` and goes through `_row`, so the ticker
+        check, the difference from current holdings and the unit-price doubts behave the
+        same whichever way a holding arrived. A row without an average price gets the
+        current price and says so; a price the market cannot supply fails that row only.
+        Nothing is written: the user reviews the rows and commits them like any other.
+        """
+        if not rows:
+            raise DomainError("종목을 한 개 이상 입력하세요")
+        held = self._held()
+        fx_today = Decimal(str(self.market.usd_krw().price))
+        return Preview(broker=None, rows=[self._manual_row(r, held, fx_today) for r in rows])
 
     def commit(self, rows: list[CommitRow], trade_date: date) -> list[Transaction]:
         if not rows:
@@ -315,6 +358,72 @@ class StatementImportService:
                 for r in rows
             ]
         )
+
+    def _held(self) -> dict[str, tuple[Decimal, Decimal, Currency]]:
+        """Per held symbol: quantity, cost in the trade currency, and that currency."""
+        return {
+            h.symbol: (
+                h.quantity,
+                h.cost_basis_krw if h.currency == Currency.KRW else h.cost_basis,
+                h.currency,
+            )
+            for h in self.portfolio.holdings()
+        }
+
+    def _manual_row(
+        self,
+        r: ManualRow,
+        held: dict[str, tuple[Decimal, Decimal, Currency]],
+        fx_today: Decimal,
+    ) -> PreviewRow:
+        # Stocks are recorded in dollars only (ledger rule); the form never offers won.
+        if r.asset_type == AssetType.STOCK and r.currency != Currency.USD:
+            raise DomainError("주식은 달러(USD)로만 기록합니다")
+        ticker = r.symbol.strip().upper()
+        krw = r.currency == Currency.KRW
+        try:
+            symbol = normalize_symbol(r.asset_type, ticker)
+        except UnsupportedSymbolError:
+            symbol = None  # `_resolve` reports unsupported coins and malformed tickers
+
+        price = r.avg_price
+        fill_failed = None
+        if symbol is not None and price is None:
+            # Won coins are priced on Upbit (KRW-BTC); everything else in dollars.
+            quoted = UPBIT_MARKETS[symbol] if krw else symbol
+            try:
+                price = _quote_decimal(self.market.get_quote(quoted).price, r.currency)
+            except SymbolNotFoundError:
+                fill_failed = (
+                    f"{quoted} 현재가를 받지 못해 단가를 채우지 못했습니다. "
+                    "평균단가를 직접 입력하세요"
+                )
+        # Plain decimal strings (`_decimal` keeps digits and dots only; no exponents).
+        shown = f"{price:f}" if price is not None else None
+        holding = ExtractedHolding(
+            name=CRYPTO_ASSETS.get(symbol, ticker) if symbol else ticker,
+            ticker=ticker,
+            ticker_shown=True,
+            asset_type=r.asset_type.value,
+            quantity=f"{r.quantity:f}",
+            avg_price_usd=None if krw else shown,
+            avg_price_krw=shown if krw else None,
+            cost_krw=None,
+            market_value_krw=None,
+            pnl_krw=None,
+            return_pct=None,
+            confidence="high",
+        )
+        row = self._row(holding, held, fx_today)
+        row.origin = "manual"
+        # `_row` infers the currency from which price field is set; here the user chose it.
+        row.currency = r.currency
+        if row.status == "ok" and r.avg_price is None:
+            row.price_estimated = True
+            row.message = FILLED_WITH_MARKET_PRICE
+        elif row.status == "invalid" and fill_failed:
+            row.message = fill_failed
+        return row
 
     def _row(
         self,

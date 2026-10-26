@@ -31,6 +31,7 @@ export type News = Schemas['NewsOut']
 export type ImportPreview = Schemas['PreviewOut']
 export type ImportPreviewRow = Schemas['PreviewRowOut']
 export type ImportCommit = Schemas['CommitIn']
+export type ManualImport = Schemas['ManualIn']
 // Rule checks (plan G): the user's own buy-more / stop-loss rules, not trading signals.
 export type RuleCheckAll = Schemas['RuleCheckAllOut']
 export type RuleCheck = Schemas['RuleCheckOut']
@@ -125,6 +126,9 @@ export const api = {
     files.forEach((f) => form.append('files', f))
     return request<ImportPreview>('/imports/screenshot', { method: 'POST', body: form })
   },
+  // Holdings typed in by hand come back as preview rows for the same review table.
+  manualImport: (data: ManualImport) =>
+    request<ImportPreview>('/imports/manual', { method: 'POST', body: JSON.stringify(data) }),
   commitImport: (data: ImportCommit) =>
     request<{ created: number }>('/imports/commit', { method: 'POST', body: JSON.stringify(data) }),
   news: (symbol: string) => request<News>(`/news/${encodeURIComponent(symbol)}`),

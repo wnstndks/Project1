@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -36,11 +37,30 @@ class PreviewRowOut(BaseModel):
     diff: str | None
     delta_quantity: Num | None
     delta_price: Num | None
+    # Where the row came from: read off a screenshot, or typed in on the import page.
+    origin: Literal["screenshot", "manual"]
 
 
 class PreviewOut(BaseModel):
     broker: str | None
     rows: list[PreviewRowOut]
+
+
+class ManualRowIn(BaseModel):
+    """A holding typed in on the import page instead of read from a screenshot."""
+
+    asset_type: AssetType
+    symbol: str = Field(min_length=1, max_length=20)
+    quantity: Decimal = Field(gt=0, max_digits=20, decimal_places=8)
+    # Omitted: the current price is used and the row comes back `price_estimated`.
+    avg_price: Decimal | None = Field(
+        None, gt=0, max_digits=20, decimal_places=8, description="In currency"
+    )
+    currency: Currency = Currency.USD
+
+
+class ManualIn(BaseModel):
+    rows: list[ManualRowIn] = Field(min_length=1, max_length=100)
 
 
 class CommitRowIn(BaseModel):

@@ -1088,6 +1088,48 @@
         }
       }
     },
+    "/api/imports/manual": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Preview Manual",
+        "description": "Holdings typed in by hand, reviewed in the same table as screenshot rows. Needs no\nextractor: the service only quotes prices here, so it works without an API key.",
+        "operationId": "preview_manual_api_imports_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/imports/commit": {
       "post": {
         "tags": [
@@ -3927,6 +3969,77 @@
         "title": "LiveVerdictOut",
         "description": "Why a kind of forecast is or is not trusted live (forecast.report.live_edge_at):\nedge | forward_test_pending | not_significant | no_data."
       },
+      "ManualIn": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ManualRowIn"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "ManualIn"
+      },
+      "ManualRowIn": {
+        "properties": {
+          "asset_type": {
+            "$ref": "#/components/schemas/AssetType"
+          },
+          "symbol": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Symbol"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "avg_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Price",
+            "description": "In currency"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency",
+            "default": "USD"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_type",
+          "symbol",
+          "quantity"
+        ],
+        "title": "ManualRowIn",
+        "description": "A holding typed in on the import page instead of read from a screenshot."
+      },
       "Metrics": {
         "properties": {
           "samples": {
@@ -4363,6 +4476,14 @@
               }
             ],
             "title": "Delta Price"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "screenshot",
+              "manual"
+            ],
+            "title": "Origin"
           }
         },
         "type": "object",
@@ -4384,7 +4505,8 @@
           "current_quantity",
           "diff",
           "delta_quantity",
-          "delta_price"
+          "delta_price",
+          "origin"
         ],
         "title": "PreviewRowOut"
       },

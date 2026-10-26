@@ -102,9 +102,7 @@ export function Layout() {
               <NavLink to="/compare" className={navClass}>비교</NavLink>
               <NavLink to="/rules" className={navClass}>규칙</NavLink>
               <NavLink to="/transactions" className={navClass}>거래</NavLink>
-              <NavLink to="/import" className={navClass}>
-                <NavLabel short="가져오기" long="스크린샷 가져오기" />
-              </NavLink>
+              <NavLink to="/import" className={navClass}>가져오기</NavLink>
               <NavLink to="/projection" className={navClass}>
                 <NavLabel short="시뮬레이션" long="장기 시뮬레이션" />
               </NavLink>

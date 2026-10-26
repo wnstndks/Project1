@@ -923,3 +923,58 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - `git ls-files --eol <수정 파일>` / `grep -c $'\r' <신규 파일>`
 - `grep -oE "\.z-10\{[^}]*\}|\.bg-surface[^{]*\{[^}]*\}" frontend/dist/assets/*.css` / `grep -oE "zIndex = '[0-9]+'" frontend/node_modules/lightweight-charts/dist/lightweight-charts.development.mjs | sort | uniq -c`
 - 로그: 스크래치 `fe_run.log`(1차)·`fe_run2.log`(2차).
+
+### 가져오기 직접 입력 (2026-10-26)
+
+대상: app-engineer의 미커밋 변경(D-032): 백엔드 `api/imports.py`·`schemas/imports.py`·`services/statement_import.py` + 신규 `tests/test_imports_manual.py`, 프론트 `Import.tsx`·`client.ts`·`hooks.ts`·`App.tsx`·`openapi.json`·`schema.d.ts` + 신규 `Import.test.tsx`, CLAUDE.md·DECISIONS.md. 브라우저 확인은 리드가 한다.
+
+**판정: 통과**(반박 실패). 차단 문제 없음. 비차단: ISSUE-047(거래 메모 출처 문구) 1건 + 문서 표현 1건 + 데모 모드 관찰 1건.
+
+#### 범위
+| 확인 | 결과 |
+|---|---|
+| `git status --short` | 수정 11 + 신규 2. 백엔드는 보고한 3개 파일 + 테스트 1개뿐. `backend/app/deps.py`·`backend/app/services/transactions.py`는 목록에 없음(변경 없음) |
+| `git diff --stat` | 11 files, +684/−118. `statement_import.py` +127(`preview_manual`·`_manual_row`·`_held`·`_quote_decimal`·상수) |
+| `_held()` | 기존 `preview()` 안의 dict comprehension을 그대로 옮긴 것(diff에서 본문 동일). `preview()` 동작 변화 없음 → 기존 `tests/test_imports.py` 22함수 변경 없이 통과 |
+
+#### 재현(절대 경로, bash)
+| 명령 | 결과 | 보고 |
+|---|---|---|
+| backend\ `py -3.11 -m uv run pytest 2>&1 \| tail -1` | **629 passed** in 126.97s | 629 일치(직전 614 → +15 = `test_imports_manual.py` 함수 11 + parametrize 4) |
+| `pytest tests/test_imports.py tests/test_imports_manual.py` | 59 passed | — |
+| `ruff check .` / `ruff format --check .` | All checks passed / 136 files already formatted | 일치 |
+| frontend\ `unset VIRTUAL_ENV && npm run build && npm run lint && npm test` | build exit 0(262ms) · oxlint 출력 없음(0건) · **29 files / 173 tests** | 일치(직전 검증 28/167 → +1 파일/+6 = `Import.test.tsx` 6건) |
+| `py -3.11 -m uv run python -m app.export_openapi <scratch>/openapi.json` → `diff` with `frontend/src/api/openapi.json` | 바이트 동일 | — |
+| `npx --yes openapi-typescript@7 src/api/openapi.json -o <scratch>/schema.d.ts` → `diff` | 바이트 동일(openapi-typescript 7.13.0) | — |
+| `git ls-files --eol`(수정 11) / CR 개수(신규 2) | 모두 `w/lf` / CR 0 | — |
+| 색 | `Import.tsx`에 `#rrggbb`·`text-red-*` 류 없음. 토큰 클래스만 | — |
+
+#### 반박 시도(스크래치 `<scratch>\verify-manual\probe.py`·`probe2.py`: 메모리 DB·`FakeProvider`·`AM_DATABASE_URL=sqlite://`, 실제 DB·`.env` 미접촉)
+| 공격 | 결과 |
+|---|---|
+| `_manual_row`가 `_row`를 그대로 타는가 | 입력 → `ExtractedHolding`(이름 = `CRYPTO_ASSETS` 또는 티커, `ticker_shown=True`, `confidence="high"`, `cost_krw` 등 None) → `self._row(holding, held, fx_today)` 한 번 호출. 뒤처리는 `origin`·`currency`(사용자 선택)·채운 행의 `price_estimated/message`·채우기 실패 행의 `message`만. 티커 확인(`_resolve`)·보유 차이(`diff`/`delta_*`)·단가 의심(`_misread_price`/`_price_doubt`) 복제 없음. 같은 KRW 가격을 스크린샷 경로(`ExtractedHolding.avg_price_krw`)로 넣었을 때 `status`·`warning` 문자열이 바이트 단위로 같음(probe2) |
+| 단가 비움: 시세 심볼 | 주식 → `symbol`, USD 코인 → `XXX-USD`, KRW 코인 → `UPBIT_MARKETS[symbol]`(`KRW-XXX`). probe: AAPL 295.364551→**295.36**, XRP-USD 3.159777→**3.1598**, KRW-BTC 298,616,346.0487→**298616346**. `_quote_decimal`(KRW: <1000이면 2자리 아니면 1원 / USD: <10이면 4자리 아니면 2자리) = `TransactionForm.tsx:87`의 `places` 규칙과 같음 |
+| 시세 실패가 요청을 깨는가 | `provider.unknown={ETH-USD, ZZZZ}` + MSFT 3행 → 200. ETH-USD·ZZZZ는 `unknown`("… 시세를 찾을 수 없습니다"), MSFT는 `ok`+채움. KRW 코인에서 업비트만 실패(`KRW-SOL`)하면 `invalid`+"KRW-SOL 현재가를 받지 못해…"(기존 테스트). `_manual_row`는 `SymbolNotFoundError`만 잡고 `DomainError`는 주식+KRW에서만 던진다(의도된 422). `MarketDataError`(네트워크)는 전체 요청 502 — 스크린샷 `_resolve`와 같은 기존 동작 |
+| `price_estimated` 행 기본 선택 | 응답 `status=ok, warning=None, diff=new, price_estimated=True, message="평균단가를 입력하지 않아 현재가로 채웠어요. 수익률이 0%에서 시작하니 …"`. 프론트 `toEditable.include = ok && (new 또는 delta) && !warning` → 선택됨(vitest `toBeChecked`). 메시지는 단가 셀 아래에 보이고 `RowStatus`는 `!price_estimated`일 때만 message를 또 보여 중복 없음 |
+| 입력 검증(422) | 소수 9자리 수량·단가(`decimal_max_places`), 수량 0·음수, 빈 심볼, 21자 심볼, 101행, 통화 JPY, 자산 bond, 주식+KRW("주식은 달러(USD)로만 기록합니다") 모두 422. `"1e1"`은 200·수량 10(`f"{…:f}"`가 지수 제거), 공백만인 심볼은 200·행 `unknown`("티커를 알 수 없습니다") — 요청 단위 실패 아님 |
+| 통화 되돌림 | `_row`가 추론한 통화와 `r.currency`가 다를 수 있는 경우는 코인+USD+단가 없음+시세 실패뿐이고 그때 `status`는 이미 `unknown`이라 `held_currency` 비교·delta(둘 다 `ok`/같은 통화 조건)가 잘못된 통화로 계산되지 않음 |
+| 추출기 독립성 | 테스트 override 없이 실제 `get_extractor`: `AM_IMPORT_EXTRACTOR=claude`+키 없음 → `/imports/status` `configured=false`, `/imports/manual` **200**, `/imports/commit` **200**(created 1). 기본값 `ollama`도 같음. `RefusingExtractor`를 override로 두고 `/imports/screenshot`에 PNG를 올리면 **500**(AssertionError 전파) → 테스트의 거부 추출기가 실제로 호출 시 실패함을 확인. 같은 상태에서 `/imports/manual`은 200 |
+| 프론트 전송값 | vitest가 `{asset_type, symbol:'AAPL', quantity:'10', avg_price:null, currency:'USD'}`·`avg_price:'300.5'` 문자열 단언. `merge`는 `source.symbol` 키로 교체, 키 없으면(미해결) 뒤에 붙임(코드 검토). `recognize`는 `origin==='manual'` 행만 남기고 스크린샷 행을 merge(코드 검토, 자동 테스트 없음). `configured=false` → 왼쪽 카드만 `SetupNeeded`, 오른쪽 직접 입력 동작(vitest) |
+| 네비 라벨 | `App.tsx` `NavLabel`은 시뮬레이션에 계속 쓰임. "스크린샷 가져오기" 문자열은 `BulkDelete.tsx:8`의 `IMPORT_NOTE` 상수만 남음(ISSUE-047) |
+| 정직성·문구 | HEAD의 `Import.tsx`에도 투자 조언 고지는 없었음(예측·시뮬레이션 화면이 아님) → 유지할 것이 없고 사라진 것도 없음. 새 문구에 통계 용어 없음. `FILLED_WITH_MARKET_PRICE`가 "현재가로 채움·수익률 0% 시작·거래 내역에서 고치세요" 뜻을 그대로 담음 |
+| 합성 데이터 | 테스트·프로브 값은 AAPL 10@150, MSFT 2, BTC 0.01@60000, SOL 200000원, XRP 100 등 합성값. D-032·CLAUDE.md에 실제 보유 수치 없음 |
+
+#### 발견한 문제
+- ISSUE-047(낮음, 비차단): 직접 입력 행도 거래 메모 `"스크린샷 가져오기"`로 저장되고 일괄 삭제 문구가 "스크린샷으로 가져온 거래". app-engineer가 보고에서 인지했으나 담당 외 파일(`services/transactions.py`·`BulkDelete.tsx`)이라 두었음. 리드 배정.
+
+#### 비차단
+- CLAUDE.md·D-032의 "시세를 못 받으면 그 행만 `invalid`"는 KRW 코인(야후 USD 시세는 되고 업비트만 실패)에서만 정확하다. 주식·USD 코인은 `_resolve`가 먼저 실패해 `unknown`("… 시세를 찾을 수 없습니다")이다. 행 단위 실패라는 뜻은 맞으므로 문구만 "`invalid` 또는 `unknown`"으로 고치면 된다.
+- 데모 모드(`AM_MARKET_PROVIDER=fake`) 관찰: `FakeProvider`는 `KRW-BTC`와 `BTC-USD`를 2015년부터 독립 난수 경로로 만들어 `KRW-BTC ÷ (BTC-USD × KRW=X) = 0.043`(ETH 0.376, XRP 1.117, SOL 0.586). 그래서 단가를 비운 KRW BTC 행은 업비트가로 채운 뒤 `_price_doubt`(야후×환율 기준 23배)에 걸려 `warning`이 붙고 기본 미선택이 된다. 스크린샷 경로도 같은 결과(코드 경로 동일성의 증거)이고 실제 공급자에선 김치 프리미엄이 수 %라 발생하지 않는다. `test_krw_coin_is_filled_with_the_upbit_price`가 `warning is None`을 단언하지 않는 이유가 이것이다. 고치려면 `FakeProvider`의 `KRW-*`를 USD 시계열 × 환율로 파생(data-engineer 판단).
+- `recognize` 뒤 직접 입력 행 유지는 코드 검토로만 확인(`usePreviewScreenshots`가 vitest에서 no-op). 자동 테스트 1건 추가하면 좋다.
+
+#### 재현 명령
+- `cd /c/Users/user/Desktop/project && git status --short && git diff --stat`
+- `cd /c/Users/user/Desktop/project/backend && py -3.11 -m uv run pytest 2>&1 | tail -1; py -3.11 -m uv run ruff check .; py -3.11 -m uv run ruff format --check .`
+- `cd /c/Users/user/Desktop/project/frontend && unset VIRTUAL_ENV && npm run build && npm run lint && npm test`
+- `cd /c/Users/user/Desktop/project/backend && py -3.11 -m uv run python -m app.export_openapi <scratch>/openapi.json && diff <scratch>/openapi.json ../frontend/src/api/openapi.json` / frontend\ `npx --yes openapi-typescript@7 src/api/openapi.json -o <scratch>/schema.d.ts && diff <scratch>/schema.d.ts src/api/schema.d.ts`
+- 프로브: backend\ `PYTHONPATH=<backend 윈도 경로> py -3.11 -m uv run python -X utf8 <scratch>\verify-manual\probe.py claude`(또는 `ollama`) / `… probe2.py`. `<scratch>` = `C:\Users\user\AppData\Local\Temp\claude\c--Users-user-Desktop-project\390c67f2-c016-4b04-a641-dbd27eed466f\scratchpad`.

@@ -452,3 +452,12 @@ S2-1d(예측 변동성으로 SPY·BTC 노출 조절, D-024, STRATEGIES.md S2)를
 - 데이터: `ChartBar`에 high/low, `buildRows(bars, ma, horizons, prevClose)`로 표시 구간 첫 봉의 전일 대비도 채움. 백엔드·스키마 변경 없음.
 - 수치: 프론트 vitest 26 파일 150 → 28 파일 167, build·oxlint 통과. 검증은 `VERIFICATION.md` "종목 상세 차트 툴팁" 섹션(verifier 통과, 브라우저는 리드가 라이트·다크 확인).
 - 남은 것(비차단, verifier 기록): 보합일 거래량 막대 색 규칙(기존), 업비트 코인 거래량의 `만/억` 표기, `timeKey` 숫자 분기의 UTC 처리(현재 미사용 경로).
+
+## 가져오기 페이지 직접 입력 (2026-10-26)
+
+사용자 요청: "스크린샷 가져오기에 그냥 입력도 있으면 좋겠다. 종목 및 수량 값 입력해서 보려고." 결정은 D-032.
+
+- **백엔드**(app-engineer): `POST /api/imports/manual`(`ManualIn{rows[{asset_type, symbol, quantity, avg_price?, currency}]}` → 기존 `PreviewOut`). 입력을 `ExtractedHolding`으로 만들어 스크린샷과 같은 `_row` 파이프라인(티커 확인·보유분 차감 `diff`·20배 단가 의심)을 탄다. 단가를 비우면 현재가(주식 USD 시세, KRW 코인은 `KRW-XXX` 업비트, USD 코인은 `XXX-USD`)로 채우고 `price_estimated=True`에 "수익률이 0%에서 시작" 안내를 붙인다. 시세를 못 받은 행만 실패(`invalid` 또는 `unknown`). `PreviewRowOut.origin`(`screenshot`|`manual`) 추가, 추출기 API 키 없이도 동작.
+- **화면**: `/import`에 "1. 스크린샷 선택"과 "또는 직접 입력" 카드를 나란히. 자산 종류 → 티커(코인은 4종 select) → 수량 → 평균단가(선택, "비우면 현재가") → 통화(코인만) → "목록에 추가"로 같은 확인 표에 쌓고 같은 버튼으로 기록. 같은 심볼은 마지막 입력으로 교체, 스크린샷 재인식 때 직접 입력 행은 유지. 네비 라벨 `가져오기`.
+- **수치**: 백엔드 pytest 614 → 629(+15, `tests/test_imports_manual.py`), 프론트 vitest 28 파일 167 → 29 파일 173(+6, `pages/Import.test.tsx`). 리드가 브라우저에서 확인(티커·수량만 넣으면 현재가로 채워진 행이 표에 올라오고 안내가 보임, 기록은 하지 않음). 검증은 `VERIFICATION.md` "가져오기 직접 입력" 섹션.
+- **남은 것**: 직접 입력 행의 거래 메모가 `스크린샷 가져오기`로 기록됨(ISSUE-047, `IMPORT_NOTE` 공유·`BulkDelete` 문구와 함께 바꿔야 해서 보류). 데모 `FakeProvider`의 `KRW-*` 시세가 USD×환율과 독립이라 데모 모드에서만 KRW 코인 행에 20배 경고가 뜸(data-engineer 판단). 재인식 시 직접 입력 행 유지 테스트 1건 권장.

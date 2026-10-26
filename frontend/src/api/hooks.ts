@@ -8,6 +8,7 @@ import {
   type ActionStatus,
   type Currency,
   type ImportCommit,
+  type ManualImport,
   type ProjectionInput,
   type RuleSettingsInput,
   type TransactionInput,
@@ -110,6 +111,10 @@ export const useImportStatus = () =>
 
 export const usePreviewScreenshots = () =>
   useMutation({ mutationFn: (files: File[]) => api.previewScreenshots(files) })
+
+/** Rows typed in by hand come back as preview rows; nothing is written until commit. */
+export const useManualImport = () =>
+  useMutation({ mutationFn: (data: ManualImport) => api.manualImport(data) })
 
 export const useCommitImport = () => useLedgerMutation((data: ImportCommit) => api.commitImport(data))
 

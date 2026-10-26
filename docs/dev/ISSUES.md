@@ -483,3 +483,10 @@
 - 근거: `frontend/node_modules/lightweight-charts/dist/lightweight-charts.development.mjs`에 `zIndex = '1'` 3곳·`zIndex = '2'` 3곳(verifier grep). 수정 전 `CandleChart.tsx` 오버레이 클래스 `pointer-events-none absolute top-2 left-2 … bg-surface/85`.
 - 해결(2026-10-26, app-engineer): 오버레이 클래스에 `z-10` 추가 + 이유 주석. `CandleChart.test.tsx`(신규, `vi.mock('lightweight-charts')`로 마운트)가 `z-10`·`pointer-events-none`, 크로스헤어 콜백으로 봉 전환(문자열·BusinessDay time), 빈 `seriesData`면 마지막 봉 복귀를 고정.
 - 검증: verifier가 dist CSS에 `.z-10{z-index:10}` 생성, 번들의 zIndex 1·2, vitest 28 files/167 tests(build·oxlint 0) 확인. 리드가 브라우저에서 재확인(2026-10-26): 라이트·다크 모두 읽기판이 캔버스 위에 보이고 호버한 봉으로 바뀌며 벗어나면 마지막 봉으로 돌아옴.
+
+### [ISSUE-047] 직접 입력으로 가져온 거래의 메모가 "스크린샷 가져오기"로 기록되고, 일괄 삭제 문구도 "스크린샷으로 가져온 거래"라 출처가 틀리게 보임
+- 현상: `POST /api/imports/manual`로 만든 행을 `POST /api/imports/commit`으로 기록하면 `transactions.note == "스크린샷 가져오기"`가 된다(verifier 프로브, 메모리 DB, 합성 AAPL 3주: `tx note: 스크린샷 가져오기`). 거래 페이지 메모(`frontend/src/pages/Transactions.tsx:177`)와 일괄 삭제(`frontend/src/components/BulkDelete.tsx:8,25` "스크린샷으로 가져온 거래 N건을 삭제할까요?")가 이 메모를 그대로 쓴다.
+- 원인: `CommitRow`/`CommitRowIn`에 출처가 없고 `services/statement_import.py` `commit()`이 모든 행에 `note=IMPORT_NOTE`(`services/transactions.py:18`) 상수를 붙인다. `PreviewRow.origin`은 미리보기 응답에만 있다.
+- 근거: 위 코드 위치. app-engineer 보고에 "담당 외 파일이라 두었음"으로 인지되어 있음.
+- 해결: 미정(낮음, 비차단). 선택지 ① `IMPORT_NOTE`를 출처 중립 문구로 바꾸고 `BulkDelete` 문구도 "가져온 거래"로(기존 DB의 옛 메모와 호환되게 `only_imported`·프론트 필터가 두 문구를 모두 허용) ② `CommitRowIn.origin`을 받아 메모를 "직접 입력"으로 나눔. 담당: 리드 배정(`services/transactions.py`·`BulkDelete.tsx`).
+- 검증: 미해결. 재현은 VERIFICATION.md "가져오기 직접 입력 (2026-10-26)"의 `probe.py`.

@@ -6,9 +6,14 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.config import get_settings
 from app.deps import get_extractor, get_import_service
-from app.schemas.imports import CommitIn, CommitOut, ImportStatusOut, PreviewOut
+from app.schemas.imports import CommitIn, CommitOut, ImportStatusOut, ManualIn, PreviewOut
 from app.services.screenshot_extractor import HoldingsExtractor, Image, OllamaExtractor
-from app.services.statement_import import MAX_IMAGE_BYTES, CommitRow, StatementImportService
+from app.services.statement_import import (
+    MAX_IMAGE_BYTES,
+    CommitRow,
+    ManualRow,
+    StatementImportService,
+)
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -46,6 +51,14 @@ async def preview_screenshot(
     ]
     # The Claude call blocks for several seconds; keep it off the event loop.
     return asdict(await run_in_threadpool(service.preview, images))
+
+
+@router.post("/manual", response_model=PreviewOut)
+def preview_manual(body: ManualIn, service: StatementImportService = Depends(get_import_service)):
+    """Holdings typed in by hand, reviewed in the same table as screenshot rows. Needs no
+    extractor: the service only quotes prices here, so it works without an API key."""
+    rows = [ManualRow(**r.model_dump()) for r in body.rows]
+    return asdict(service.preview_manual(rows))
 
 
 @router.post("/commit", response_model=CommitOut)
