@@ -19,6 +19,7 @@ from app.data.upbit_provider import RoutingProvider, UpbitProvider
 from app.db.session import SessionLocal, get_db
 from app.ml.sentiment import FinBertScorer, SentimentScorer
 from app.services.benchmarks import BenchmarkService
+from app.services.coach import CoachService
 from app.services.congress import CongressService
 from app.services.corporate_actions import CorporateActionService
 from app.services.forecasts import ForecastService, ForecastTraining
@@ -238,3 +239,15 @@ def get_rule_service(
     forecasts: ForecastService = Depends(get_forecast_service),
 ) -> RuleService:
     return RuleService(db, market, portfolio, get_settings(), forecasts)
+
+
+def get_coach_service(
+    db: Session = Depends(get_db),
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+    benchmarks: BenchmarkService = Depends(get_benchmark_service),
+) -> CoachService:
+    settings = get_settings()
+    # No forecaster: the coach reads rule results without running inference (D-033).
+    rules = RuleService(db, market, portfolio, settings, forecasts=None)
+    return CoachService(db, market, portfolio, rules, benchmarks, settings)

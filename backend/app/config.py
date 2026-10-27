@@ -102,6 +102,13 @@ class Settings(BaseSettings):
 
     # --- end of rule check settings ---
 
+    # --- Portfolio coach policy defaults (app/strategy/coach.py, DECISIONS.md D-033) ---
+    # Used only until the user saves a policy; not paper-trading limits (those are AM_RISK_*).
+    # Coins together as a percent of equity, and the loss if every stop-loss fired at once as
+    # a percent of total assets.
+    coach_max_crypto_weight_pct: Decimal = Field(Decimal("30"), gt=0, lt=100)
+    coach_max_total_risk_pct: Decimal = Field(Decimal("8"), gt=0, lt=100)
+
     @field_validator("anthropic_api_key", "finnhub_api_key", "risk_max_order_krw", mode="before")
     @classmethod
     def _blank_is_unset(cls, v: object) -> object:

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import type { Holding, RuleCheckAll, RuleSettings } from '../api/client'
 import { useHoldings, useRuleCheck, useRuleSettings, useUpdateRuleSettings, useUsdKrw } from '../api/hooks'
+import { Field } from '../components/FormField'
 import { RuleStatusChip } from '../components/RuleStatusChip'
 import { Card, ErrorBox, Muted, Skeleton } from '../components/ui'
 import { displaySymbol, formatKrwShort, formatPct } from '../lib/format'
@@ -26,8 +27,6 @@ import {
   type SymbolForm,
 } from '../lib/rules'
 
-const inputClass =
-  'num w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-accent'
 const cellInputClass =
   'num w-24 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm outline-none focus:border-accent'
 
@@ -296,27 +295,6 @@ function RulesForm({ settings, holdings, onSave, pending, saved, error }: {
         )}
       </div>
     </form>
-  )
-}
-
-function Field({ label, value, onChange, placeholder, integer = false }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  integer?: boolean
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="text-ink-2">{label}</span>
-      <input
-        inputMode={integer ? 'numeric' : 'decimal'}
-        className={`mt-1 ${inputClass}`}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
   )
 }
 

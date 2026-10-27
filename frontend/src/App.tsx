@@ -101,6 +101,7 @@ export function Layout() {
               <NavLink to="/" end className={navClass}>홈</NavLink>
               <NavLink to="/compare" className={navClass}>비교</NavLink>
               <NavLink to="/rules" className={navClass}>규칙</NavLink>
+              <NavLink to="/coach" className={navClass}>코치</NavLink>
               <NavLink to="/transactions" className={navClass}>거래</NavLink>
               <NavLink to="/import" className={navClass}>가져오기</NavLink>
               <NavLink to="/projection" className={navClass}>

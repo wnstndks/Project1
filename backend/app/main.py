@@ -4,6 +4,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    coach,
     congress,
     corporate_actions,
     forecasts,
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
         gurus,
         congress,
         rules,
+        coach,
     ):
         api.include_router(module.router)
     app.include_router(api)

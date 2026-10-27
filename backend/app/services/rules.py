@@ -37,7 +37,7 @@ from app.services.forecasts import ForecastService
 from app.services.ledger import ZERO, split_quantity, timeline
 from app.services.market_data import MarketDataService, SymbolNotFoundError
 from app.services.portfolio import Holding, PortfolioService, quote_symbol
-from app.strategy.execution import KillSwitch
+from app.strategy.execution import KillState, KillSwitch
 from app.strategy.risk import RiskLimits
 from app.strategy.rules import (
     BLOCK_LABELS,
@@ -216,6 +216,17 @@ class RuleService:
         self.db.commit()
         return self.settings_payload()
 
+    # --- kill switch -----------------------------------------------------------------------
+
+    def reset_kill_switch(self, detail: str = "") -> KillState:
+        """Resume paper trading after a trip. The actor is always the user (D-033 §7): the
+        system trips, only the user resets. Already off: nothing is written, the state is
+        returned as is, so a double click does not add a second reset event."""
+        switch = KillSwitch(self.db, clock=self.now)
+        if switch.state().tripped:
+            switch.reset(actor="user", detail=detail)
+        return switch.state()
+
     # --- checks ----------------------------------------------------------------------------
 
     def check_all(self) -> dict:
@@ -261,12 +272,7 @@ class RuleService:
             "checks": checks,
             "skipped": skipped,
             "total_risk_pct_equity": sum(shares) if shares else None,
-            "kill_switch": {
-                "tripped": kill.tripped,
-                "reason_code": kill.reason_code,
-                "detail": kill.detail,
-                "since": kill.since,
-            },
+            "kill_switch": kill_switch_payload(kill),
             "live_trading": self.settings.live_trading,
             "labels": {
                 "status": dict(STATUS_LABELS),
@@ -397,3 +403,13 @@ class RuleService:
 
 def _global_dict(rules: RuleSettings) -> dict:
     return {k: getattr(rules, k) for k in GLOBAL_FIELDS}
+
+
+def kill_switch_payload(state: KillState) -> dict:
+    """`KillSwitchOut` fields from the engine's state."""
+    return {
+        "tripped": state.tripped,
+        "reason_code": state.reason_code,
+        "detail": state.detail,
+        "since": state.since,
+    }

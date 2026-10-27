@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import type { HistoryPoint, Holding, Summary } from '../api/client'
 import { useCorporateActions, useHoldings, usePortfolioHistory, useSparklines, useSummary } from '../api/hooks'
 import { AllocationBar } from '../components/AllocationBar'
+import { CoachCard } from '../components/CoachCard'
 import { CompareCard } from '../components/CompareCard'
 import { HoldingsList } from '../components/HoldingsList'
 import { KimchiPremium } from '../components/KimchiPremium'
@@ -76,6 +77,7 @@ export function Dashboard() {
         />
       )}
       <RulesBanner />
+      <CoachCard />
 
       <Card title="보유 종목">
         {holdings.error ? (

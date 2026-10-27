@@ -826,6 +826,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rules/kill-switch/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Kill Switch */
+        post: operations["reset_kill_switch_api_rules_kill_switch_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/coach/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Policy */
+        get: operations["get_policy_api_coach_policy_get"];
+        /** Put Policy */
+        put: operations["put_policy_api_coach_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/coach/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Diagnosis */
+        get: operations["get_diagnosis_api_coach_diagnosis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/coach/rebalance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rebalance */
+        get: operations["get_rebalance_api_coach_rebalance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/coach/patterns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Patterns */
+        get: operations["get_patterns_api_coach_patterns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/coach/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Review */
+        get: operations["get_review_api_coach_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -840,6 +943,48 @@ export interface components {
          * @enum {string}
          */
         ActionStatus: "detected" | "confirmed" | "ignored";
+        /**
+         * ActualRiskOut
+         * @description The real value curve with deposits taken out (time-weighted index). Information only;
+         *     it never trips the kill switch (D-027).
+         */
+        ActualRiskOut: {
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /** Points */
+            points: number;
+            /** Twr Max Drawdown Pct */
+            twr_max_drawdown_pct: number;
+            /** Current Drawdown Pct */
+            current_drawdown_pct: number;
+            /** Daily Loss Breaches 1Y */
+            daily_loss_breaches_1y: number;
+            /** Drawdown Breaches 1Y */
+            drawdown_breaches_1y: number;
+            /** Limit Drawdown Pct */
+            limit_drawdown_pct: number;
+            /** Limit Daily Loss Pct */
+            limit_daily_loss_pct: number;
+        };
+        /** AfterOut */
+        AfterOut: {
+            /** Weights */
+            weights: components["schemas"]["AfterWeightOut"][];
+            /** Cash Krw */
+            cash_krw: number;
+            /** Cash Pct */
+            cash_pct: number | null;
+        };
+        /** AfterWeightOut */
+        AfterWeightOut: {
+            /** Symbol */
+            symbol: string;
+            /** Weight Pct */
+            weight_pct: number;
+        };
         /** AllocationOut */
         AllocationOut: {
             asset_type: components["schemas"]["AssetType"];
@@ -963,10 +1108,57 @@ export interface components {
             /** Points */
             points: components["schemas"]["BenchmarkPointOut"][];
         };
+        /**
+         * BetaOut
+         * @description Slope of the symbol's returns on its benchmark's, both in the trade currency.
+         */
+        BetaOut: {
+            /** Symbol */
+            symbol: string;
+            /** Benchmark */
+            benchmark: string;
+            /** Window */
+            window: string;
+            /** Beta */
+            beta: number | null;
+            /** R2 */
+            r2: number | null;
+            /** Rows */
+            rows: number;
+            /** Reason */
+            reason: string | null;
+        };
         /** Body_preview_screenshot_api_imports_screenshot_post */
         Body_preview_screenshot_api_imports_screenshot_post: {
             /** Files */
             files: string[];
+        };
+        /**
+         * CashIn
+         * @description Cash the app cannot see, typed in by the user with the date it was true.
+         */
+        CashIn: {
+            /** Krw */
+            krw: number | string;
+            /** Usd */
+            usd: number | string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+        };
+        /** CashOut */
+        CashOut: {
+            /** Krw */
+            krw: number;
+            /** Usd */
+            usd: number;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
         };
         /** ClassStatsOut */
         ClassStatsOut: {
@@ -1031,6 +1223,24 @@ export interface components {
             syncing: boolean;
             /** Gurus */
             gurus: components["schemas"]["GuruCompareOut"][];
+        };
+        /**
+         * ConcentrationOut
+         * @description Invested-basis concentration; `effective_n` = 1/HHI, how many equal holdings this is.
+         */
+        ConcentrationOut: {
+            /** Count */
+            count: number;
+            /** Top1 Symbol */
+            top1_symbol: string | null;
+            /** Top1 Pct */
+            top1_pct: number;
+            /** Top3 Pct */
+            top3_pct: number;
+            /** Hhi */
+            hhi: number;
+            /** Effective N */
+            effective_n: number;
         };
         /** CongressStatusOut */
         CongressStatusOut: {
@@ -1180,6 +1390,19 @@ export interface components {
             /** Withholding */
             withholding: number;
         };
+        /** CorrelationOut */
+        CorrelationOut: {
+            /** Symbols */
+            symbols: string[];
+            /** Matrix */
+            matrix: number[][];
+            /** Method */
+            method: string;
+            /** Rows */
+            rows: number;
+            /** Excluded */
+            excluded: string[];
+        };
         /**
          * CryptoRuleIn
          * @description Asset-class layer for coins between the global values and the symbol overrides; a
@@ -1212,6 +1435,54 @@ export interface components {
             /** Deleted */
             deleted: number;
         };
+        /** DiagnosisOut */
+        DiagnosisOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Empty */
+            empty: boolean;
+            /** Policy Set */
+            policy_set: boolean;
+            policy: components["schemas"]["PolicyFieldsOut"];
+            /** Equity Krw */
+            equity_krw: number;
+            /** Invested Krw */
+            invested_krw: number;
+            /** Cash Krw */
+            cash_krw: number | null;
+            /** Cash As Of */
+            cash_as_of: string | null;
+            /** Cash Stale */
+            cash_stale: boolean;
+            /** Usd Krw */
+            usd_krw: number;
+            /** Weights */
+            weights: components["schemas"]["WeightOut"][];
+            concentration: components["schemas"]["ConcentrationOut"] | null;
+            exposure: components["schemas"]["ExposureOut"] | null;
+            risk: components["schemas"]["RiskOut"];
+            correlation: components["schemas"]["CorrelationOut"] | null;
+            /** Betas */
+            betas: components["schemas"]["BetaOut"][];
+            /** Total Risk Pct Equity */
+            total_risk_pct_equity: number | null;
+            /** Violations */
+            violations: components["schemas"]["ViolationOut"][];
+            /** Required Annual Return Pct */
+            required_annual_return_pct: number | null;
+            /** Goal Years */
+            goal_years: number | null;
+            /** Caveats */
+            caveats: string[];
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+        };
         /** ErrorMetrics */
         ErrorMetrics: {
             /** Mae */
@@ -1222,6 +1493,48 @@ export interface components {
             mape: number;
             /** Direction Acc */
             direction_acc: number;
+        };
+        /** ExcludedOut */
+        ExcludedOut: {
+            /** Symbol */
+            symbol: string;
+            /** Bars */
+            bars: number;
+        };
+        /** ExposureOut */
+        ExposureOut: {
+            /** Equity Krw */
+            equity_krw: number;
+            /** Invested Krw */
+            invested_krw: number;
+            /** Stock Pct */
+            stock_pct: number;
+            /** Crypto Pct */
+            crypto_pct: number;
+            /** Cash Pct */
+            cash_pct: number | null;
+            /** Usd Pct */
+            usd_pct: number;
+        };
+        /** FlagOut */
+        FlagOut: {
+            /** Code */
+            code: string;
+            /** Label Ko */
+            label_ko: string;
+            /** Trade Id */
+            trade_id: number;
+            /** Symbol */
+            symbol: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Detail */
+            detail: string;
+            /** Value */
+            value: number | null;
         };
         /** ForecastBacktestPoint */
         ForecastBacktestPoint: {
@@ -1586,6 +1899,18 @@ export interface components {
             /** Since */
             since: string | null;
         };
+        /**
+         * KillSwitchResetIn
+         * @description Optional note kept with the reset event. The actor is never taken from the request:
+         *     a reset over HTTP is always the user's.
+         */
+        KillSwitchResetIn: {
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
         /** KimchiPremiumOut */
         KimchiPremiumOut: {
             /** Symbol */
@@ -1617,6 +1942,29 @@ export interface components {
             fx_as_of: string;
             /** Fx Stale */
             fx_stale: boolean;
+        };
+        /** LagFlagOut */
+        LagFlagOut: {
+            /** Symbol */
+            symbol: string;
+            /** Currency */
+            currency: string;
+            /** Cut Price */
+            cut_price: number;
+            /** Days */
+            days: number;
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /** Last Close */
+            last_close: number;
+            /**
+             * Since Window Start
+             * @default false
+             */
+            since_window_start: boolean;
         };
         /**
          * LiveVerdictOut
@@ -1672,6 +2020,17 @@ export interface components {
             /** Weight Pct */
             weight_pct: number;
         };
+        /** MonthCountOut */
+        MonthCountOut: {
+            /** Month */
+            month: string;
+            /** Buys */
+            buys: number;
+            /** Sells */
+            sells: number;
+            /** Total */
+            total: number;
+        };
         /** NewsDayOut */
         NewsDayOut: {
             /**
@@ -1707,6 +2066,117 @@ export interface components {
             my_weight_pct: number;
             /** Guru Weight Pct */
             guru_weight_pct: number;
+        };
+        /** PatternOut */
+        PatternOut: {
+            /** Code */
+            code: string;
+            /** Label Ko */
+            label_ko: string;
+            /** Count */
+            count: number;
+            /** Detail */
+            detail: string;
+            /** Trades */
+            trades: components["schemas"]["FlagOut"][];
+            /** Months */
+            months: string[];
+        };
+        /** PatternsOut */
+        PatternsOut: {
+            /** Empty */
+            empty: boolean;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+            /** Trades Considered */
+            trades_considered: number;
+            /** Trades Without Bars */
+            trades_without_bars: number;
+            /** Patterns */
+            patterns: components["schemas"]["PatternOut"][];
+            /** Monthly */
+            monthly: components["schemas"]["MonthCountOut"][];
+            /** Rule Lag */
+            rule_lag: components["schemas"]["LagFlagOut"][];
+            /** Caveats */
+            caveats: string[];
+        };
+        /** PolicyFieldsIn */
+        PolicyFieldsIn: {
+            /** Goal Krw */
+            goal_krw?: number | string | null;
+            /** Goal Date */
+            goal_date?: string | null;
+            /** Monthly Contribution Krw */
+            monthly_contribution_krw: number | string;
+            /** Drawdown Tolerance Pct */
+            drawdown_tolerance_pct: number | string;
+            /** Max Position Weight Pct */
+            max_position_weight_pct: number | string;
+            /** Max Crypto Weight Pct */
+            max_crypto_weight_pct: number | string;
+            /** Max Total Risk Pct */
+            max_total_risk_pct: number | string;
+            /** Rebalance Band Pt */
+            rebalance_band_pt: number | string;
+            /** Target Stock Pct */
+            target_stock_pct: number | string;
+            /** Target Crypto Pct */
+            target_crypto_pct: number | string;
+            /** Target Cash Pct */
+            target_cash_pct: number | string;
+        };
+        /** PolicyFieldsOut */
+        PolicyFieldsOut: {
+            /** Goal Krw */
+            goal_krw: number | null;
+            /** Goal Date */
+            goal_date: string | null;
+            /** Monthly Contribution Krw */
+            monthly_contribution_krw: number;
+            /** Drawdown Tolerance Pct */
+            drawdown_tolerance_pct: number;
+            /** Max Position Weight Pct */
+            max_position_weight_pct: number;
+            /** Max Crypto Weight Pct */
+            max_crypto_weight_pct: number;
+            /** Max Total Risk Pct */
+            max_total_risk_pct: number;
+            /** Rebalance Band Pt */
+            rebalance_band_pt: number;
+            /** Target Stock Pct */
+            target_stock_pct: number;
+            /** Target Crypto Pct */
+            target_crypto_pct: number;
+            /** Target Cash Pct */
+            target_cash_pct: number;
+        };
+        /** PolicyIn */
+        PolicyIn: {
+            policy: components["schemas"]["PolicyFieldsIn"];
+            cash?: components["schemas"]["CashIn"] | null;
+        };
+        /** PolicyOut */
+        PolicyOut: {
+            policy: components["schemas"]["PolicyFieldsOut"];
+            cash: components["schemas"]["CashOut"] | null;
+            defaults: components["schemas"]["PolicyFieldsOut"];
+            /** Warnings */
+            warnings: string[];
+            /** Updated At */
+            updated_at: string | null;
+            /** Cash Stale */
+            cash_stale: boolean;
+            /** Policy Set */
+            policy_set: boolean;
         };
         /** PortfolioForecastOut */
         PortfolioForecastOut: {
@@ -1871,6 +2341,64 @@ export interface components {
             as_of: string;
         };
         /**
+         * RebalanceOrderOut
+         * @description One change the policy implies, checked against the limits. Never placed.
+         */
+        RebalanceOrderOut: {
+            /** Symbol */
+            symbol: string;
+            /** Side */
+            side: string;
+            /** Requested Krw */
+            requested_krw: number;
+            /** Allowed Krw */
+            allowed_krw: number;
+            /** Status */
+            status: string;
+            /** Reasons */
+            reasons: string[];
+            /** Labels */
+            labels: string[];
+            /** Approx Qty */
+            approx_qty: number | null;
+            /** Price */
+            price: number;
+            /** Currency */
+            currency: string;
+            /** Price Krw */
+            price_krw: number;
+            /** Realized Pnl Krw If Sold */
+            realized_pnl_krw_if_sold: number | null;
+        };
+        /** RebalanceOut */
+        RebalanceOut: {
+            /** Empty */
+            empty: boolean;
+            /** Equity Krw */
+            equity_krw: number;
+            /** Cash Known */
+            cash_known: boolean;
+            /** Band Pt */
+            band_pt: number;
+            /** Class Targets */
+            class_targets: {
+                [key: string]: number | null;
+            };
+            /** Unallocated Pct */
+            unallocated_pct: number;
+            /** Targets */
+            targets: components["schemas"]["TargetOut"][];
+            /** Orders */
+            orders: components["schemas"]["RebalanceOrderOut"][];
+            after: components["schemas"]["AfterOut"] | null;
+            /** Notes */
+            notes: string[];
+            /** Headline Ko */
+            headline_ko: string;
+            /** Disclaimer Ko */
+            disclaimer_ko: string;
+        };
+        /**
          * ResolvedRuleOut
          * @description The values that applied to this symbol: global → asset class → symbol overrides.
          */
@@ -1897,6 +2425,126 @@ export interface components {
             target_weight_gap_pt: number;
             /** Target Weight Pct */
             target_weight_pct: number | null;
+        };
+        /**
+         * ReviewBenchmarkOut
+         * @description The same cash flows replayed into a benchmark over the month; `excess_krw` is my
+         *     change minus its change (both include the same deposits, so they cancel).
+         */
+        ReviewBenchmarkOut: {
+            /** Symbol */
+            symbol: string;
+            /** Name Ko */
+            name_ko: string;
+            /** Start Value Krw */
+            start_value_krw: number;
+            /** End Value Krw */
+            end_value_krw: number;
+            /** Change Krw */
+            change_krw: number;
+            /** Excess Krw */
+            excess_krw: number;
+        };
+        /** ReviewOut */
+        ReviewOut: {
+            /** Empty */
+            empty: boolean;
+            /** Month */
+            month: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Start Point */
+            start_point: string | null;
+            /** End Point */
+            end_point: string | null;
+            /** Start Value Krw */
+            start_value_krw: number;
+            /** End Value Krw */
+            end_value_krw: number;
+            /** Change Krw */
+            change_krw: number;
+            /** Contributions Krw */
+            contributions_krw: number;
+            /** Market Pnl Krw */
+            market_pnl_krw: number;
+            /** Realized Pnl Krw */
+            realized_pnl_krw: number;
+            /** Dividends Krw */
+            dividends_krw: number;
+            /** Benchmarks */
+            benchmarks: components["schemas"]["ReviewBenchmarkOut"][];
+            trades: components["schemas"]["TradeCountOut"];
+            /** Flagged Trades */
+            flagged_trades: components["schemas"]["FlagOut"][];
+            /** Flags Counted */
+            flags_counted: boolean;
+            /** Suspicious Trades */
+            suspicious_trades: number;
+            /** Violations Now */
+            violations_now: number;
+            /** Months Available */
+            months_available: string[];
+            /** Caveats */
+            caveats: string[];
+        };
+        /** RiskOut */
+        RiskOut: {
+            /** Windows */
+            windows: components["schemas"]["RiskWindowOut"][];
+            actual: components["schemas"]["ActualRiskOut"] | null;
+            /** Actual Error */
+            actual_error: string | null;
+        };
+        /**
+         * RiskWindowOut
+         * @description Volatility and fixed-weight drawdown of today's mix over one past window. Not a
+         *     forecast: the window and `usable` say what the number rests on.
+         */
+        RiskWindowOut: {
+            /** Name */
+            name: string;
+            /** Grid */
+            grid: string;
+            /** Periods Per Year */
+            periods_per_year: number;
+            /** Rows */
+            rows: number;
+            /** Start */
+            start: string | null;
+            /** End */
+            end: string | null;
+            /** Annual Vol Pct */
+            annual_vol_pct: number;
+            /** Swing 1Sigma Krw */
+            swing_1sigma_krw: number;
+            /** Max Drawdown Pct */
+            max_drawdown_pct: number;
+            /** Drawdown Peak */
+            drawdown_peak: string | null;
+            /** Drawdown Trough */
+            drawdown_trough: string | null;
+            /** Coverage Pct */
+            coverage_pct: number;
+            /** Included */
+            included: string[];
+            /** Excluded */
+            excluded: components["schemas"]["ExcludedOut"][];
+            /** Method */
+            method: string;
+            /** Usable */
+            usable: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Peak At Window Start */
+            peak_at_window_start: boolean;
         };
         /** RuleCheckAllOut */
         RuleCheckAllOut: {
@@ -2238,6 +2886,23 @@ export interface components {
             /** Gurus */
             gurus: components["schemas"]["GuruOut"][];
         };
+        /** TargetOut */
+        TargetOut: {
+            /** Symbol */
+            symbol: string;
+            /** Asset Class */
+            asset_class: string;
+            /** Current Pct */
+            current_pct: number;
+            /** Target Pct */
+            target_pct: number;
+            /** Drift Pt */
+            drift_pt: number;
+            /** Source */
+            source: string;
+            /** Capped */
+            capped: boolean;
+        };
         /** TrackRecordOut */
         TrackRecordOut: {
             /** Pending */
@@ -2290,6 +2955,13 @@ export interface components {
             brier: number;
             /** Baseline Brier */
             baseline_brier: number;
+        };
+        /** TradeCountOut */
+        TradeCountOut: {
+            /** Buys */
+            buys: number;
+            /** Sells */
+            sells: number;
         };
         /** TrainedModelOut */
         TrainedModelOut: {
@@ -2418,6 +3090,42 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ViolationOut */
+        ViolationOut: {
+            /** Code */
+            code: string;
+            /** Severity */
+            severity: string;
+            /** Label Ko */
+            label_ko: string;
+            /** Detail */
+            detail: string;
+            /** Value */
+            value: number | null;
+            /** Limit */
+            limit: number | null;
+            /** Subject */
+            subject: string | null;
+        };
+        /** WeightOut */
+        WeightOut: {
+            /** Symbol */
+            symbol: string;
+            /** Asset Class */
+            asset_class: string;
+            /** Currency */
+            currency: string;
+            /** Value Krw */
+            value_krw: number;
+            /** Weight Pct */
+            weight_pct: number;
+            /** Invested Weight Pct */
+            invested_weight_pct: number;
+            /** Target Pct */
+            target_pct: number | null;
+            /** Cap Pct */
+            cap_pct: number;
         };
         /** WithholdingIn */
         WithholdingIn: {
@@ -3847,6 +4555,184 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuleSettingsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_kill_switch_api_rules_kill_switch_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["KillSwitchResetIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KillSwitchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_policy_api_coach_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOut"];
+                };
+            };
+        };
+    };
+    put_policy_api_coach_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diagnosis_api_coach_diagnosis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosisOut"];
+                };
+            };
+        };
+    };
+    get_rebalance_api_coach_rebalance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RebalanceOut"];
+                };
+            };
+        };
+    };
+    get_patterns_api_coach_patterns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatternsOut"];
+                };
+            };
+        };
+    };
+    get_review_api_coach_review_get: {
+        parameters: {
+            query?: {
+                /** @description YYYY-MM */
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
                 };
             };
             /** @description Validation Error */

@@ -156,6 +156,9 @@ export const api = {
   rulesSettings: () => request<RuleSettings>('/rules/settings'),
   updateRulesSettings: (data: RuleSettingsInput) =>
     request<RuleSettings>('/rules/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  /** The user resets the kill switch; the server records the actor, never the request. */
+  resetKillSwitch: (detail = '') =>
+    request<KillSwitchState>('/rules/kill-switch/reset', { method: 'POST', body: JSON.stringify({ detail }) }),
 
   /** Every held symbol's forecast in one request (ratios to the latest close). */
   forecastsHeld: () => request<HeldForecast[]>('/forecasts/held'),
@@ -206,3 +209,35 @@ export type HeldForecast = Schemas['HeldForecastOut']
 export type HeldHorizonForecast = Schemas['HeldHorizonOut']
 /** `ForecastStatus.live[assetClass][horizon]`: reasons, not the report's raw edge flags. */
 export type LiveVerdict = Schemas['LiveVerdictOut']
+
+// --- Portfolio coach (D-033): the user's own policy checked against the holdings. Not a forecast,
+// not a stock pick, not advice; nothing here places an order. ---
+export type CoachPolicy = Schemas['PolicyOut']
+export type CoachPolicyFields = Schemas['PolicyFieldsOut']
+export type CoachPolicyInput = Schemas['PolicyIn']
+export type KillSwitchState = Schemas['KillSwitchOut']
+export type CoachDiagnosis = Schemas['DiagnosisOut']
+export type CoachRiskWindow = Schemas['RiskWindowOut']
+export type CoachViolation = Schemas['ViolationOut']
+export type CoachBeta = Schemas['BetaOut']
+export type CoachRebalance = Schemas['RebalanceOut']
+export type CoachOrder = Schemas['RebalanceOrderOut']
+export type CoachPatterns = Schemas['PatternsOut']
+export type CoachPattern = Schemas['PatternOut']
+export type CoachFlag = Schemas['FlagOut']
+export type CoachLagFlag = Schemas['LagFlagOut']
+export type CoachReview = Schemas['ReviewOut']
+
+/** Own object like `compareApi`, so edits here never collide with `api`. */
+export const coachApi = {
+  policy: () => request<CoachPolicy>('/coach/policy'),
+  // Numbers go as strings so the backend parses exact decimals.
+  updatePolicy: (data: CoachPolicyInput) =>
+    request<CoachPolicy>('/coach/policy', { method: 'PUT', body: JSON.stringify(data) }),
+  // The checks: weights and past-window risk, the rebalance the policy implies (never placed),
+  // habits in the trade log, and one calendar month (`month` = YYYY-MM, this month by default).
+  diagnosis: () => request<CoachDiagnosis>('/coach/diagnosis'),
+  rebalance: () => request<CoachRebalance>('/coach/rebalance'),
+  patterns: () => request<CoachPatterns>('/coach/patterns'),
+  review: (month?: string) => request<CoachReview>(`/coach/review${query({ month })}`),
+}

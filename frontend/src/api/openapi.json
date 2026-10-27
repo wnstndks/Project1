@@ -1955,6 +1955,229 @@
           }
         }
       }
+    },
+    "/api/rules/kill-switch/reset": {
+      "post": {
+        "tags": [
+          "rules"
+        ],
+        "summary": "Reset Kill Switch",
+        "operationId": "reset_kill_switch_api_rules_kill_switch_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/KillSwitchResetIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KillSwitchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coach/policy": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Get Policy",
+        "operationId": "get_policy_api_coach_policy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Put Policy",
+        "operationId": "put_policy_api_coach_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coach/diagnosis": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Get Diagnosis",
+        "operationId": "get_diagnosis_api_coach_diagnosis_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosisOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coach/rebalance": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Get Rebalance",
+        "operationId": "get_rebalance_api_coach_rebalance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebalanceOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coach/patterns": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Get Patterns",
+        "operationId": "get_patterns_api_coach_patterns_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatternsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/coach/review": {
+      "get": {
+        "tags": [
+          "coach"
+        ],
+        "summary": "Get Review",
+        "operationId": "get_review_api_coach_review_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM",
+              "title": "Month"
+            },
+            "description": "YYYY-MM"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1975,6 +2198,107 @@
           "ignored"
         ],
         "title": "ActionStatus"
+      },
+      "ActualRiskOut": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "title": "Since"
+          },
+          "points": {
+            "type": "integer",
+            "title": "Points"
+          },
+          "twr_max_drawdown_pct": {
+            "type": "number",
+            "title": "Twr Max Drawdown Pct"
+          },
+          "current_drawdown_pct": {
+            "type": "number",
+            "title": "Current Drawdown Pct"
+          },
+          "daily_loss_breaches_1y": {
+            "type": "integer",
+            "title": "Daily Loss Breaches 1Y"
+          },
+          "drawdown_breaches_1y": {
+            "type": "integer",
+            "title": "Drawdown Breaches 1Y"
+          },
+          "limit_drawdown_pct": {
+            "type": "number",
+            "title": "Limit Drawdown Pct"
+          },
+          "limit_daily_loss_pct": {
+            "type": "number",
+            "title": "Limit Daily Loss Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "points",
+          "twr_max_drawdown_pct",
+          "current_drawdown_pct",
+          "daily_loss_breaches_1y",
+          "drawdown_breaches_1y",
+          "limit_drawdown_pct",
+          "limit_daily_loss_pct"
+        ],
+        "title": "ActualRiskOut",
+        "description": "The real value curve with deposits taken out (time-weighted index). Information only;\nit never trips the kill switch (D-027)."
+      },
+      "AfterOut": {
+        "properties": {
+          "weights": {
+            "items": {
+              "$ref": "#/components/schemas/AfterWeightOut"
+            },
+            "type": "array",
+            "title": "Weights"
+          },
+          "cash_krw": {
+            "type": "number",
+            "title": "Cash Krw"
+          },
+          "cash_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weights",
+          "cash_krw",
+          "cash_pct"
+        ],
+        "title": "AfterOut"
+      },
+      "AfterWeightOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "weight_pct"
+        ],
+        "title": "AfterWeightOut"
       },
       "AllocationOut": {
         "properties": {
@@ -2264,6 +2588,71 @@
         ],
         "title": "BenchmarkSeriesOut"
       },
+      "BetaOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "benchmark": {
+            "type": "string",
+            "title": "Benchmark"
+          },
+          "window": {
+            "type": "string",
+            "title": "Window"
+          },
+          "beta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beta"
+          },
+          "r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R2"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "benchmark",
+          "window",
+          "beta",
+          "r2",
+          "rows",
+          "reason"
+        ],
+        "title": "BetaOut",
+        "description": "Slope of the symbol's returns on its benchmark's, both in the trade currency."
+      },
       "Body_preview_screenshot_api_imports_screenshot_post": {
         "properties": {
           "files": {
@@ -2280,6 +2669,71 @@
           "files"
         ],
         "title": "Body_preview_screenshot_api_imports_screenshot_post"
+      },
+      "CashIn": {
+        "properties": {
+          "krw": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Krw"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Usd"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "krw",
+          "usd",
+          "as_of"
+        ],
+        "title": "CashIn",
+        "description": "Cash the app cannot see, typed in by the user with the date it was true."
+      },
+      "CashOut": {
+        "properties": {
+          "krw": {
+            "type": "number",
+            "title": "Krw"
+          },
+          "usd": {
+            "type": "number",
+            "title": "Usd"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          }
+        },
+        "type": "object",
+        "required": [
+          "krw",
+          "usd",
+          "as_of"
+        ],
+        "title": "CashOut"
       },
       "ClassStatsOut": {
         "properties": {
@@ -2467,6 +2921,52 @@
           "gurus"
         ],
         "title": "CompareOut"
+      },
+      "ConcentrationOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "top1_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top1 Symbol"
+          },
+          "top1_pct": {
+            "type": "number",
+            "title": "Top1 Pct"
+          },
+          "top3_pct": {
+            "type": "number",
+            "title": "Top3 Pct"
+          },
+          "hhi": {
+            "type": "number",
+            "title": "Hhi"
+          },
+          "effective_n": {
+            "type": "number",
+            "title": "Effective N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "top1_symbol",
+          "top1_pct",
+          "top3_pct",
+          "hhi",
+          "effective_n"
+        ],
+        "title": "ConcentrationOut",
+        "description": "Invested-basis concentration; `effective_n` = 1/HHI, how many equal holdings this is."
       },
       "CongressStatusOut": {
         "properties": {
@@ -2834,6 +3334,51 @@
         ],
         "title": "CorporateActionOut"
       },
+      "CorrelationOut": {
+        "properties": {
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Symbols"
+          },
+          "matrix": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Matrix"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "excluded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbols",
+          "matrix",
+          "method",
+          "rows",
+          "excluded"
+        ],
+        "title": "CorrelationOut"
+      },
       "CryptoRuleIn": {
         "properties": {
           "cut_loss_pct": {
@@ -2943,6 +3488,190 @@
         ],
         "title": "DeletedOut"
       },
+      "DiagnosisOut": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "empty": {
+            "type": "boolean",
+            "title": "Empty"
+          },
+          "policy_set": {
+            "type": "boolean",
+            "title": "Policy Set"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PolicyFieldsOut"
+          },
+          "equity_krw": {
+            "type": "number",
+            "title": "Equity Krw"
+          },
+          "invested_krw": {
+            "type": "number",
+            "title": "Invested Krw"
+          },
+          "cash_krw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Krw"
+          },
+          "cash_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash As Of"
+          },
+          "cash_stale": {
+            "type": "boolean",
+            "title": "Cash Stale"
+          },
+          "usd_krw": {
+            "type": "number",
+            "title": "Usd Krw"
+          },
+          "weights": {
+            "items": {
+              "$ref": "#/components/schemas/WeightOut"
+            },
+            "type": "array",
+            "title": "Weights"
+          },
+          "concentration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConcentrationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exposure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExposureOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk": {
+            "$ref": "#/components/schemas/RiskOut"
+          },
+          "correlation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CorrelationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "betas": {
+            "items": {
+              "$ref": "#/components/schemas/BetaOut"
+            },
+            "type": "array",
+            "title": "Betas"
+          },
+          "total_risk_pct_equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Risk Pct Equity"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/ViolationOut"
+            },
+            "type": "array",
+            "title": "Violations"
+          },
+          "required_annual_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Annual Return Pct"
+          },
+          "goal_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Years"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "empty",
+          "policy_set",
+          "policy",
+          "equity_krw",
+          "invested_krw",
+          "cash_krw",
+          "cash_as_of",
+          "cash_stale",
+          "usd_krw",
+          "weights",
+          "concentration",
+          "exposure",
+          "risk",
+          "correlation",
+          "betas",
+          "total_risk_pct_equity",
+          "violations",
+          "required_annual_return_pct",
+          "goal_years",
+          "caveats",
+          "checked_at"
+        ],
+        "title": "DiagnosisOut"
+      },
       "ErrorMetrics": {
         "properties": {
           "mae": {
@@ -2970,6 +3699,120 @@
           "direction_acc"
         ],
         "title": "ErrorMetrics"
+      },
+      "ExcludedOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "bars": {
+            "type": "integer",
+            "title": "Bars"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "bars"
+        ],
+        "title": "ExcludedOut"
+      },
+      "ExposureOut": {
+        "properties": {
+          "equity_krw": {
+            "type": "number",
+            "title": "Equity Krw"
+          },
+          "invested_krw": {
+            "type": "number",
+            "title": "Invested Krw"
+          },
+          "stock_pct": {
+            "type": "number",
+            "title": "Stock Pct"
+          },
+          "crypto_pct": {
+            "type": "number",
+            "title": "Crypto Pct"
+          },
+          "cash_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Pct"
+          },
+          "usd_pct": {
+            "type": "number",
+            "title": "Usd Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "equity_krw",
+          "invested_krw",
+          "stock_pct",
+          "crypto_pct",
+          "cash_pct",
+          "usd_pct"
+        ],
+        "title": "ExposureOut"
+      },
+      "FlagOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "trade_id": {
+            "type": "integer",
+            "title": "Trade Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label_ko",
+          "trade_id",
+          "symbol",
+          "date",
+          "detail",
+          "value"
+        ],
+        "title": "FlagOut"
       },
       "ForecastBacktestPoint": {
         "properties": {
@@ -3889,6 +4732,19 @@
         ],
         "title": "KillSwitchOut"
       },
+      "KillSwitchResetIn": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Detail",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "KillSwitchResetIn",
+        "description": "Optional note kept with the reset event. The actor is never taken from the request:\na reset over HTTP is always the user's."
+      },
       "KimchiPremiumOut": {
         "properties": {
           "symbol": {
@@ -3949,6 +4805,50 @@
           "fx_stale"
         ],
         "title": "KimchiPremiumOut"
+      },
+      "LagFlagOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "cut_price": {
+            "type": "number",
+            "title": "Cut Price"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "since": {
+            "type": "string",
+            "format": "date",
+            "title": "Since"
+          },
+          "last_close": {
+            "type": "number",
+            "title": "Last Close"
+          },
+          "since_window_start": {
+            "type": "boolean",
+            "title": "Since Window Start",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "currency",
+          "cut_price",
+          "days",
+          "since",
+          "last_close"
+        ],
+        "title": "LagFlagOut"
       },
       "LiveVerdictOut": {
         "properties": {
@@ -4101,6 +5001,34 @@
         ],
         "title": "MissingOut"
       },
+      "MonthCountOut": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "buys": {
+            "type": "integer",
+            "title": "Buys"
+          },
+          "sells": {
+            "type": "integer",
+            "title": "Sells"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "month",
+          "buys",
+          "sells",
+          "total"
+        ],
+        "title": "MonthCountOut"
+      },
       "NewsDayOut": {
         "properties": {
           "date": {
@@ -4208,6 +5136,435 @@
           "guru_weight_pct"
         ],
         "title": "OverlapOut"
+      },
+      "PatternOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/FlagOut"
+            },
+            "type": "array",
+            "title": "Trades"
+          },
+          "months": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Months"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label_ko",
+          "count",
+          "detail",
+          "trades",
+          "months"
+        ],
+        "title": "PatternOut"
+      },
+      "PatternsOut": {
+        "properties": {
+          "empty": {
+            "type": "boolean",
+            "title": "Empty"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Window End"
+          },
+          "trades_considered": {
+            "type": "integer",
+            "title": "Trades Considered"
+          },
+          "trades_without_bars": {
+            "type": "integer",
+            "title": "Trades Without Bars"
+          },
+          "patterns": {
+            "items": {
+              "$ref": "#/components/schemas/PatternOut"
+            },
+            "type": "array",
+            "title": "Patterns"
+          },
+          "monthly": {
+            "items": {
+              "$ref": "#/components/schemas/MonthCountOut"
+            },
+            "type": "array",
+            "title": "Monthly"
+          },
+          "rule_lag": {
+            "items": {
+              "$ref": "#/components/schemas/LagFlagOut"
+            },
+            "type": "array",
+            "title": "Rule Lag"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "empty",
+          "window_start",
+          "window_end",
+          "trades_considered",
+          "trades_without_bars",
+          "patterns",
+          "monthly",
+          "rule_lag",
+          "caveats"
+        ],
+        "title": "PatternsOut"
+      },
+      "PolicyFieldsIn": {
+        "properties": {
+          "goal_krw": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Krw"
+          },
+          "goal_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Date"
+          },
+          "monthly_contribution_krw": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Monthly Contribution Krw"
+          },
+          "drawdown_tolerance_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Drawdown Tolerance Pct"
+          },
+          "max_position_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Max Position Weight Pct"
+          },
+          "max_crypto_weight_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Max Crypto Weight Pct"
+          },
+          "max_total_risk_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Max Total Risk Pct"
+          },
+          "rebalance_band_pt": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Rebalance Band Pt"
+          },
+          "target_stock_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Target Stock Pct"
+          },
+          "target_crypto_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Target Crypto Pct"
+          },
+          "target_cash_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Target Cash Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "monthly_contribution_krw",
+          "drawdown_tolerance_pct",
+          "max_position_weight_pct",
+          "max_crypto_weight_pct",
+          "max_total_risk_pct",
+          "rebalance_band_pt",
+          "target_stock_pct",
+          "target_crypto_pct",
+          "target_cash_pct"
+        ],
+        "title": "PolicyFieldsIn"
+      },
+      "PolicyFieldsOut": {
+        "properties": {
+          "goal_krw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Krw"
+          },
+          "goal_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Date"
+          },
+          "monthly_contribution_krw": {
+            "type": "number",
+            "title": "Monthly Contribution Krw"
+          },
+          "drawdown_tolerance_pct": {
+            "type": "number",
+            "title": "Drawdown Tolerance Pct"
+          },
+          "max_position_weight_pct": {
+            "type": "number",
+            "title": "Max Position Weight Pct"
+          },
+          "max_crypto_weight_pct": {
+            "type": "number",
+            "title": "Max Crypto Weight Pct"
+          },
+          "max_total_risk_pct": {
+            "type": "number",
+            "title": "Max Total Risk Pct"
+          },
+          "rebalance_band_pt": {
+            "type": "number",
+            "title": "Rebalance Band Pt"
+          },
+          "target_stock_pct": {
+            "type": "number",
+            "title": "Target Stock Pct"
+          },
+          "target_crypto_pct": {
+            "type": "number",
+            "title": "Target Crypto Pct"
+          },
+          "target_cash_pct": {
+            "type": "number",
+            "title": "Target Cash Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goal_krw",
+          "goal_date",
+          "monthly_contribution_krw",
+          "drawdown_tolerance_pct",
+          "max_position_weight_pct",
+          "max_crypto_weight_pct",
+          "max_total_risk_pct",
+          "rebalance_band_pt",
+          "target_stock_pct",
+          "target_crypto_pct",
+          "target_cash_pct"
+        ],
+        "title": "PolicyFieldsOut"
+      },
+      "PolicyIn": {
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/PolicyFieldsIn"
+          },
+          "cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CashIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy"
+        ],
+        "title": "PolicyIn"
+      },
+      "PolicyOut": {
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/PolicyFieldsOut"
+          },
+          "cash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CashOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/PolicyFieldsOut"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "cash_stale": {
+            "type": "boolean",
+            "title": "Cash Stale"
+          },
+          "policy_set": {
+            "type": "boolean",
+            "title": "Policy Set"
+          }
+        },
+        "type": "object",
+        "required": [
+          "policy",
+          "cash",
+          "defaults",
+          "warnings",
+          "updated_at",
+          "cash_stale",
+          "policy_set"
+        ],
+        "title": "PolicyOut"
       },
       "PortfolioForecastOut": {
         "properties": {
@@ -4717,6 +6074,188 @@
         ],
         "title": "QuoteOut"
       },
+      "RebalanceOrderOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "side": {
+            "type": "string",
+            "title": "Side"
+          },
+          "requested_krw": {
+            "type": "number",
+            "title": "Requested Krw"
+          },
+          "allowed_krw": {
+            "type": "number",
+            "title": "Allowed Krw"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "approx_qty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approx Qty"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "price_krw": {
+            "type": "number",
+            "title": "Price Krw"
+          },
+          "realized_pnl_krw_if_sold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Pnl Krw If Sold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "side",
+          "requested_krw",
+          "allowed_krw",
+          "status",
+          "reasons",
+          "labels",
+          "approx_qty",
+          "price",
+          "currency",
+          "price_krw",
+          "realized_pnl_krw_if_sold"
+        ],
+        "title": "RebalanceOrderOut",
+        "description": "One change the policy implies, checked against the limits. Never placed."
+      },
+      "RebalanceOut": {
+        "properties": {
+          "empty": {
+            "type": "boolean",
+            "title": "Empty"
+          },
+          "equity_krw": {
+            "type": "number",
+            "title": "Equity Krw"
+          },
+          "cash_known": {
+            "type": "boolean",
+            "title": "Cash Known"
+          },
+          "band_pt": {
+            "type": "number",
+            "title": "Band Pt"
+          },
+          "class_targets": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Class Targets"
+          },
+          "unallocated_pct": {
+            "type": "number",
+            "title": "Unallocated Pct"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetOut"
+            },
+            "type": "array",
+            "title": "Targets"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/RebalanceOrderOut"
+            },
+            "type": "array",
+            "title": "Orders"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AfterOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "headline_ko": {
+            "type": "string",
+            "title": "Headline Ko"
+          },
+          "disclaimer_ko": {
+            "type": "string",
+            "title": "Disclaimer Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "empty",
+          "equity_krw",
+          "cash_known",
+          "band_pt",
+          "class_targets",
+          "unallocated_pct",
+          "targets",
+          "orders",
+          "after",
+          "notes",
+          "headline_ko",
+          "disclaimer_ko"
+        ],
+        "title": "RebalanceOut"
+      },
       "ResolvedRuleOut": {
         "properties": {
           "cut_loss_pct": {
@@ -4787,6 +6326,370 @@
         ],
         "title": "ResolvedRuleOut",
         "description": "The values that applied to this symbol: global \u2192 asset class \u2192 symbol overrides."
+      },
+      "ReviewBenchmarkOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name_ko": {
+            "type": "string",
+            "title": "Name Ko"
+          },
+          "start_value_krw": {
+            "type": "number",
+            "title": "Start Value Krw"
+          },
+          "end_value_krw": {
+            "type": "number",
+            "title": "End Value Krw"
+          },
+          "change_krw": {
+            "type": "number",
+            "title": "Change Krw"
+          },
+          "excess_krw": {
+            "type": "number",
+            "title": "Excess Krw"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name_ko",
+          "start_value_krw",
+          "end_value_krw",
+          "change_krw",
+          "excess_krw"
+        ],
+        "title": "ReviewBenchmarkOut",
+        "description": "The same cash flows replayed into a benchmark over the month; `excess_krw` is my\nchange minus its change (both include the same deposits, so they cancel)."
+      },
+      "ReviewOut": {
+        "properties": {
+          "empty": {
+            "type": "boolean",
+            "title": "Empty"
+          },
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "start_point": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Point"
+          },
+          "end_point": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Point"
+          },
+          "start_value_krw": {
+            "type": "number",
+            "title": "Start Value Krw"
+          },
+          "end_value_krw": {
+            "type": "number",
+            "title": "End Value Krw"
+          },
+          "change_krw": {
+            "type": "number",
+            "title": "Change Krw"
+          },
+          "contributions_krw": {
+            "type": "number",
+            "title": "Contributions Krw"
+          },
+          "market_pnl_krw": {
+            "type": "number",
+            "title": "Market Pnl Krw"
+          },
+          "realized_pnl_krw": {
+            "type": "number",
+            "title": "Realized Pnl Krw"
+          },
+          "dividends_krw": {
+            "type": "number",
+            "title": "Dividends Krw"
+          },
+          "benchmarks": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewBenchmarkOut"
+            },
+            "type": "array",
+            "title": "Benchmarks"
+          },
+          "trades": {
+            "$ref": "#/components/schemas/TradeCountOut"
+          },
+          "flagged_trades": {
+            "items": {
+              "$ref": "#/components/schemas/FlagOut"
+            },
+            "type": "array",
+            "title": "Flagged Trades"
+          },
+          "flags_counted": {
+            "type": "boolean",
+            "title": "Flags Counted"
+          },
+          "suspicious_trades": {
+            "type": "integer",
+            "title": "Suspicious Trades"
+          },
+          "violations_now": {
+            "type": "integer",
+            "title": "Violations Now"
+          },
+          "months_available": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Months Available"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "empty",
+          "month",
+          "start",
+          "end",
+          "start_point",
+          "end_point",
+          "start_value_krw",
+          "end_value_krw",
+          "change_krw",
+          "contributions_krw",
+          "market_pnl_krw",
+          "realized_pnl_krw",
+          "dividends_krw",
+          "benchmarks",
+          "trades",
+          "flagged_trades",
+          "flags_counted",
+          "suspicious_trades",
+          "violations_now",
+          "months_available",
+          "caveats"
+        ],
+        "title": "ReviewOut"
+      },
+      "RiskOut": {
+        "properties": {
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskWindowOut"
+            },
+            "type": "array",
+            "title": "Windows"
+          },
+          "actual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActualRiskOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actual_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "windows",
+          "actual",
+          "actual_error"
+        ],
+        "title": "RiskOut"
+      },
+      "RiskWindowOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "grid": {
+            "type": "string",
+            "title": "Grid"
+          },
+          "periods_per_year": {
+            "type": "integer",
+            "title": "Periods Per Year"
+          },
+          "rows": {
+            "type": "integer",
+            "title": "Rows"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "annual_vol_pct": {
+            "type": "number",
+            "title": "Annual Vol Pct"
+          },
+          "swing_1sigma_krw": {
+            "type": "number",
+            "title": "Swing 1Sigma Krw"
+          },
+          "max_drawdown_pct": {
+            "type": "number",
+            "title": "Max Drawdown Pct"
+          },
+          "drawdown_peak": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drawdown Peak"
+          },
+          "drawdown_trough": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drawdown Trough"
+          },
+          "coverage_pct": {
+            "type": "number",
+            "title": "Coverage Pct"
+          },
+          "included": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Included"
+          },
+          "excluded": {
+            "items": {
+              "$ref": "#/components/schemas/ExcludedOut"
+            },
+            "type": "array",
+            "title": "Excluded"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "peak_at_window_start": {
+            "type": "boolean",
+            "title": "Peak At Window Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "grid",
+          "periods_per_year",
+          "rows",
+          "start",
+          "end",
+          "annual_vol_pct",
+          "swing_1sigma_krw",
+          "max_drawdown_pct",
+          "drawdown_peak",
+          "drawdown_trough",
+          "coverage_pct",
+          "included",
+          "excluded",
+          "method",
+          "usable",
+          "reason",
+          "peak_at_window_start"
+        ],
+        "title": "RiskWindowOut",
+        "description": "Volatility and fixed-weight drawdown of today's mix over one past window. Not a\nforecast: the window and `usable` say what the number rests on."
       },
       "RuleCheckAllOut": {
         "properties": {
@@ -5842,6 +7745,49 @@
         ],
         "title": "SyncOut"
       },
+      "TargetOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "asset_class": {
+            "type": "string",
+            "title": "Asset Class"
+          },
+          "current_pct": {
+            "type": "number",
+            "title": "Current Pct"
+          },
+          "target_pct": {
+            "type": "number",
+            "title": "Target Pct"
+          },
+          "drift_pt": {
+            "type": "number",
+            "title": "Drift Pt"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "capped": {
+            "type": "boolean",
+            "title": "Capped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "asset_class",
+          "current_pct",
+          "target_pct",
+          "drift_pt",
+          "source",
+          "capped"
+        ],
+        "title": "TargetOut"
+      },
       "TrackRecordOut": {
         "properties": {
           "pending": {
@@ -5968,6 +7914,24 @@
           "baseline_brier"
         ],
         "title": "TrackSummaryOut"
+      },
+      "TradeCountOut": {
+        "properties": {
+          "buys": {
+            "type": "integer",
+            "title": "Buys"
+          },
+          "sells": {
+            "type": "integer",
+            "title": "Sells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "buys",
+          "sells"
+        ],
+        "title": "TradeCountOut"
       },
       "TrainedModelOut": {
         "properties": {
@@ -6306,6 +8270,125 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ViolationOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "label_ko",
+          "detail",
+          "value",
+          "limit",
+          "subject"
+        ],
+        "title": "ViolationOut"
+      },
+      "WeightOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "asset_class": {
+            "type": "string",
+            "title": "Asset Class"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "value_krw": {
+            "type": "number",
+            "title": "Value Krw"
+          },
+          "weight_pct": {
+            "type": "number",
+            "title": "Weight Pct"
+          },
+          "invested_weight_pct": {
+            "type": "number",
+            "title": "Invested Weight Pct"
+          },
+          "target_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Pct"
+          },
+          "cap_pct": {
+            "type": "number",
+            "title": "Cap Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "asset_class",
+          "currency",
+          "value_krw",
+          "weight_pct",
+          "invested_weight_pct",
+          "target_pct",
+          "cap_pct"
+        ],
+        "title": "WeightOut"
       },
       "WithholdingIn": {
         "properties": {

@@ -24,6 +24,7 @@ const assetDetail = page(() =>
 )
 const compare = page(() => import('./pages/Compare').then((m) => ({ Component: m.Compare })))
 const rules = page(() => import('./pages/Rules').then((m) => ({ Component: m.Rules })))
+const coach = page(() => import('./pages/Coach').then((m) => ({ Component: m.Coach })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +40,7 @@ const router = createBrowserRouter([
       { path: '/', ...dashboard },
       { path: '/compare', ...compare },
       { path: '/rules', ...rules },
+      { path: '/coach', ...coach },
       { path: '/transactions', ...transactions },
       { path: '/import', ...importPage },
       { path: '/projection', ...projection },

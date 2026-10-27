@@ -3,9 +3,11 @@ import { useEffect, useRef } from 'react'
 
 import {
   api,
+  coachApi,
   compareApi,
   congressApi,
   type ActionStatus,
+  type CoachPolicyInput,
   type Currency,
   type ImportCommit,
   type ManualImport,
@@ -84,6 +86,8 @@ function useLedgerMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>
       void client.invalidateQueries({ queryKey: ['corporate-actions'] })
       // Rule checks read the positions (average cost, steps done, weights).
       void client.invalidateQueries({ queryKey: ['rules'] })
+      // The coach's checks are built on the same holdings.
+      void client.invalidateQueries({ queryKey: ['coach'] })
     },
   })
 }
@@ -243,12 +247,66 @@ export const useRuleCheck = () =>
 export const useRuleSettings = () =>
   useQuery({ queryKey: ['rules', 'settings'] as const, queryFn: api.rulesSettings })
 
-/** Saving rules changes every check, so both rule queries refetch. */
+/** Saving rules changes every check, so both rule queries refetch; the coach reads the
+ *  per-symbol targets from the same settings. */
 export function useUpdateRuleSettings() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (data: RuleSettingsInput) => api.updateRulesSettings(data),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['rules'] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['rules'] })
+      void client.invalidateQueries({ queryKey: ['coach'] })
+    },
+  })
+}
+
+// --- Portfolio coach (D-033): the user's policy, not a forecast. Keys under ['coach']. ---
+
+export const useCoachPolicy = () =>
+  useQuery({ queryKey: ['coach', 'policy'] as const, queryFn: coachApi.policy })
+
+export function useUpdateCoachPolicy() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (data: CoachPolicyInput) => coachApi.updatePolicy(data),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['coach'] }),
+  })
+}
+
+// The checks load years of bars on a first visit; five minutes of staleness is fine and a
+// failure is shown, not retried.
+const coachQuery = { staleTime: 5 * 60_000, retry: false } as const
+
+/** Where the holdings stand against the policy; the home card and the coach page share it. */
+export const useCoachDiagnosis = (enabled = true) =>
+  useQuery({ queryKey: ['coach', 'diagnosis'] as const, queryFn: coachApi.diagnosis, ...coachQuery, enabled })
+
+export const useCoachRebalance = (enabled = true) =>
+  useQuery({ queryKey: ['coach', 'rebalance'] as const, queryFn: coachApi.rebalance, ...coachQuery, enabled })
+
+export const useCoachPatterns = (enabled = true) =>
+  useQuery({ queryKey: ['coach', 'patterns'] as const, queryFn: coachApi.patterns, ...coachQuery, enabled })
+
+/** One calendar month (`undefined` = this month). Keeps the last month's data while switching. */
+export const useCoachReview = (month?: string, enabled = true) =>
+  useQuery({
+    queryKey: ['coach', 'review', month] as const,
+    queryFn: () => coachApi.review(month),
+    ...coachQuery,
+    placeholderData: keepPreviousData,
+    enabled,
+  })
+
+/** The user turns the kill switch off from the app (the server fixes the actor). The rule
+ *  check carries the switch state and the coach shows it, so both refetch. */
+export function useResetKillSwitch() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (detail?: string) => api.resetKillSwitch(detail),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['rules'] })
+      void client.invalidateQueries({ queryKey: ['coach'] })
+    },
   })
 }
 

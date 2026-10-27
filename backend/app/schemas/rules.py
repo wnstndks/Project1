@@ -209,6 +209,13 @@ class KillSwitchOut(BaseModel):
     since: datetime | None
 
 
+class KillSwitchResetIn(BaseModel):
+    """Optional note kept with the reset event. The actor is never taken from the request:
+    a reset over HTTP is always the user's."""
+
+    detail: str = Field("", max_length=200)
+
+
 class RuleLabelsOut(BaseModel):
     status: dict[str, str]
     block: dict[str, str]

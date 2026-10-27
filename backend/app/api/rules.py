@@ -8,8 +8,14 @@ from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 
 from app.deps import get_rule_service
-from app.schemas.rules import RuleCheckAllOut, RuleSettingsIn, RuleSettingsOut
-from app.services.rules import RuleService
+from app.schemas.rules import (
+    KillSwitchOut,
+    KillSwitchResetIn,
+    RuleCheckAllOut,
+    RuleSettingsIn,
+    RuleSettingsOut,
+)
+from app.services.rules import RuleService, kill_switch_payload
 
 router = APIRouter(prefix="/rules", tags=["rules"])
 
@@ -32,3 +38,13 @@ def put_rule_settings(body: RuleSettingsIn, service: RuleService = Depends(get_r
         body.crypto.model_dump() if body.crypto is not None else None,
         {symbol: rule.model_dump() for symbol, rule in body.targets.items()},
     )
+
+
+# The user resets the kill switch from the app; the actor is fixed server-side (D-033 §7).
+# Answers the current state even when the switch was not tripped.
+@router.post("/kill-switch/reset", response_model=KillSwitchOut)
+def reset_kill_switch(
+    body: KillSwitchResetIn | None = None, service: RuleService = Depends(get_rule_service)
+):
+    detail = body.detail if body is not None else ""
+    return kill_switch_payload(service.reset_kill_switch(detail))

@@ -367,6 +367,26 @@ class RuleSettingsRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
 
 
+class PolicySettingsRow(Base):
+    """The user's investment policy for the portfolio coach (DECISIONS.md D-033).
+
+    One row (id 1). `policy_json` holds the policy keys (goal_krw, goal_date,
+    monthly_contribution_krw, drawdown_tolerance_pct, max_position_weight_pct,
+    max_crypto_weight_pct, max_total_risk_pct, rebalance_band_pt, target_stock_pct,
+    target_crypto_pct, target_cash_pct); amounts and percentages are stored as strings so
+    they round-trip as exact decimals, like the ledger. `cash_json` is the hand-entered cash
+    balance `{"krw": "0", "usd": "0", "as_of": "YYYY-MM-DD"}` or `{}` when none was given
+    (the app cannot know cash). Without a row the `AM_RISK_*`/`AM_RULES_*` defaults apply.
+    """
+
+    __tablename__ = "policy_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    policy_json: Mapped[dict] = mapped_column(JSON)
+    cash_json: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
 class CongressTrade(Base):
     """One transaction from a US House member's periodic transaction report (STOCK Act),
     as parsed from the Clerk's PDF (services/congress.py, DECISIONS.md D-030).

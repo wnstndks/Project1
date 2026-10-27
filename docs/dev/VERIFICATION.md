@@ -978,3 +978,233 @@ PYTHONPATH=. py -3.11 -m uv run python $SP/verifier/w2a_{strict_loader,panel_shi
 - `cd /c/Users/user/Desktop/project/frontend && unset VIRTUAL_ENV && npm run build && npm run lint && npm test`
 - `cd /c/Users/user/Desktop/project/backend && py -3.11 -m uv run python -m app.export_openapi <scratch>/openapi.json && diff <scratch>/openapi.json ../frontend/src/api/openapi.json` / frontend\ `npx --yes openapi-typescript@7 src/api/openapi.json -o <scratch>/schema.d.ts && diff <scratch>/schema.d.ts src/api/schema.d.ts`
 - 프로브: backend\ `PYTHONPATH=<backend 윈도 경로> py -3.11 -m uv run python -X utf8 <scratch>\verify-manual\probe.py claude`(또는 `ollama`) / `… probe2.py`. `<scratch>` = `C:\Users\user\AppData\Local\Temp\claude\c--Users-user-Desktop-project\390c67f2-c016-4b04-a641-dbd27eed466f\scratchpad`.
+
+## 포트폴리오 코치 (2026-10-27)
+
+대상: 미커밋 작업 트리(브랜치 `agent-team`, HEAD 49d18ba). 사양은 `~/.claude/plans/cozy-noodling-volcano.md` "I. 포트폴리오 코치"와 D-033. 담당: risk-engineer(`strategy/coach.py`·`tests/test_coach.py`), app-engineer(테이블·마이그레이션·서비스·API·화면, 보고 없이 중단), evaluation-engineer(`tests/test_coach_math.py`). 검증은 세션이 두 번 끊겨 세 번에 나눠 진행했고, 이 섹션은 항목을 끝낼 때마다 덧붙였다.
+
+**판정: 부분 통과 — 차단 1건(N-COACH-1: 단가 오류 거래가 있으면 실제 추이 낙폭·리뷰 입금 분해가 598,141% 같은 값을 사실처럼 보여 주고 닫히지 않음), 비차단 8건(N-COACH-2~9). 나머지(재현·마이그레이션·정책·독립 재계산·리밸런싱·패턴·리뷰·킬스위치·금지어·위생·무효화·화면)는 반박 실패로 통과. 상세는 아래 "최종 판정".**
+
+→ 수정 라운드 재검증(2026-10-27, 이 섹션 끝 "#### 수정 라운드 재검증")에서 N-COACH-1(ISSUE-048)·N-COACH-2~7·9가 닫힌 것을 확인해 **통과**로 갱신. 남은 것은 N-COACH-8(관찰)·N-COACH-10(테스트 보강 권고).
+
+#### 1. 재현(절대 경로, bash)
+| 명령 | 결과 | 리드 보고와 대조 |
+|---|---|---|
+| backend\ `py -3.11 -m uv run pytest -o addopts="" -q` | **875 passed** in 129.19s | 875 일치 |
+| `pytest -o addopts="" -q tests/test_coach.py` / `test_coach_math.py` / `test_coach_api.py` | **142** / **63** / **41** passed (0.22s / 0.14s / 7.17s) | — (리드 미보고) |
+| `ruff check .` / `ruff format --check .` | All checks passed / 143 files already formatted | 일치 |
+| frontend\ `unset VIRTUAL_ENV && npm test -- --run` | **33 files / 210 tests** passed | 일치 |
+| `npm run lint` / `npm run build` | oxlint 0건 / built in 245ms(exit 0) | 일치 |
+| `npm run gen:api` 재실행 | `openapi.json`·`schema.d.ts` sha256이 두 번 실행 사이에 동일(`4323bfe8…`, `9a1c5e08…`) → 재생성 결정적. 경로 `/api/coach/{policy,diagnosis,rebalance,patterns,review}`·`/api/rules/kill-switch/reset` 포함 | `git diff --quiet`는 HEAD 대비라 항상 1(두 파일이 작업 트리에서 이미 수정됨) — 해시 비교로 대신함 |
+| `tests/test_coach_math.py`의 `xfail` | 머리말에만 언급, 실제 `xfail` 마커 0개 → 손계산과 모듈 값이 전부 일치 | — |
+
+#### 2. 마이그레이션(데모 DB `backend/demo.db`, `AM_DATABASE_URL=sqlite:///demo.db`)
+| 확인 | 결과 |
+|---|---|
+| `alembic heads` | `8ed46201b220 (head)` 하나. 파일 `down_revision = '3af66f72d79b'` |
+| `alembic upgrade head` | e67d73f03bf8 → 9f363af5cd85 → e8db9ec1f27b → 6de1dd6fc3d6 → 3af66f72d79b → **8ed46201b220**(데모 DB가 5단계 뒤에 있었음. 중간의 "invalidate symbol syncs" 마이그레이션으로 `symbol_syncs`가 비워져 첫 코치 호출이 봉을 다시 받음) |
+| `alembic check` | "No new upgrade operations detected." |
+| `policy_settings` | `pragma table_info`: `id INTEGER PK`, `policy_json JSON NOT NULL`, `cash_json JSON NOT NULL`, `updated_at DATETIME NOT NULL` = `PolicySettingsRow`와 일치. 행 0개(정책 미저장) |
+| 마이그레이션 형식 | `op.create_table(...)` + `op.f('pk_policy_settings')` 명명 규칙. 새 테이블 생성이라 `batch_alter_table`은 해당 없음(`render_as_batch`는 ALTER에만 적용) |
+| `seed.load` | 데모 DB에 거래 **21건**(14종목: 데모 16건 + 2026-10-19 직접 입력 검증 5건, 코인 4종은 KRW)이 이미 있어 `seed.load`가 "already exist"로 거부 → `--reset` 없이 기존 데모 데이터로 진행 |
+
+#### 8. 금지 사항 grep
+| 확인 | 결과 |
+|---|---|
+| `추천|사세요|파세요|오를|예상 수익` in `strategy/coach.py`·`services/coach.py`·`schemas/coach.py`·`api/coach.py`·`lib/coach.ts`·`Coach.tsx`·`CoachCard.tsx` | 5건, 전부 고지문·주석: `coach.py:18`(모듈 docstring "…을 피한다"), `coach.ts:5-6`(주석), `coach.ts:25` `COACH_INTRO_KO` "예측·종목 추천·투자 조언이 아니며"(고지), `coach.ts:415`(주석 "Never 사세요/파세요"). 사용자에게 보이는 문장 중 금지어는 고지문 1건뿐 |
+| `execute(`·`Broker`·`.trip(`·`KillSwitch.trip` in `strategy/coach.py`·`services/coach.py` | 0건. `services/coach.py`는 `KillSwitch(self.db).state()`만 읽음 |
+| `git diff backend/app/config.py` | `coach_max_crypto_weight_pct`(30, gt 0 lt 100)·`coach_max_total_risk_pct`(8) 추가만. `live_trading` 변경 0 |
+| `FakeProvider`·합성 대체 | `services/coach.py`·`strategy/coach.py`·`api/coach.py`에 0건. 봉 없는 종목은 `_bars` → `None`+이유 → `excluded`/caveat로 보고(대체 없음) |
+| `STRATEGY_CONFIGS_TRIED`·STRATEGIES.md | 코드 변경 0. 작업 트리 diff에서는 DECISIONS.md·CLAUDE.md 문장("올리지 않는다")에만 등장 |
+
+#### 10. 무효화(`hooks.ts` diff)
+`useLedgerMutation`(거래 생성·수정·삭제 공통) `onSuccess`에 `['coach']` 추가, `useUpdateRuleSettings`가 `['rules']`+`['coach']`, `useResetKillSwitch`가 `['rules']`+`['coach']` 무효화. 코치 훅 키는 모두 `['coach', …]`(staleTime 5분, `retry: false`, 리뷰는 `keepPreviousData`). 통과.
+
+#### 11. 공개 저장소 위생
+`git status --porcelain`·`git ls-files`에 `*.db`·`.env`·`artifacts/` 없음. 새 테스트 입력은 합성(`test_coach_math.py` AAA/BBB/XXX, `test_coach_api.py` AAPL 10@100·MSFT 5@200·BTC 0.01@8천만원 등 FakeProvider 값). 이 섹션의 수치도 데모 DB(`seed.load`)와 합성값만 쓴다. 통과.
+
+#### 7. 킬스위치 리셋(코드 읽기 + 테스트)
+`api/rules.py`: `POST /rules/kill-switch/reset`, 본문 `KillSwitchResetIn | None`(`detail: str = Field("", max_length=200)`만, actor 필드 없음) → `RuleService.reset_kill_switch(detail)` → 켜져 있을 때만 `KillSwitch.reset(actor="user", detail=detail)`, 아니면 쓰기 없이 현재 상태 반환 → `kill_switch_payload`. `test_coach_api.py::test_reset_turns_the_switch_off_and_records_the_user_as_actor`가 본문의 `"actor": "system"`을 무시하고 이벤트 `actor == "user"`를 단언, `…_when_not_tripped_answers_200_without_writing`이 이벤트 0건·본문 없음 200을 단언(둘 다 41건 통과에 포함). 통과.
+
+#### 9. 화면 정직성(코드 읽기)
+| 확인 | 결과 |
+|---|---|
+| `text-gain`/`text-loss`/`PnL`/▲▼ 위치 | `lib/coach.ts`·`CoachCard.tsx`·`CorrelationHeatmap.tsx`: 0건. `Coach.tsx`: `PnL` 5곳만 — 576(리밸런싱 표 "매도 시 실현손익" `realized_pnl_krw_if_sold`), 733(리뷰 시장 손익), 734(리뷰 실현손익), 735(리뷰 배당), 746(리뷰 벤치마크 초과). 변동성·낙폭·베타·상관·리밸런싱 금액(`rebalanceActionPhrase` 순수 문자열)·차이(`formatPct` 부호만)에는 손익 색·▲▼ 없음. 낙폭은 `−` 기호 문자열 |
+| 계획과 다른 점 | 계획("월간 리뷰의 실현 숫자에만 허용")과 달리 리밸런싱 표의 **가상** 실현손익(`realized_pnl_krw_if_sold`, 576행)에도 `PnL`을 썼다. 리드가 갱신한 CLAUDE.md 코치 절은 이를 명시적으로 허용("…매도 시 실현손익 참고값에만 `PnL`")하므로 차단하지 않음. 다만 "팔았다면"이라는 가정값에 손익 색이 붙는 유일한 자리라 비차단 권고로 남김(N-COACH-3) |
+| 색 | 7개 파일에 `#hex`·`rgb(`·`hsl(` 0건. `CorrelationHeatmap`은 `color-mix(in oklab, var(--series-2|--series-1) N%, var(--fill))`, 대각선 `var(--fill)`(`index.css`에 라이트·다크 토큰 존재) |
+| 헤더 고정 문장 | `COACH_INTRO_KO` = 계획 문장과 글자 단위 일치. 바닥 `COACH_FOOTER_KO` "투자 조언이 아닙니다. 수수료·세금 미포함."(`Coach.tsx:105`). 홈 카드 "내가 정한 정책 기준의 점검이에요. 투자 조언이 아닙니다." |
+| 킬스위치 해제 버튼 | `StatusStrip`: `kill.tripped &&`일 때만 "해제" → 인라인 확인("해제 확인"/"취소") → `useResetKillSwitch().mutate(undefined)`(본문 `{detail: ''}`). 규칙 점검이 로딩/실패면 스트립 자체 숨김. vitest `has no reset button while the switch is off`·`asks twice inline…` |
+| 현금 미입력 안내 | `CASH_NOTE_KO` "현금은 이 앱이 알 수 없어 직접 적습니다…"(폼), 진단 타일 "현금 미입력 · 투자금만 …", 체크리스트 "현금을 적지 않아 확인할 수 없어요", 리밸런싱 notes에 서버 `NO_CASH_NOTE_KO` |
+| 규칙 페이지 링크 | `Coach.tsx:268-274` "종목별 목표 비중은 [규칙 페이지에서] 정합니다. 코치는 그 값을 그대로 읽고 새 종목을 끼워 넣지 않습니다." |
+| 과거 추정값 단서 | `swingPhrase` "…지난 1년 기준", `drawdownPhrase` "지난 3년을 지났다면", 베타 "지난 1년", 히트맵 캡션 "과거 값이며 미래를 보장하지 않습니다", 진단 caveats 첫 줄이 서버 `PAST_CAVEAT_KO` "과거 데이터로 추정한 값이며, 과거는 미래를 보장하지 않습니다." |
+| 홈 `CoachCard` | `Dashboard.tsx`에서 `<RulesBanner />` 바로 아래. `coachSummary(undefined)` → 렌더 없음(로딩·오류). 정책 없음 → "정책을 아직 정하지 않았어요 →". 단, `coachSummary`는 `policy_set` 검사를 `empty` 검사보다 먼저 하므로 **보유가 없고 정책도 없으면** 카드가 나온다(CLAUDE.md "보유 없음이면 숨김"과 미세하게 다름, N-COACH-4) |
+
+#### 3. 독립 재계산(데모 DB, 실제 공급자, 스크래치 `coach_demo.py` → `coach_recompute.py`)
+호출은 `TestClient(app, base_url="http://localhost")`(conftest와 같음, `AM_DATABASE_URL=sqlite:///demo.db`, `market_provider=yfinance`, `live_trading=False` 확인 후 진행). 데모 보유 14종목(주식 10 USD + 코인 4 KRW). 재계산은 `price_bars`를 sqlite3+pandas로 직접 읽어(주식·USD = `adj_close`, `KRW-*`·`KRW=X` = `close`, 응답의 3y 창 `end`=2026-10-26까지) 주식 거래일 격자(772일)에 코인·환율을 전일 채움 → 원화 수익률 → 창 자름(`index ≥ today−365/1095`) → 포함 종목(유한 수익률 ≥120) → `dropna` → `σ(ddof=1)`, Ledoit-Wolf 상관(sklearn `LedoitWolf`를 표준화 수익률에 직접 적용; `app.forecast.aggregate.correlation`과 max|Δ| **0.0**) → `√(wᵀΣw)·√252` → 고정 비중 지수 낙폭·고점/저점.
+
+| 항목 | 응답 | 재계산 | 차이 |
+|---|---|---|---|
+| 비중·`invested_weight_pct`(14종목), `stock/crypto/usd/cash_pct`, HHI·`effective_n`·top1·top3 | — | — | 전부 **0.0** |
+| 1y: rows 251, 2025-10-27~2026-10-26, grid stock, ppy 252, coverage 100, method ledoit_wolf | `annual_vol_pct` 25.6954, `swing` 14,949,205원, `max_dd` 17.3227% (고점 2026-01-16 → 저점 2026-03-30) | 동일 | **0.0**(허용 1e-6 / 1e-9) |
+| 3y: rows 750, 2023-10-30~2026-10-26 | `annual_vol_pct` 26.6617, `swing` 15,511,387원, `max_dd` 27.9554% (2025-01-21 → 2025-04-08, `peak_at_window_start=False`) | 동일 | **0.0** |
+| 참고 | 표본(비축소) 상관으로는 1y 26.19% / 3y 26.99% → LW 축소가 약 0.5%p 낮춤(정상) | | |
+| 상관표 14×14 | method ledoit_wolf, rows 750, 대각 1·대칭 | max|Δ| 0.0 | 통과 |
+| 베타 13종목(주식 10 → SPY 256일, KRW 코인 3 → KRW-BTC 374일; BTC는 자기 벤치마크라 행 없음) | 예 VOO 0.9953/r² 0.9991, MU 3.3637, ETH-USD 1.2259 | 전부 동일 | **0.0** |
+| 현금 저장 뒤(2천만원+$1,000, 환율 1323.18) | `equity` 79,501,708원, `cash_pct` 26.82, 1y vol 18.8036 / 3y 19.5108, 3y dd 21.1300 | 동일 | 0.0 |
+| 필요 수익률(목표 3억·10년·월 50만) | 9.919252515592 | brentq 9.919252515540 | 5e-11(상대) |
+| `risk.actual`(TWR) | `twr_max_drawdown_pct` **598,141.18**, `current` 584,636.71, 일일 −3% 초과 5, 낙폭 초과 1, points 709, since 2024-11-18 | 공식대로 재계산하면 동일(차이 0.0) | 공식 일치, **값은 비정상** → N-COACH-1 |
+| 제외·`coverage`·`usable` 규칙 | 데모는 전 종목 이력이 길어 제외 0 → 규칙은 `test_coach_math.py::TestShortHistoryAndCoverage`(제외·재정규화, 70% → usable False, <120행 → identity) 3건과 `test_coach.py` 4건으로 확인 | | |
+
+전체 123(현금 없음)+126(현금 있음) 대조 중 FAIL 0.
+
+#### 4. 리밸런싱 계약(스크래치 `coach_contracts.py`·`coach_demo2.py`·`coach_contracts2.py`, 데모 DB; 끝에 정책 행 삭제·규칙 목표 복원)
+| 확인 | 결과 |
+|---|---|
+| 기본(허용 오차 5, 현금 없음) | `cash_known=False`, `class_targets.cash=None`, 주식/코인 80/20으로 재정규화, notes에 `NO_CASH_NOTE_KO`·"비중 상한으로 2.3%p가 현금으로 남습니다"·수수료 문구. 모든 drift가 5%p 안이라 **주문 0건**(`after`=현재) — 허용 오차 규칙 확인 |
+| 허용 오차 0.5, 현금 없음 | 주문 발생. 매도(VOO·BTC·ETH·XRP) → 매수 순서, 매수 합 1,258,550 ≤ 매도 대금 3,311,346, `after.cash_krw` = 남은 대금 2,052,795(복제 계산과 일치), 어떤 매수도 현금 보유를 넘지 않음 |
+| 허용 오차 0.5, 현금 2,132만원, 60/20/20 | 매수 5건 전부 accepted, 현금 범위 안. `after` 비중·현금 = 주문을 내 손으로 적용한 장부와 max|Δ| **0.0** |
+| 종목 목표(규칙 페이지 `targets_json`) VOO 40·AAPL 30·MSFT 40, 자산군 주식 60 | 합 110 > 60 → `source=scaled`(VOO 21.8→**cap 20 capped**, AAPL 16.36, MSFT 21.8→20 capped), note "주식 종목 목표의 합 110%가 자산군 목표 60%를 넘어 비례로 줄였습니다"·"비중 상한으로 3.6%p가 현금으로 남습니다", 진단 `violations`에 `targets_exceed_class`(info, value 110, limit 60). 목표 없는 주식 7종은 target 0 → 전량 매도(N-COACH-9). AAPL·MSFT 매수는 `max_order_fraction`(5% = 3,973,055원)으로 `clipped`, label "1회 주문 상한" |
+| 코인 자산군 목표 0 | 코인 4종 `source=class_zero`, 각각 **현재 평가액 전액 매도**(8,536,800 / 2,598,000 / 2,474,400 / 1,072,000 = 같은 세션 `holdings` 평가액) |
+| `realized_pnl_krw_if_sold` | 매도 행마다 `allowed × (1 − cost_basis_krw/market_value_krw)`와 일치(예 NVDA +939,697, TSLA −750,125; 단가 오류 행 GOOG −1,019억 등 N-COACH-1과 같은 뿌리). 매수 행은 None. 부호 = 장부 평가손익 부호 |
+| 새 종목 | 모든 케이스에서 `targets`·`orders` 심볼 집합 ⊆ 보유 집합(`targets` = 보유 전체) |
+| 코인 합산 상한 위치 | `construct_targets` → `cap_class_weights({"crypto": policy.max_crypto_weight_pct/100})` → `risk.cap_weights(policy.limits(base))`. `RiskLimits`에 코인 필드 없음(diff 확인), `Policy.limits`는 종목 상한을 `min(base, policy)`로 좁히기만 함 |
+| 기준선 테스트 | `test_coach_math.py::TestRebalanceBand`(4pt 안 → 0건, 정확히 5pt → 0건, 6pt → 매도 60,000 뒤 매수, 매도 대금 초과 매수 → `cash`로 clipped, 매도 없고 현금 0 → `cash` rejected, 5% 주문 상한), `test_coach_api.py::test_rebalance_sells_first_and_notes_the_missing_cash` 통과. 데모에서는 매도 대금이 매수 수요보다 커 `cash` 사유가 실제로 찍히지 않아 이 두 테스트에 의존 |
+| 한 번 더 주의 | 첫 forced 실행에서 realized·after가 어긋났으나 원인은 **내 스냅샷**(`holdings`를 첫 실행 때 받아 두고 두 번째 실행에서 비교, 60초 quote 캐시 만료로 평가액이 수백~수만 원 이동). 같은 세션 스냅샷으로 재실행 → 123/123 통과 |
+
+#### 5. 정책·현금
+| 확인 | 결과 |
+|---|---|
+| `GET /api/coach/policy` 기본값(행 없음) | `max_position_weight_pct` 20 (= `risk_max_position_weight` 0.20×100), `drawdown_tolerance_pct` 20, `target_stock/crypto/cash` 80/20/0 (= `strategy_budget_*`, 현금 나머지), `max_crypto_weight_pct` 30, `max_total_risk_pct` 8, `rebalance_band_pt` 5 (= `rules_target_weight_gap_pt`), goal None, `policy_set=false`, `updated_at=null`, `cash=null`. `from_config`는 코인 예산을 코인 상한으로 clamp(테스트 `test_from_config_clamps_crypto_budget_to_the_crypto_cap`) |
+| PUT 문자열 Decimal | `test_put_parses_strings_stores_them_exactly…`: 행에 `"12.5"`·`"10000000"` 문자열 저장, GET 왕복 동일 |
+| 422 케이스(데모 실행) | 합 110 → 422 "자산군 목표 비중(주식·코인·현금)의 합이 100이어야 합니다 (지금 110%)" `code=invalid_policy`; 코인 50 > 상한 30 → 422 "코인 목표 비중(50%)이 코인 합산 상한(30%)보다 큽니다"; `"NaN"` → 422(pydantic `finite_number`, 서비스 `_dec`도 non-finite 거부); `goal_date "2027-13-40"` → 422(pydantic date); 현금 −1 → 422(`ge=0`); 현금 날짜 누락 → 422(`missing`). 여섯 번 뒤 `policy_set` 여전히 False(저장 없음). 테스트 9+4 케이스 추가 통과 |
+| 허용 낙폭 25 | 200 저장, `warnings` ["허용 낙폭 25%는 프로젝트 전략 한도(20%)보다 느슨합니다"], `policy.drawdown_tolerance_pct` 25 |
+| `cash_stale` | 기준일 37일 전 → `cash_stale=true` + "현금 기준일이 37일 지났습니다…"; 테스트는 31일 true / 30일 false 경계 확인. 진단 `violations`에 `cash_stale`(info)·현금 없으면 `cash_missing`(info) |
+| 종목 상한이 리스크 한도보다 넓을 때 | `Policy.limits`가 좁히기만 하므로 정책 30%를 적어도 20%가 적용되고 `warnings`에 "종목 상한 30%는 모의투자 리스크 한도(20%)보다 느슨합니다…"(코드 `_notes`). 계획대로 |
+
+#### 6. 패턴·리뷰
+| 확인 | 결과 |
+|---|---|
+| 경계 규칙(엔진 = 테스트 = 서비스 문구) | 추격 매수 `run_up > 15 + EPS`(정확히 15%는 아님, 봉 < 21개는 `skipped`) ↔ "15% 넘게"; 물타기 `price ≤ avg×(1−cut) + EPS`(선 위 포함) ↔ `test_84_and_85_are_at_or_below…86_is_not`; 손절선 아래 보유 연속 `≥ 5`봉; 과매매 `total ≥ 6`이고 `> 2×직전 ≤12개월 평균`(첫 달 제외); 손실 매도 뒤 재매수 `gap ≤ 10`(10일 포함, 11일 제외). `test_coach_math.py` 5개 클래스·`test_coach.py` 6개 함수와 일치 |
+| 데모 재계산(스크래치) | 최근 1년 거래 12건: 추격 0·물타기 0·재매수 0(각각 내 재계산과 집합 동일, `trades_without_bars` 0), 월별 24개월 집계(빈 달 0 포함) 동일, 과매매 0. `rule_lag` 8종목 중 TSLA 75봉은 정확히 일치; 나머지 7종목은 창 전체가 손절선 아래여서 `days`가 **봉을 받은 범위의 길이**(API 282 = 45일 여유, 내 60일 여유 292; 코인은 당일 미확정 봉 ±1) → N-COACH-6 |
+| 리뷰 (start, end] | 2026-10: `start` 2026-09-30, `end` 2026-10-27(오늘), 2026-09: 08-31~09-30. `change = contributions + market_pnl` 항등식, `change = end − start`, 시작·끝 값 = `/api/portfolio/history`의 해당 날짜 값과 일치 |
+| 입금 재계산 | 거래×환율(`KRW=X` 거래일 이전 마지막 종가, 수수료 포함) 합: 2026-10 **339,776,877,723원**(API와 동일 — 단가 오류 5건, N-COACH-1), 2026-09 0, 2026-04 −2,682,296(매도) |
+| 실현손익 | 매도가 있는 달을 장부 규칙(매수일 환율 원가 비례 방출, 매도일 환율 대금)으로 재계산: 2026-04 762,628.06 / 2026-06 692,217.23 / 2026-07 −847,279.33원 — API와 소수 둘째 자리까지 일치. 배당 0(데모에 confirmed 배당 없음) |
+| 벤치마크 | `[SPY, BTC-USD]` 순서, `excess = 내 change − 벤치 change` 항등(예 2026-09 SPY −1,438,232 → 초과 +2,162,433) |
+| `months_available` | 첫 거래 2024-11 → 2026-10, 24개, 최신 먼저. 미래 달·`2026-13`·`abc` → 422(테스트) |
+| `violations_now` | 리뷰는 봉 없이 비중·노출 검사만(3건) ↔ 진단 warn 5건 → N-COACH-5 |
+| `flagged_trades` | `patterns()`(최근 1년) 결과를 달로 걸러 쓰므로 1년보다 오래된 달은 항상 0 → N-COACH-2 |
+
+#### 12. 응답 시간(데모 DB, TestClient, 봉 캐시 뒤)
+| 엔드포인트 | 첫 호출 | 재호출 |
+|---|---|---|
+| `/api/coach/policy` | 0.22s | — |
+| `/api/coach/diagnosis` | **11.27s**(마이그레이션으로 `symbol_syncs`가 비워져 17심볼 재동기화 포함) | 0.94s / 0.93s |
+| `/api/coach/rebalance` | 0.01s | 0.01s |
+| `/api/coach/patterns` | 0.18s | 0.17s |
+| `/api/coach/review` | 0.79s | 0.24s(`?month=` 0.24s) |
+| 참고 `/api/rules/check`(예측 포함, 코치 밖) | 25.1s | — |
+코치 진단은 `RuleService(forecasts=None)`라 예측 추론 없이 1초 안(규칙 점검 단독 라우트 25s와 대비). 코치 페이지 헤더 칩·체크리스트는 `useRuleCheck()`(예측 포함 라우트)를 기다린다(N-COACH-8).
+
+#### 발견한 문제(차단)
+### [N-COACH-1] 단가 오류 거래가 있으면 실제 추이 낙폭·리뷰 입금 분해가 비정상 값을 사실처럼 보여 준다(fail-closed 아님)
+- 현상: 데모 DB `/api/coach/diagnosis` `risk.actual.twr_max_drawdown_pct` **598,141.18%**, `current_drawdown_pct` 584,636.71%, `daily_loss_breaches_1y` 5, `drawdown_breaches_1y` 1, `actual_error=null`. `/api/coach/review`(2026-10) `contributions_krw` 339,776,877,723원, `market_pnl_krw` −339,765,119,414원(자산 5,818만원). 화면: "실제 추이의 낙폭" 접기에 "−598141.2%", 손실 중 체크리스트 "지금 고점 대비 −584636.7% · 허용 −20%" → 주의, 리뷰 "넣은 돈 339,776,877,723원 / + 시장 손익 −339,765,119,414원"(손익 색).
+- 원인: 데모 DB 거래 id 17~21(2026-10-19, 메모 "스크린샷 가져오기" — 이전 직접 입력 검증이 남긴 행)의 `price`가 원화 총액(예 GOOG 13주 @ 5,879,484 "USD"). `benchmarks.cash_flows`가 이를 그대로 원화 입금 3,398억으로 만들고, `twr_index`의 `r_d = (V_d − V_{d−1} − f_d)/V_{d−1}`가 2026-10-19에 (59,179,366 − 45,264,772 − 339,776,877,723)/45,264,772 = **−7,506**이 되어 지수가 음수로 뒤집힌다. `twr_index`·`_actual`·`period_review`는 `1 + r_d ≤ 0`(하루에 100% 넘게 잃음)이나 음수 지수를 거부하지 않고, 단서는 "가져온 거래의 **날짜**가 다를 수 있다"만 말한다. 같은 행들은 앱의 기존 20배 규칙(`isSuspiciousCost`·`statement_import._price_doubt`)이 `단가 확인`으로 잡는 것들이다(원가/평가 3,946~68,783배).
+- 근거: 스크래치 `inspect_demo.py` 출력(거래표·원가/평가 비율·2026-10-15~23 추이), `coach_recompute.py`가 같은 공식으로 598,141.18%를 재현(차이 0.0), `backend/app/strategy/coach.py` `twr_index`(829~844행, 음수 지수 무방어), `backend/app/services/coach.py` `_actual`(684~716행), `_flows`(677~682행), `IMPORTED_DATES_CAVEAT_KO`(89~92행). 메모리 노트 "user data has bad import prices" → 실제 DB에서도 재현될 가능성이 높다.
+- 해결(제안, 수정은 담당자): ① risk-engineer — `twr_index`에서 어떤 날이든 `1 + r_d ≤ 0`이면 `ValueError`로 닫고(`_actual`이 `actual_error`로 날짜·사유를 보고), `period_review`도 입금이 `max(V_start, V_end)`의 수십 배면 같은 식으로 닫거나 플래그. ② app-engineer — `_flows`/`review`에서 원가/평가 20배 규칙에 걸리는 거래를 세어 caveat에 "단가 확인 거래 N건이 입금에 포함되어 실제 추이·입금 분해가 왜곡됨"을 붙이거나 그 거래를 빼고 뺐다고 적기(조용히 대체하지 않음). ③ 최소한 `drawdown`이 100%를 넘으면 숫자 대신 "계산 불가"를 보여 줄 것.
+- 검증: 미해결. 재현 `cd backend && PYTHONPATH=<backend> AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run python -X utf8 <scratch>/coach_demo.py <scratch>/demo_out` → `demo_out/diagnosis_nocash.json` `risk.actual`. 데모 DB에서 5행을 지우면 사라지지만 코드 결함(무방어)은 그대로다. 실제 DB는 읽지 않았다.
+
+#### 비차단
+- N-COACH-2: `review.flagged_trades`는 `patterns()`의 최근 1년 창에서만 고르므로 1년보다 오래된 달은 항상 "이 달에는 없어요"가 나온다. 리뷰에 "최근 1년 거래만 점검" 단서 또는 달 기준으로 패턴 창을 잡기.
+- N-COACH-3: 리밸런싱 표의 가상 실현손익(`realized_pnl_krw_if_sold`)에 `PnL`(손익 색·▲▼). 계획의 "월간 리뷰 실현 숫자에만"과 다르지만 리드가 CLAUDE.md에 허용으로 적어 두었다. 가정값임을 열 머리("매도 시 실현손익")가 말하므로 수용 가능; 색 없이 부호만으로 바꾸면 계획과 완전히 맞는다.
+- N-COACH-4: `coachSummary`가 `policy_set` 검사를 `empty` 검사보다 먼저 하여 보유 0·정책 없음이면 홈 카드가 "정책을 아직 정하지 않았어요 →"를 보여 준다(CLAUDE.md "보유 없음이면 숨김"). 의도된 유도라면 문서를, 아니면 순서를 고치면 된다.
+- N-COACH-5: 리뷰 머리 "지금 정책 위반 N건"(`_violations_now`, 비중·노출만, 데모 3건)과 진단 머리 "정책 위반 N건"(warn 전체, 데모 5건)이 같은 말로 다른 수를 낸다. 리뷰 쪽 문구를 "비중 기준 위반"으로 바꾸거나 진단 수를 재사용.
+- N-COACH-6: `rule_lag`의 `since`·`days`는 봉을 받은 범위(`window_start − 45일`)에 갇힌다. 창 전체가 손절선 아래면 `since`가 실제 교차일이 아니라 조회 시작일이고 "N봉째"가 조회 길이다(데모 7종목 282봉). `since_capped`류 플래그나 "최소 N봉" 표기 권고.
+- N-COACH-7: `violations()`의 `drawdown_over_tolerance` detail이 창 이름을 그대로 써 "지난 **3y**을 지났다면"으로 나온다(`risk3y.name`). 한국어 라벨(`3년`) 매핑 필요(엔진 또는 서비스).
+- N-COACH-8(관찰): 코치 헤더 칩·체크리스트는 `useRuleCheck()`(예측 추론 포함, 데모 25s)를 기다린다. 코치 자체는 1초 안이라 코치 결함은 아니지만 첫 방문 체감에 영향.
+- N-COACH-9: 종목 목표 합 ≥ 자산군 목표면 목표 없는 같은 자산군 종목은 target 0(`source=remainder`)이 되어 전량 매도 제안이 된다(데모: 주식 7종). 계획 규칙의 논리적 결과이지만 notes가 "비례로 줄였습니다"만 말하고 "목표 없는 종목은 0%"를 말하지 않으며, 0%짜리 `source=remainder`는 오해를 부른다("class_full" 같은 별도 source나 note 권고).
+- 참고: 데모 DB 마이그레이션 중 `9f363af5cd85`가 `symbol_syncs`를 비워 첫 진단이 11s 걸렸다(예상된 동작). 검증 뒤 데모 DB의 `policy_settings` 행은 삭제하고 `rule_settings.targets`는 `{}`로 되돌렸다(마이그레이션은 유지).
+
+#### 계획과 다르게 구현된 점(허용 여부)
+| 항목 | 계획 | 구현 | 판단 |
+|---|---|---|---|
+| 스키마 필드 | `PolicyOut{policy, cash, defaults, warnings, updated_at, cash_stale}` 등 | `policy_set`, `DiagnosisOut.goal_years`·`weights[].cap_pct`·`risk.actual_error`·`actual.points/drawdown_breaches_1y`·`correlation.excluded`·`RiskWindowOut.peak_at_window_start`, `RebalanceOut.empty/headline_ko/price_krw`, `PatternsOut.empty/months`, `ReviewOut.empty/start_point/end_point` 추가 | 추가만 있고 누락 없음. 허용 |
+| `from_config` | 자산군 목표 = 예산×100 | 코인 목표를 코인 상한으로 clamp(아니면 `Policy`가 ValueError) | 합리적. 허용 |
+| `RuleService.check_all`이 현금 `Book` 사용 | "선택 WP" | 미구현(`check_all()` 인자 없음) | 선택 항목. 허용(TODO로 남길 것) |
+| 과매매 입력 | "최근 1년 거래" | 월별 집계·과매매는 전체 거래(기준 12개월이 필요) | 합리적. 허용 |
+| 킬스위치 해제 확인 | "확인 뒤" | `window.confirm` 대신 인라인 2단계 버튼 | 허용 |
+| 리밸런싱 가상 실현손익 색 | 리뷰 실현 숫자에만 `PnL` | 리밸런싱 표에도 `PnL`(N-COACH-3) | CLAUDE.md가 허용으로 갱신됨. 허용(권고만) |
+| 홈 카드 숨김 조건 | 로딩·오류 숨김, 정책 없음 문구 | 보유 0+정책 없음에도 문구(N-COACH-4) | 경미. 허용 |
+| 브라우저 확인(390px·다크·킬스위치 trip) | 계획의 verifier 항목 | **수행하지 못함**(이 세션은 코드·API 검증만; vitest 15건이 섹션·버튼 조건·고지를 대신 확인) | 리드가 수동 확인 또는 다음 라운드 |
+
+#### 최종 판정
+**부분 통과.** 재현(875/142·63·41/210)·마이그레이션·정책 검증·독립 재계산(변동성·낙폭·상관·베타·필요 수익률 차이 0)·리밸런싱 계약(246 대조 통과)·패턴·리뷰(실현손익까지 일치)·킬스위치 리셋·금지어·위생·무효화·화면 정직성은 반박에 실패해 통과. **N-COACH-1만 차단**: 단가 오류 거래가 있을 때 `risk.actual`과 리뷰 입금 분해가 598,141% 같은 불가능한 값을 사실처럼 보여 주고 닫히지 않는다. 실제 사용자 데이터에 단가 오류 가져오기 행이 있다고 기록돼 있어 해결(또는 해당 표시 숨김) 전 커밋은 권하지 않는다. 그 외 N-COACH-2~9는 비차단.
+
+#### 재현 명령
+- backend\ `py -3.11 -m uv run pytest -o addopts="" -q` / `… tests/test_coach.py tests/test_coach_math.py tests/test_coach_api.py` / `ruff check .` / `ruff format --check .`
+- frontend\ `unset VIRTUAL_ENV && npm test -- --run && npm run lint && npm run build && sha256sum src/api/openapi.json src/api/schema.d.ts && npm run gen:api && sha256sum src/api/openapi.json src/api/schema.d.ts`
+- backend\ `py -3.11 -m uv run alembic heads; AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run alembic upgrade head; … alembic check`
+- 데모 API·재계산(`<scratch>` = `C:\Users\user\AppData\Local\Temp\claude\c--Users-user-Desktop-project\390c67f2-c016-4b04-a641-dbd27eed466f\scratchpad`): backend\ `PYTHONPATH=<backend> AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run python -X utf8 <scratch>/coach_demo.py <scratch>/demo_out` → `… coach_recompute.py demo.db <scratch>/demo_out diagnosis_nocash.json`(및 `diagnosis_cash.json`) → `… coach_contracts.py demo.db <scratch>/demo_out` → `… coach_demo2.py <scratch>/demo_out && … coach_contracts2.py <scratch>/demo_out` → `… coach_review_realized.py <scratch>/demo_out` → `… inspect_demo.py demo.db <scratch>/demo_out`
+- 서버는 띄우지 않았다(TestClient). 실제 DB(`asset_manager.db`)·`.env`는 읽지 않았다.
+
+#### 리드 브라우저 확인 (2026-10-27, Chrome, verifier가 하지 못한 항목)
+verifier는 세션이 끊겨 브라우저 확인을 수행하지 못해 리드가 대신했다. 실제 DB 수치는 적지 않는다.
+
+| 확인 | 결과 |
+|---|---|
+| 실제 DB 마이그레이션 | `alembic upgrade head` 3af66f72d79b → 8ed46201b220, `alembic check` "No new upgrade operations". `.\scripts\dev-backend.ps1`로 8001 재시작 뒤 `GET /api/coach/policy` 200 |
+| `/coach` 데스크톱 라이트(실제 DB, 정책 없음) | 헤더 고정 문장 → 킬스위치 꺼짐·실매매 꺼짐 칩 → "아직 정책을 저장하지 않아 서버 설정의 기본값" 안내 → 정책 폼(목표·한도·자산군 목표·현금 잔고, 저장/기본값) → 진단 StatTile 6개 → 위반 목록 → 접기 3개(상관 히트맵 6×6 전 셀 숫자·범례 "축소 추정(Ledoit-Wolf) · 겹치는 N일 · 과거 값이며 미래를 보장하지 않습니다", 베타 문장+단서, 실제 추이 낙폭 3행) → 체크리스트(사기 전 5항목·손실 중 4항목) → 리밸런싱 표(상한 적용 배지, "줄이기 X원 · 약 N주", 막힌 이유, 매도 시 실현손익, "모두 반영하면", 메모 4줄) → 습관 점검(패턴 5종 칩) → 월간 리뷰(달 선택, 변화 분해, 벤치마크 대비, 플래그 거래) → 바닥 고지. 콘솔 오류 0 |
+| 다크 | `data-theme=dark`에서 바탕 `rgb(23,23,28)`, 히트맵 셀·표·칩 모두 토큰 색으로 바뀜 |
+| 390px | 창 크기 조절 API가 최대화된 창에 먹지 않아 같은 페이지를 390px iframe으로 확인: `scrollWidth` 375 ≤ 387(가로 넘침 없음), 리밸런싱 표만 래퍼 `overflow-x:auto` 안에서 가로 스크롤(표 380px), StatTile 1열, 네비 줄바꿈 |
+| 홈 `CoachCard` | 규칙 배너 바로 다음 자식으로 "포트폴리오 코치 정책을 아직 정하지 않았어요 →" + "내가 정한 정책 기준의 점검이에요. 투자 조언이 아닙니다." |
+| 킬스위치 해제(데모 DB, 8002 백엔드 + 5174 프론트) | 스크래치 스크립트로 `KillSwitch.trip("manual", …, actor="user")` → `/coach` 헤더 "킬스위치 켜짐 lead browser check of the reset button · 2026. 10. 27. …부터" + "해제" 버튼 → 클릭 시 인라인 "해제하면 모의투자 신호와 추매 검토가 다시 나옵니다. 정말 해제할까요? [해제 확인] [취소]" → 해제 확인 클릭 → `kill_switch_events` 마지막 행 `('reset','manual','','user')` → 규칙 점검 재조회(데모는 예측 추론 포함 약 25초, N-COACH-8) 뒤 칩 "킬스위치 꺼짐"·버튼 사라짐 |
+
+리드가 발견한 문구 문제(비차단, 수정 라운드에 포함): 허용 낙폭 위반 detail의 창 이름 "3y"(= N-COACH-7), 습관 점검 머리글 "25.10.27부터 10.27까지"처럼 창 시작·끝의 연도 표기 불일치, 월간 리뷰 "지금 정책 위반 N건"의 기준(= N-COACH-5).
+
+#### 수정 라운드 재검증 (2026-10-27, verifier)
+범위: 리드 요청대로 좁게. 코드·테스트 수정 없음, 서버 없음(TestClient), 데모 DB는 GET만(시작·끝 모두 `policy_settings` 0행·규칙 목표 `{}`·거래 21건·킬스위치 이벤트 2건으로 동일), 실제 DB·`.env`는 읽지 않음. 아래 수치는 모두 `backend/seed`의 데모 데이터다.
+
+**(1) 데모 DB 응답** (`<scratch>/coach_recheck.py`, 출력 `demo_out/r2_*.json`)
+
+| 확인 | 결과 |
+|---|---|
+| `GET /api/coach/diagnosis` `risk.actual` | **null**. `actual_error` = "단가 확인이 필요한 거래 5건(ASTS, GOOG, IONQ, MU, RKLB)이 있어 실제 추이의 낙폭을 계산하지 않았습니다. 거래 페이지에서 단가를 고치면 계산됩니다." 598,141%·584,636%는 응답 어디에도 없음 |
+| `risk.windows` | 1y `usable=true` rows 251 vol 25.6807% dd 17.2944%, 3y `usable=true` rows 750 vol 26.6498% dd 27.9362%(2025-01-21→2025-04-08). 1차와 소수점 둘째 자리 차이는 현재가가 바뀌어 비중이 달라진 것. `coach_recompute.py`로 다시 독립 재계산 → **117항목 FAIL 0, 차이 0.0**(변동성·swing·낙폭·날짜·상관 14×14·베타 13종목), `actual is None` 분기 출력 |
+| 위반 detail | "지금 구성으로 지난 **3년**을 지났다면 가장 깊은 하락이 27.9%로, 적어 둔 허용 낙폭 20%를 넘습니다"(N-COACH-7 닫힘) |
+| `GET /api/coach/review?month=2026-10` | `suspicious_trades=5`, `flags_counted=true`, `caveats[0]` = "넣은 돈·시장 손익에 단가 확인이 필요한 거래 5건이 들어 있어 값이 왜곡될 수 있습니다." 입금·시장 손익 수치는 장부대로 그대로(설계: 사실 + 단서, 화면은 무색) |
+| `…?month=2025-06` | `suspicious_trades=0`, **`flags_counted=false`**, `caveats[0]` = "습관 점검은 최근 1년 거래만 보므로 이 달의 플래그는 세지 않았습니다."(N-COACH-2) |
+| `…?month=2026-09` | `suspicious_trades=0`(단가 오류 행은 10-19라 그 전 달은 깨끗), `flags_counted=true` |
+| `GET /api/coach/patterns` `rule_lag` | 282봉 5종목(GOOG·MU·RKLB·IONQ·ASTS, since 2025-09-12 = 조회 시작) `since_window_start=true`; XRP-USD 293·TSLA 75·SOL-USD 350은 `false`(N-COACH-6) |
+| 응답 시간 | 새 프로세스 첫 호출 diagnosis 3.66s(15분 TTL 재동기화 포함), review 0.37~0.75s, patterns 0.31s |
+
+**(2) fail-closed 경로** (`<scratch>/coach_recheck.py` 뒷부분, `<scratch>/coach_recheck2.py`)
+
+| 경로 | 결과 |
+|---|---|
+| 엔진 직접 호출 `strategy.coach.twr_index(데모 자산 추이, 21건 거래 입금)` | **ValueError** "2026-10-19: 입금을 뺀 수익률이 -100% 이하라 시간가중 지수를 만들 수 없습니다(단가가 틀린 거래가 있는지 거래 페이지에서 확인하세요)" — 1차에서 598,141%를 낸 바로 그 입력이 이제 거부됨 |
+| 같은 곡선에 단가 오류 5건을 뺀 입금 | 지수 생성, 최대 낙폭 28.49%(곡선 자체에는 10-19의 점프가 남아 있으므로 참고값) |
+| `V_{d−1}==0` | `[0, 100, 110]` → `[1.0, 1.0, 1.1]`(기존 동작 유지) |
+| 서비스 경로(필터를 끈 상태) | 프로세스 안에서만 `CoachService._suspicious_trades`를 `[]`로 패치(DB 쓰기 없음) → `risk.actual=null`, `actual_error` = 위 ValueError 메시지 그대로(날짜 2026-10-19 포함), 창 2개 `usable=true`. 즉 20배 필터를 통과하는 단가 오류(예 19배)가 있어도 수십만 % 대신 이유가 나온다 |
+| 단위·API 테스트 | `tests/test_coach.py:705-729`(정확히 −100% 거부, 첫 위반일 보고, 음수 거부, 0 구간 재시작), `tests/test_coach_api.py:367-398`(25배 매수 → `actual=null`·"단가 확인 1건 GOOG 거래 페이지", 창 usable 유지, 리뷰 `suspicious_trades=1`·2026-09 깨끗; 1/40배 매도도 걸림) |
+
+**(3) `Coach.tsx`의 `PnL`** — import(26행) 외 사용은 세 곳: 742행 실현손익, 743행 배당, 729행 `result = doubtful ? signedKrw : PnL`(`doubtful = r.suspicious_trades > 0`)이 741행 시장 손익과 754행 벤치마크 초과에 쓰임. 변화·넣은 돈은 `formatKrw` 무색(739-740행). 리밸런싱 표 585행은 `signedKrw(o.realized_pnl_krw_if_sold)`(부호만, `lib/coach.ts:443`). 테스트: `Coach.test.tsx:498-508`(단가 확인 1건이면 시장 손익·벤치마크 초과 무색, 실현손익은 `text-loss` 유지), `coachPhrases.test.ts:240-244`(`signedKrw`에 ▲▼ 없음), `Coach.test.tsx:420`·`coachPhrases.test.ts:158`(`actual_error`를 `actualCurveNote`로 그대로 표시).
+
+**(4) 비차단 항목 닫힘 여부**
+- N-COACH-2 닫힘: `services/coach.py:1127` `flags_counted = first_day ≥ today − 1년`, 1144-1145 `FLAGS_OUTSIDE_WINDOW_KO` caveat; `Coach.tsx:776` "습관 점검에 걸린 거래 집계 안 함"; `test_coach_api.py:595-610`(2025-06·2025-10 false, 2025-11 true), `Coach.test.tsx:510-518`; 데모 2025-06 false.
+- N-COACH-3 닫힘: `lib/coach.ts:443 signedKrw` → `Coach.tsx:585`; `coachPhrases.test.ts:240-244`.
+- N-COACH-4 닫힘: `lib/coach.ts:300-301` `empty` 검사가 `policy_set`보다 먼저; `coachPhrases.test.ts:150-152`(`empty && !policy_set` → undefined).
+- N-COACH-5 닫힘(라벨로 기준 명시): `lib/coach.ts:478 reviewViolationsLabel` "지금 비중·자산군 위반 N건" → `Coach.tsx:734`; `coachPhrases.test.ts:281-282`, `Coach.test.tsx:481`. `_violations_now` 계산 방식은 그대로(비중·노출만)이고 라벨이 그 기준을 말한다.
+- N-COACH-6 닫힘: `strategy/coach.py:1361 LagFlag.since_window_start`(1486 `days == len(values)`), `schema.d.ts:1967`; `lib/coach.ts:457-461 lagPhrase` "N봉 이상 (조회 범위 처음부터)"; `test_coach.py:1242-1269`, `test_coach_api.py:544-557`, `coachPhrases.test.ts:268-277`; 데모 5종목 true.
+- N-COACH-7 닫힘: `strategy/coach.py:89 WINDOW_LABELS_KO`·`window_label_ko`; `test_coach.py:1087`("지난 3년을" 포함·"3y" 없음)·1093-1095; 데모 detail 확인.
+- N-COACH-9 닫힘(덤): `strategy/coach.py:90-93 REMAINDER_ZERO_NOTE_KO`(1062·1072행에서 note 추가); `test_coach.py:821-845`(2개(C, D) 표기, 목표 합이 자산군 목표 미만이면 note 없음).
+- 리드 발견 연도 표기: `lib/coach.ts:470 windowSpanPhrase` → `Coach.tsx:642`; `coachPhrases.test.ts:257`.
+- N-COACH-8 그대로(관찰, 코치 결함 아님).
+
+**(5) 재실행**: backend `pytest -o addopts="" -q` **883 passed**(146s; 1차 875 + 8), `ruff check .` All checks passed, `ruff format --check .` 143 files already formatted. frontend `npm test -- --run` **33 files / 220 tests passed**(1차 210 + 10), `oxlint` 0, `build` 통과, `gen:api` 전후 sha256 동일(`openapi.json` 0bc560cb…, `schema.d.ts` 53646995…) — 커밋된 두 파일이 재생성 결과와 일치.
+
+**남은 관찰(비차단, 새 번호)**
+- N-COACH-10(권고): `_price_suspicious`의 경계값(정확히 20배)과 `_suspicious_trades`의 분할 비율 복원(`split_events`, `services/coach.py:492-495`)에 직접 테스트가 없다(API 테스트는 25배·1/40배만). 분할 이전 거래가 있는 종목에서 20배 규칙의 거짓 양성·음성이 생겨도 테스트가 잡지 못한다. 분할 종목 하나로 "분할 전 거래는 정상, 복원 없이 보면 걸림"을 고정하는 테스트를 권고.
+- 월간 리뷰의 입금·시장 손익은 단가 오류가 있어도 장부 그대로(데모 2026-10 수천억 원) 내려온다. 설계(ISSUE-048 해결 ②: 사실은 두고 단서 + 무색)와 일치하므로 허용. 근본 해결은 사용자의 단가 수정(TODO_FOR_ME).
+
+**재검증 판정: 통과.** N-COACH-1(ISSUE-048)은 두 겹(20배 필터 → `actual_error`, 엔진 fail-closed → `actual_error`)으로 닫혔고, N-COACH-2~7·9도 코드·테스트·데모 응답에서 확인했다. 남은 것은 N-COACH-8(관찰)과 N-COACH-10(테스트 보강 권고)뿐이다.
+
+재현: backend\ `PYTHONPATH=<backend> AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run python -X utf8 <scratch>/coach_recheck.py <scratch>/demo_out` → `… coach_recompute.py demo.db <scratch>/demo_out r2_diagnosis.json` → `… coach_recheck2.py <scratch>/demo_out`; 테스트·린트·빌드 명령은 위 "재현 명령"과 같다.
