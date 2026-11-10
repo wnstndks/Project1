@@ -147,8 +147,8 @@ const patterns: CoachPatterns = {
   trades_without_bars: 0,
   patterns: [
     {
-      code: 'chasing_buy', label_ko: '급등 뒤 매수', count: 1, detail: '매수 전 20봉 동안 15% 넘게 움직인 뒤 산 거래', months: [],
-      trades: [{ code: 'chasing_buy', label_ko: '급등 뒤 매수', trade_id: 7, symbol: 'AAA', date: '2026-03-03', detail: '매수 전 20봉 동안 +17.9% 움직인 뒤 샀습니다', value: 17.9 }],
+      code: 'chasing_buy', label_ko: '급등 뒤 매수', count: 1, detail: '매수 전 20봉 동안 15% 넘게 오른 뒤 산 거래', months: [],
+      trades: [{ code: 'chasing_buy', label_ko: '급등 뒤 매수', trade_id: 7, symbol: 'AAA', date: '2026-03-03', detail: '매수 전 20봉 동안 +17.9% 오른 뒤 샀습니다', value: 17.9 }],
     },
     { code: 'averaging_down_below_cut', label_ko: '손절선 아래 물타기', count: 0, detail: '평균단가 기준 손절선 아래에서 추가로 산 거래', trades: [], months: [] },
     { code: 'quick_rebuy_after_loss', label_ko: '손실 매도 뒤 재매수', count: 0, detail: '손실로 판 뒤 10일 안에 같은 종목을 다시 산 거래', trades: [], months: [] },
@@ -453,7 +453,7 @@ describe('Coach page: checks', () => {
     expect(screen.getByText('거래 횟수 급증 1건')).toBeInTheDocument()
     expect(screen.getByText('2026년 3월')).toBeInTheDocument()
     expect(screen.getByText(/가장 많이 거래한 달은 2026년 3월 7건/)).toBeInTheDocument()
-    expect(screen.getByText(/매수 전 20봉 동안 \+17.9% 움직인 뒤 샀습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/매수 전 20봉 동안 \+17.9% 오른 뒤 샀습니다/)).toBeInTheDocument()
     expect(screen.getByText('손절선 아래 보유 지속 0종목')).toBeInTheDocument()
   })
 

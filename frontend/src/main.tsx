@@ -25,6 +25,8 @@ const assetDetail = page(() =>
 const compare = page(() => import('./pages/Compare').then((m) => ({ Component: m.Compare })))
 const rules = page(() => import('./pages/Rules').then((m) => ({ Component: m.Rules })))
 const coach = page(() => import('./pages/Coach').then((m) => ({ Component: m.Coach })))
+const learn = page(() => import('./pages/Learn').then((m) => ({ Component: m.Learn })))
+const lesson = page(() => import('./pages/Lesson').then((m) => ({ Component: m.Lesson })))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +43,8 @@ const router = createBrowserRouter([
       { path: '/compare', ...compare },
       { path: '/rules', ...rules },
       { path: '/coach', ...coach },
+      { path: '/learn', ...learn },
+      { path: '/learn/:lessonId', ...lesson },
       { path: '/transactions', ...transactions },
       { path: '/import', ...importPage },
       { path: '/projection', ...projection },

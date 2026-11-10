@@ -11,6 +11,7 @@ from app.api import (
     gurus,
     health,
     imports,
+    learn,
     market,
     news,
     portfolio,
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
         congress,
         rules,
         coach,
+        learn,
     ):
         api.include_router(module.router)
     app.include_router(api)

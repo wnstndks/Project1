@@ -929,6 +929,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learn/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skills */
+        get: operations["get_skills_api_learn_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learn/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Week */
+        get: operations["get_week_api_learn_week_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learn/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lessons */
+        get: operations["list_lessons_api_learn_lessons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learn/lessons/{lesson_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Lesson */
+        get: operations["get_lesson_api_learn_lessons__lesson_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learn/progress/{lesson_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Progress */
+        put: operations["put_progress_api_learn_progress__lesson_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1494,6 +1579,23 @@ export interface components {
             /** Direction Acc */
             direction_acc: number;
         };
+        /**
+         * EvidenceLineOut
+         * @description One sentence of evidence with the figure behind it and the trades it rests on. `n` is
+         *     the sample the sentence is about; the screen always prints it.
+         */
+        EvidenceLineOut: {
+            /** Text Ko */
+            text_ko: string;
+            /** Value */
+            value: number | null;
+            /** N */
+            n: number | null;
+            /** Trade Ids */
+            trade_ids: number[];
+            /** Symbols */
+            symbols: string[];
+        };
         /** ExcludedOut */
         ExcludedOut: {
             /** Symbol */
@@ -1966,6 +2068,69 @@ export interface components {
              */
             since_window_start: boolean;
         };
+        /** LessonOut */
+        LessonOut: {
+            /** Id */
+            id: string;
+            /** Title Ko */
+            title_ko: string;
+            /** Level */
+            level: string;
+            /** Minutes */
+            minutes: number;
+            /** Skill Codes */
+            skill_codes: string[];
+            /** Watch Kinds */
+            watch_kinds: string[];
+            /** Summary Ko */
+            summary_ko: string;
+            progress: components["schemas"]["ProgressOut"] | null;
+            /** Body Chars */
+            body_chars: number;
+            /** Sections */
+            sections: components["schemas"]["SectionOut"][];
+            /** General Example Ko */
+            general_example_ko: string;
+            /** References */
+            references: components["schemas"]["ReferenceOut"][];
+            /** Quiz */
+            quiz: components["schemas"]["QuestionOut"][];
+            /** Takeaway Ko */
+            takeaway_ko: string;
+        };
+        /** LessonSummaryOut */
+        LessonSummaryOut: {
+            /** Id */
+            id: string;
+            /** Title Ko */
+            title_ko: string;
+            /** Level */
+            level: string;
+            /** Minutes */
+            minutes: number;
+            /** Skill Codes */
+            skill_codes: string[];
+            /** Watch Kinds */
+            watch_kinds: string[];
+            /** Summary Ko */
+            summary_ko: string;
+            progress: components["schemas"]["ProgressOut"] | null;
+        };
+        /** LessonsOut */
+        LessonsOut: {
+            /** Lessons */
+            lessons: components["schemas"]["LessonSummaryOut"][];
+            /** Read Count */
+            read_count: number;
+            /** Total */
+            total: number;
+            /** Default First Topics */
+            default_first_topics: string[];
+            /** Load Errors */
+            load_errors: components["schemas"]["LoadErrorOut"][];
+            /** Caveats */
+            caveats: string[];
+        };
         /**
          * LiveVerdictOut
          * @description Why a kind of forecast is or is not trusted live (forecast.report.live_edge_at):
@@ -1976,6 +2141,17 @@ export interface components {
             direction: string;
             /** Range */
             range: string;
+        };
+        /**
+         * LoadErrorOut
+         * @description A lesson module that failed the content contract at import; it is left out of the
+         *     list instead of taking the whole app down (fail-closed per lesson).
+         */
+        LoadErrorOut: {
+            /** Lesson Id */
+            lesson_id: string;
+            /** Error */
+            error: string;
         };
         /** ManualIn */
         ManualIn: {
@@ -2267,6 +2443,30 @@ export interface components {
              */
             origin: "screenshot" | "manual";
         };
+        /**
+         * ProgressIn
+         * @description `read` marks or unmarks the lesson as read; `answers` (one 0-based choice per
+         *     question, in order) is scored on the server. Either or both.
+         */
+        ProgressIn: {
+            /** Read */
+            read?: boolean | null;
+            /** Answers */
+            answers?: number[] | null;
+        };
+        /** ProgressOut */
+        ProgressOut: {
+            /** Lesson Id */
+            lesson_id: string;
+            /** Read At */
+            read_at: string | null;
+            /** Quiz Score */
+            quiz_score: number | null;
+            /** Quiz Total */
+            quiz_total: number | null;
+            /** Quiz At */
+            quiz_at: string | null;
+        };
         /** ProjectionIn */
         ProjectionIn: {
             /**
@@ -2327,6 +2527,21 @@ export interface components {
             };
             /** Correlation */
             correlation: number;
+        };
+        /**
+         * QuestionOut
+         * @description A self-check question. `answer` (0-based) and `why_ko` are sent so the screen can
+         *     explain right after each choice; the server still scores what is saved.
+         */
+        QuestionOut: {
+            /** Prompt Ko */
+            prompt_ko: string;
+            /** Choices */
+            choices: string[];
+            /** Answer */
+            answer: number;
+            /** Why Ko */
+            why_ko: string;
         };
         /** QuoteOut */
         QuoteOut: {
@@ -2397,6 +2612,24 @@ export interface components {
             headline_ko: string;
             /** Disclaimer Ko */
             disclaimer_ko: string;
+        };
+        /**
+         * ReferenceOut
+         * @description One outside source. Free, authoritative sources first; the author checked the link.
+         */
+        ReferenceOut: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Publisher */
+            publisher: string;
+            /** Lang */
+            lang: string;
+            /** Note Ko */
+            note_ko: string;
+            /** Accessed */
+            accessed: string;
         };
         /**
          * ResolvedRuleOut
@@ -2761,10 +2994,105 @@ export interface components {
             kind: string;
         };
         /**
+         * SectionOut
+         * @description A lesson section. `kind` is shown as a chip: fact (사실), principle (일반 원칙) or app
+         *     (이 앱에서는, with `route` pointing at the screen it talks about).
+         */
+        SectionOut: {
+            /** Heading Ko */
+            heading_ko: string;
+            /** Kind */
+            kind: string;
+            /** Paragraphs */
+            paragraphs: string[];
+            /** Bullets */
+            bullets?: string[] | null;
+            /** Callout Ko */
+            callout_ko?: string | null;
+            /** Route */
+            route?: string | null;
+        };
+        /**
          * Side
          * @enum {string}
          */
         Side: "buy" | "sell";
+        /**
+         * SkillOut
+         * @description Strength of evidence for one habit, never a grade: strong (뚜렷함), some (조금 보임),
+         *     none (걸린 것 없음), insufficient (기록 부족, fewer than `min_sample`).
+         */
+        SkillOut: {
+            /** Code */
+            code: string;
+            /** Label Ko */
+            label_ko: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "strong" | "some" | "none" | "insufficient";
+            /** Level Ko */
+            level_ko: string;
+            /** Sample N */
+            sample_n: number;
+            /** Min Sample */
+            min_sample: number;
+            /** Window Start */
+            window_start: string | null;
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+            /** Lines */
+            lines: components["schemas"]["EvidenceLineOut"][];
+            /** Lesson Ids */
+            lesson_ids: string[];
+            /** Caveat Ko */
+            caveat_ko: string | null;
+            /** Excluded Suspicious */
+            excluded_suspicious: number;
+        };
+        /** SkillsOut */
+        SkillsOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Empty */
+            empty: boolean;
+            /** Trades Total */
+            trades_total: number;
+            /** Trades In Window */
+            trades_in_window: number;
+            /** Suspicious Excluded */
+            suspicious_excluded: number;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+            /** Skills */
+            skills: components["schemas"]["SkillOut"][];
+            /** First Topics */
+            first_topics: string[];
+            /**
+             * First Topics Source
+             * @enum {string}
+             */
+            first_topics_source: "ranking" | "default";
+            /** Disclaimer Ko */
+            disclaimer_ko: string;
+            /** Caveats */
+            caveats: string[];
+        };
         /** SkippedCheckOut */
         SkippedCheckOut: {
             /** Symbol */
@@ -3107,6 +3435,60 @@ export interface components {
             limit: number | null;
             /** Subject */
             subject: string | null;
+        };
+        /**
+         * WatchItemOut
+         * @description Something to check in the next days, tied to my own rules and policy, never to a
+         *     direction. `severity`: now (지금 확인), soon (이번 주), setup (준비).
+         */
+        WatchItemOut: {
+            /** Kind */
+            kind: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "now" | "soon" | "setup";
+            /** Title Ko */
+            title_ko: string;
+            /** Detail Ko */
+            detail_ko: string;
+            /** Route */
+            route: string | null;
+            /** Date */
+            date: string | null;
+            /** Symbol */
+            symbol: string | null;
+            /** Lesson Id */
+            lesson_id: string | null;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+        };
+        /** WeekOut */
+        WeekOut: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Items */
+            items: components["schemas"]["WatchItemOut"][];
+            /** Stale Symbols */
+            stale_symbols: string[];
+            /** Errors */
+            errors: string[];
+            /** Caveats */
+            caveats: string[];
+            /** Disclaimer Ko */
+            disclaimer_ko: string;
         };
         /** WeightOut */
         WeightOut: {
@@ -4733,6 +5115,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skills_api_learn_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillsOut"];
+                };
+            };
+        };
+    };
+    get_week_api_learn_week_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeekOut"];
+                };
+            };
+        };
+    };
+    list_lessons_api_learn_lessons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonsOut"];
+                };
+            };
+        };
+    };
+    get_lesson_api_learn_lessons__lesson_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_progress_api_learn_progress__lesson_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesson_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProgressIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProgressOut"];
                 };
             };
             /** @description Validation Error */

@@ -6,10 +6,12 @@ import {
   coachApi,
   compareApi,
   congressApi,
+  learnApi,
   type ActionStatus,
   type CoachPolicyInput,
   type Currency,
   type ImportCommit,
+  type LessonProgressInput,
   type ManualImport,
   type ProjectionInput,
   type RuleSettingsInput,
@@ -88,6 +90,8 @@ function useLedgerMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>
       void client.invalidateQueries({ queryKey: ['rules'] })
       // The coach's checks are built on the same holdings.
       void client.invalidateQueries({ queryKey: ['coach'] })
+      // The learn coach's evidence and week list are built on the trade log too.
+      void client.invalidateQueries({ queryKey: ['learn'] })
     },
   })
 }
@@ -201,6 +205,8 @@ export function useSetActionStatus() {
     onSuccess: (data) => {
       client.setQueryData(['corporate-actions'], data)
       void client.invalidateQueries({ queryKey: ['portfolio'] })
+      // The week list counts actions still awaiting confirmation.
+      void client.invalidateQueries({ queryKey: ['learn'] })
     },
   })
 }
@@ -212,6 +218,7 @@ export function useSetWithholding() {
     onSuccess: (data) => {
       client.setQueryData(['corporate-actions'], data)
       void client.invalidateQueries({ queryKey: ['portfolio'] })
+      void client.invalidateQueries({ queryKey: ['learn'] })
     },
   })
 }
@@ -223,6 +230,7 @@ export function useConfirmAllDividends() {
     onSuccess: (data) => {
       client.setQueryData(['corporate-actions'], data)
       void client.invalidateQueries({ queryKey: ['portfolio'] })
+      void client.invalidateQueries({ queryKey: ['learn'] })
     },
   })
 }
@@ -256,6 +264,8 @@ export function useUpdateRuleSettings() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['rules'] })
       void client.invalidateQueries({ queryKey: ['coach'] })
+      // The week list and the rule-breaking evidence read the same rules.
+      void client.invalidateQueries({ queryKey: ['learn'] })
     },
   })
 }
@@ -269,7 +279,11 @@ export function useUpdateCoachPolicy() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (data: CoachPolicyInput) => coachApi.updatePolicy(data),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['coach'] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['coach'] })
+      // The learn coach reads the policy (class drift, policy_unset, cash items).
+      void client.invalidateQueries({ queryKey: ['learn'] })
+    },
   })
 }
 
@@ -306,6 +320,45 @@ export function useResetKillSwitch() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['rules'] })
       void client.invalidateQueries({ queryKey: ['coach'] })
+      void client.invalidateQueries({ queryKey: ['learn'] })
+    },
+  })
+}
+
+// --- Learn coach (D-034): evidence from my records and study material. Keys under ['learn']. ---
+
+// Evidence and the week list load a year of bars on a first visit; five minutes of staleness is
+// fine and a failure is shown, not retried.
+const learnQuery = { staleTime: 5 * 60_000, retry: false } as const
+
+/** Habit evidence from my own trade log (strength levels, never a grade). Shared by the learn
+ *  page, the lesson page's "from my records" box and the home card. */
+export const useLearnSkills = (enabled = true) =>
+  useQuery({ queryKey: ['learn', 'skills'] as const, queryFn: learnApi.skills, ...learnQuery, enabled })
+
+/** What to check in the next seven days, tied to my own rules and policy. */
+export const useLearnWeek = (enabled = true) =>
+  useQuery({ queryKey: ['learn', 'week'] as const, queryFn: learnApi.week, ...learnQuery, enabled })
+
+export const useLessons = () =>
+  useQuery({ queryKey: ['learn', 'lessons'] as const, queryFn: learnApi.lessons, ...learnQuery })
+
+export const useLesson = (id: string | undefined) =>
+  useQuery({
+    queryKey: ['learn', 'lessons', id] as const,
+    queryFn: () => learnApi.lesson(id ?? ''),
+    ...learnQuery,
+    enabled: !!id,
+  })
+
+/** Saves reading state and/or self-check answers; the list and that lesson refetch. */
+export function useSaveProgress(id: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: LessonProgressInput) => learnApi.saveProgress(id, body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['learn', 'lessons'] })
+      void client.invalidateQueries({ queryKey: ['learn', 'lessons', id] })
     },
   })
 }

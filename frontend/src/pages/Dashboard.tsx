@@ -8,6 +8,7 @@ import { CoachCard } from '../components/CoachCard'
 import { CompareCard } from '../components/CompareCard'
 import { HoldingsList } from '../components/HoldingsList'
 import { KimchiPremium } from '../components/KimchiPremium'
+import { LearnCard } from '../components/LearnCard'
 import { PortfolioForecastCard } from '../components/PortfolioForecastCard'
 import { RulesBanner } from '../components/RulesBanner'
 import { Card, Disclosure, ErrorBox, InfoRow, Muted, PnL, SegmentedControl, Skeleton } from '../components/ui'
@@ -78,6 +79,7 @@ export function Dashboard() {
       )}
       <RulesBanner />
       <CoachCard />
+      <LearnCard />
 
       <Card title="보유 종목">
         {holdings.error ? (

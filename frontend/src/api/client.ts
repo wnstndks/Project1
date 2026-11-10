@@ -241,3 +241,40 @@ export const coachApi = {
   patterns: () => request<CoachPatterns>('/coach/patterns'),
   review: (month?: string) => request<CoachReview>(`/coach/review${query({ month })}`),
 }
+
+// --- Learn coach (D-034): evidence from my own trade log, what to check this week, and the study
+// material behind each concept. Not a signal, not a rule check, not a policy check, not advice;
+// habit levels are the strength of evidence, never a grade. ---
+export type LessonSummary = Schemas['LessonSummaryOut']
+export type LessonDetail = Schemas['LessonOut']
+export type LessonList = Schemas['LessonsOut']
+export type LessonSection = Schemas['SectionOut']
+export type LessonReference = Schemas['ReferenceOut']
+export type LessonQuestion = Schemas['QuestionOut']
+export type LessonProgress = Schemas['ProgressOut']
+export type LessonProgressInput = Schemas['ProgressIn']
+
+export type LearnEvidenceLine = Schemas['EvidenceLineOut']
+export type LearnSkill = Schemas['SkillOut']
+/** Strength of the evidence (뚜렷함 / 조금 보임 / 걸린 것 없음 / 기록 부족), never a grade. */
+export type LearnLevel = LearnSkill['level']
+export type LearnSkills = Schemas['SkillsOut']
+export type LearnWatchItem = Schemas['WatchItemOut']
+/** now (지금 확인) / soon (이번 주) / setup (준비). */
+export type LearnSeverity = LearnWatchItem['severity']
+export type LearnWeek = Schemas['WeekOut']
+
+/** Own object like `coachApi`, so edits here never collide with `api`. */
+export const learnApi = {
+  skills: () => request<LearnSkills>('/learn/skills'),
+  week: () => request<LearnWeek>('/learn/week'),
+  lessons: () => request<LessonList>('/learn/lessons'),
+  lesson: (id: string) => request<LessonDetail>(`/learn/lessons/${encodeURIComponent(id)}`),
+  // `read` marks the lesson read/unread; `answers` (one choice index per question) is scored
+  // on the server, which stores the score and total only.
+  saveProgress: (id: string, body: LessonProgressInput) =>
+    request<LessonProgress>(`/learn/progress/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+}

@@ -305,9 +305,20 @@ class HoldingView:
             )
 
 
+TradeOrigin = Literal["manual", "import", "demo"]
+TRADE_ORIGINS: tuple[str, ...] = ("manual", "import", "demo")
+
+
 @dataclass(frozen=True)
 class TradeView:
-    """One trade with the position state just before it (the ledger replay knows both)."""
+    """One trade with the position state just before it (the ledger replay knows both).
+
+    The last four fields have defaults so older callers keep working (D-034): `fee` is in
+    the trade currency; `fx_krw` is the KRW per trade-currency rate the ledger used for this
+    trade (`ledger.trade_fx`; 1.0 for KRW trades), None when the caller did not look it up;
+    `origin` says where the record came from (the service decides from its note, the pure
+    modules never see the magic strings); `note` is the user's own memo, None when empty.
+    """
 
     id: int
     symbol: str
@@ -319,6 +330,10 @@ class TradeView:
     currency: str
     avg_cost_before: float | None
     qty_before: float
+    fee: float = 0.0
+    fx_krw: float | None = None
+    origin: str = "manual"
+    note: str | None = None
 
     def __post_init__(self) -> None:
         if self.side not in ("buy", "sell"):
@@ -337,6 +352,16 @@ class TradeView:
                 "avg_cost_before",
                 _num(f"trade {self.id}: avg_cost_before", self.avg_cost_before, lo=0.0),
             )
+        _set(self, "fee", _num(f"trade {self.id}: fee", self.fee, lo=0.0))
+        if self.fx_krw is not None:
+            fx = _num(f"trade {self.id}: fx_krw", self.fx_krw)
+            if fx <= 0:
+                raise ValueError(f"trade {self.id}: fx_krw must be positive")
+            _set(self, "fx_krw", fx)
+        if self.origin not in TRADE_ORIGINS:
+            raise ValueError(f"trade {self.id}: origin must be one of {', '.join(TRADE_ORIGINS)}")
+        if self.note is not None and not isinstance(self.note, str):
+            raise ValueError(f"trade {self.id}: note must be a string or None")
 
 
 # --- weights, concentration, exposure --------------------------------------------------------
@@ -1419,7 +1444,7 @@ def chasing_buys(
                 _flag(
                     "chasing_buy",
                     t,
-                    f"매수 전 {lookback}봉 동안 {run_up:+.1f}% 움직인 뒤 샀습니다",
+                    f"매수 전 {lookback}봉 동안 {run_up:+.1f}% 오른 뒤 샀습니다",
                     run_up,
                 )
             )
@@ -1571,6 +1596,7 @@ __all__ = [
     "PROJECT_MAX_DRAWDOWN_PCT",
     "REBALANCE_HEADLINE_KO",
     "REMAINDER_ZERO_NOTE_KO",
+    "TRADE_ORIGINS",
     "TWR_NEGATIVE_VALUE_KO",
     "TWR_RETURN_FLOOR_KO",
     "VIOLATION_LABELS_KO",
@@ -1589,6 +1615,7 @@ __all__ = [
     "Policy",
     "RiskWindow",
     "TargetPlan",
+    "TradeOrigin",
     "TradeView",
     "Violation",
     "Weights",

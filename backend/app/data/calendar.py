@@ -4,6 +4,7 @@ US stocks follow the NYSE calendar (holidays and 13:00 ET early closes). Coins t
 and their daily bars close at 00:00 UTC; the USD/KRW series is treated the same way.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from functools import lru_cache
 from typing import Literal
@@ -61,6 +62,30 @@ def us_close_utc(d: date) -> datetime:
     if close is not None:
         return close
     return datetime.combine(d, REGULAR_CLOSE, tzinfo=NEW_YORK).astimezone(UTC)
+
+
+@dataclass(frozen=True)
+class Closure:
+    """A weekday on which the NYSE is closed or closes early (`close_utc` set, UTC-aware)."""
+
+    date: date
+    kind: Literal["holiday", "early_close"]
+    close_utc: datetime | None
+
+
+def upcoming_closures(start: date, days: int) -> list[Closure]:
+    """NYSE holidays and early closes among the weekdays in [start, start + days). Offline."""
+    out: list[Closure] = []
+    for i in range(max(0, days)):
+        d = start + timedelta(days=i)
+        if d.weekday() >= 5:
+            continue
+        close = nyse_close_utc(d)
+        if close is None:
+            out.append(Closure(d, "holiday", None))
+        elif close.astimezone(NEW_YORK).time() < REGULAR_CLOSE:
+            out.append(Closure(d, "early_close", close))
+    return out
 
 
 def bar_is_final(symbol: str, bar_date: date, now_utc: datetime) -> bool:

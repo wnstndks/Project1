@@ -454,3 +454,58 @@ class CongressSync(Base):
     index_modified: Mapped[datetime | None] = mapped_column(DateTime)  # Clerk's Last-Modified
     docs_total: Mapped[int] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(String(300))
+
+
+class UpcomingEventRow(Base):
+    """An upcoming earnings date or ex-dividend date of a held stock, as the provider's
+    calendar gave it (services/events.py, DECISIONS.md D-034).
+
+    `estimated` is True when the provider gave a range and the first day is kept. Rows are
+    replaced per symbol on each successful refresh; a failed refresh keeps the last ones.
+    """
+
+    __tablename__ = "upcoming_events"
+    __table_args__ = (UniqueConstraint("symbol", "kind", "event_date", name="uq_upcoming_events"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(20), index=True)
+    kind: Mapped[str] = mapped_column(String(12))  # earnings | ex_dividend
+    event_date: Mapped[date] = mapped_column(Date)
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+    source: Mapped[str] = mapped_column(String(20), default="yfinance")
+
+
+class EventSync(Base):
+    """Last calendar fetch per symbol (24-hour TTL). `error` set means the stored events are
+    from an earlier success and the symbol is reported as stale.
+
+    `error` holds `ISO attempt time + space + message` (`services.events.join_error`) and is
+    split with `services.events.split_error`; the attempt time holds the retry back for the
+    service's `error_ttl`. A row without the prefix (written before that format) is retried
+    once on the next request. No schema change was needed for this.
+    """
+
+    __tablename__ = "event_syncs"
+
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+    # "<ISO attempt time> <message>"; see the class docstring and `services.events.split_error`.
+    error: Mapped[str | None] = mapped_column(String(300))
+
+
+class LessonProgress(Base):
+    """Reading and self-check state of one lesson (app/learn, DECISIONS.md D-034).
+
+    Single-user app, so one row per lesson. Only the score and total of the last self-check
+    are kept, never the answers.
+    """
+
+    __tablename__ = "lesson_progress"
+
+    lesson_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC
+    quiz_score: Mapped[int | None] = mapped_column(Integer)
+    quiz_total: Mapped[int | None] = mapped_column(Integer)
+    quiz_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC
+    updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC

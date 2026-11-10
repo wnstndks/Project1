@@ -22,9 +22,11 @@ from app.services.benchmarks import BenchmarkService
 from app.services.coach import CoachService
 from app.services.congress import CongressService
 from app.services.corporate_actions import CorporateActionService
+from app.services.events import EventService
 from app.services.forecasts import ForecastService, ForecastTraining
 from app.services.guru_compare import GuruCompareService
 from app.services.gurus import GuruService
+from app.services.learn import LearnService
 from app.services.market_data import MarketDataService, QuoteCache
 from app.services.news import NewsService
 from app.services.portfolio import PortfolioService
@@ -251,3 +253,21 @@ def get_coach_service(
     # No forecaster: the coach reads rule results without running inference (D-033).
     rules = RuleService(db, market, portfolio, settings, forecasts=None)
     return CoachService(db, market, portfolio, rules, benchmarks, settings)
+
+
+def get_learn_service(
+    db: Session = Depends(get_db),
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+    benchmarks: BenchmarkService = Depends(get_benchmark_service),
+    provider: MarketDataProvider = Depends(get_provider),
+) -> LearnService:
+    """The learn coach (D-034) on top of the same coach and rule services as `/coach`
+    (no forecast inference), plus the earnings / ex-dividend calendar of the held stocks,
+    which the same market provider supplies (fake when `AM_MARKET_PROVIDER=fake`)."""
+    settings = get_settings()
+    rules = RuleService(db, market, portfolio, settings, forecasts=None)
+    coach = CoachService(db, market, portfolio, rules, benchmarks, settings)
+    source = "fake" if settings.market_provider == "fake" else "yfinance"
+    events = EventService(db, provider, source=source)
+    return LearnService(db, coach, rules, events=events, settings=settings)

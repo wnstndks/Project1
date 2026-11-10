@@ -2178,6 +2178,163 @@
           }
         }
       }
+    },
+    "/api/learn/skills": {
+      "get": {
+        "tags": [
+          "learn"
+        ],
+        "summary": "Get Skills",
+        "operationId": "get_skills_api_learn_skills_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/learn/week": {
+      "get": {
+        "tags": [
+          "learn"
+        ],
+        "summary": "Get Week",
+        "operationId": "get_week_api_learn_week_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/learn/lessons": {
+      "get": {
+        "tags": [
+          "learn"
+        ],
+        "summary": "List Lessons",
+        "operationId": "list_lessons_api_learn_lessons_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/learn/lessons/{lesson_id}": {
+      "get": {
+        "tags": [
+          "learn"
+        ],
+        "summary": "Get Lesson",
+        "operationId": "get_lesson_api_learn_lessons__lesson_id__get",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/learn/progress/{lesson_id}": {
+      "put": {
+        "tags": [
+          "learn"
+        ],
+        "summary": "Put Progress",
+        "operationId": "put_progress_api_learn_progress__lesson_id__put",
+        "parameters": [
+          {
+            "name": "lesson_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lesson Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgressIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3700,6 +3857,60 @@
         ],
         "title": "ErrorMetrics"
       },
+      "EvidenceLineOut": {
+        "properties": {
+          "text_ko": {
+            "type": "string",
+            "title": "Text Ko"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N"
+          },
+          "trade_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Trade Ids"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Symbols"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text_ko",
+          "value",
+          "n",
+          "trade_ids",
+          "symbols"
+        ],
+        "title": "EvidenceLineOut",
+        "description": "One sentence of evidence with the figure behind it and the trades it rests on. `n` is\nthe sample the sentence is about; the screen always prints it."
+      },
       "ExcludedOut": {
         "properties": {
           "symbol": {
@@ -4850,6 +5061,215 @@
         ],
         "title": "LagFlagOut"
       },
+      "LessonOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title_ko": {
+            "type": "string",
+            "title": "Title Ko"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "minutes": {
+            "type": "integer",
+            "title": "Minutes"
+          },
+          "skill_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skill Codes"
+          },
+          "watch_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Watch Kinds"
+          },
+          "summary_ko": {
+            "type": "string",
+            "title": "Summary Ko"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body_chars": {
+            "type": "integer",
+            "title": "Body Chars"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionOut"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "general_example_ko": {
+            "type": "string",
+            "title": "General Example Ko"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceOut"
+            },
+            "type": "array",
+            "title": "References"
+          },
+          "quiz": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionOut"
+            },
+            "type": "array",
+            "title": "Quiz"
+          },
+          "takeaway_ko": {
+            "type": "string",
+            "title": "Takeaway Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title_ko",
+          "level",
+          "minutes",
+          "skill_codes",
+          "watch_kinds",
+          "summary_ko",
+          "progress",
+          "body_chars",
+          "sections",
+          "general_example_ko",
+          "references",
+          "quiz",
+          "takeaway_ko"
+        ],
+        "title": "LessonOut"
+      },
+      "LessonSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title_ko": {
+            "type": "string",
+            "title": "Title Ko"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "minutes": {
+            "type": "integer",
+            "title": "Minutes"
+          },
+          "skill_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skill Codes"
+          },
+          "watch_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Watch Kinds"
+          },
+          "summary_ko": {
+            "type": "string",
+            "title": "Summary Ko"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title_ko",
+          "level",
+          "minutes",
+          "skill_codes",
+          "watch_kinds",
+          "summary_ko",
+          "progress"
+        ],
+        "title": "LessonSummaryOut"
+      },
+      "LessonsOut": {
+        "properties": {
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/LessonSummaryOut"
+            },
+            "type": "array",
+            "title": "Lessons"
+          },
+          "read_count": {
+            "type": "integer",
+            "title": "Read Count"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "default_first_topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Default First Topics"
+          },
+          "load_errors": {
+            "items": {
+              "$ref": "#/components/schemas/LoadErrorOut"
+            },
+            "type": "array",
+            "title": "Load Errors"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lessons",
+          "read_count",
+          "total",
+          "default_first_topics",
+          "load_errors",
+          "caveats"
+        ],
+        "title": "LessonsOut"
+      },
       "LiveVerdictOut": {
         "properties": {
           "direction": {
@@ -4868,6 +5288,25 @@
         ],
         "title": "LiveVerdictOut",
         "description": "Why a kind of forecast is or is not trusted live (forecast.report.live_edge_at):\nedge | forward_test_pending | not_significant | no_data."
+      },
+      "LoadErrorOut": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "title": "Lesson Id"
+          },
+          "error": {
+            "type": "string",
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id",
+          "error"
+        ],
+        "title": "LoadErrorOut",
+        "description": "A lesson module that failed the content contract at import; it is left out of the\nlist instead of taking the whole app down (fail-closed per lesson)."
       },
       "ManualIn": {
         "properties": {
@@ -5867,6 +6306,102 @@
         ],
         "title": "PreviewRowOut"
       },
+      "ProgressIn": {
+        "properties": {
+          "read": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read"
+          },
+          "answers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answers"
+          }
+        },
+        "type": "object",
+        "title": "ProgressIn",
+        "description": "`read` marks or unmarks the lesson as read; `answers` (one 0-based choice per\nquestion, in order) is scored on the server. Either or both."
+      },
+      "ProgressOut": {
+        "properties": {
+          "lesson_id": {
+            "type": "string",
+            "title": "Lesson Id"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "quiz_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiz Score"
+          },
+          "quiz_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiz Total"
+          },
+          "quiz_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quiz At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lesson_id",
+          "read_at",
+          "quiz_score",
+          "quiz_total",
+          "quiz_at"
+        ],
+        "title": "ProgressOut"
+      },
       "ProjectionIn": {
         "properties": {
           "years": {
@@ -6049,6 +6584,38 @@
           "correlation"
         ],
         "title": "ProjectionOut"
+      },
+      "QuestionOut": {
+        "properties": {
+          "prompt_ko": {
+            "type": "string",
+            "title": "Prompt Ko"
+          },
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Choices"
+          },
+          "answer": {
+            "type": "integer",
+            "title": "Answer"
+          },
+          "why_ko": {
+            "type": "string",
+            "title": "Why Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_ko",
+          "choices",
+          "answer",
+          "why_ko"
+        ],
+        "title": "QuestionOut",
+        "description": "A self-check question. `answer` (0-based) and `why_ko` are sent so the screen can\nexplain right after each choice; the server still scores what is saved."
       },
       "QuoteOut": {
         "properties": {
@@ -6255,6 +6822,45 @@
           "disclaimer_ko"
         ],
         "title": "RebalanceOut"
+      },
+      "ReferenceOut": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "publisher": {
+            "type": "string",
+            "title": "Publisher"
+          },
+          "lang": {
+            "type": "string",
+            "title": "Lang"
+          },
+          "note_ko": {
+            "type": "string",
+            "title": "Note Ko"
+          },
+          "accessed": {
+            "type": "string",
+            "title": "Accessed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "url",
+          "publisher",
+          "lang",
+          "note_ko",
+          "accessed"
+        ],
+        "title": "ReferenceOut",
+        "description": "One outside source. Free, authoritative sources first; the author checked the link."
       },
       "ResolvedRuleOut": {
         "properties": {
@@ -7373,6 +7979,69 @@
         ],
         "title": "RuleTriggerOut"
       },
+      "SectionOut": {
+        "properties": {
+          "heading_ko": {
+            "type": "string",
+            "title": "Heading Ko"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Paragraphs"
+          },
+          "bullets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bullets"
+          },
+          "callout_ko": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callout Ko"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading_ko",
+          "kind",
+          "paragraphs"
+        ],
+        "title": "SectionOut",
+        "description": "A lesson section. `kind` is shown as a chip: fact (\uc0ac\uc2e4), principle (\uc77c\ubc18 \uc6d0\uce59) or app\n(\uc774 \uc571\uc5d0\uc11c\ub294, with `route` pointing at the screen it talks about)."
+      },
       "Side": {
         "type": "string",
         "enum": [
@@ -7380,6 +8049,187 @@
           "sell"
         ],
         "title": "Side"
+      },
+      "SkillOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label_ko": {
+            "type": "string",
+            "title": "Label Ko"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "strong",
+              "some",
+              "none",
+              "insufficient"
+            ],
+            "title": "Level"
+          },
+          "level_ko": {
+            "type": "string",
+            "title": "Level Ko"
+          },
+          "sample_n": {
+            "type": "integer",
+            "title": "Sample N"
+          },
+          "min_sample": {
+            "type": "integer",
+            "title": "Min Sample"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Window End"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceLineOut"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "lesson_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lesson Ids"
+          },
+          "caveat_ko": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caveat Ko"
+          },
+          "excluded_suspicious": {
+            "type": "integer",
+            "title": "Excluded Suspicious"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label_ko",
+          "level",
+          "level_ko",
+          "sample_n",
+          "min_sample",
+          "window_start",
+          "window_end",
+          "lines",
+          "lesson_ids",
+          "caveat_ko",
+          "excluded_suspicious"
+        ],
+        "title": "SkillOut",
+        "description": "Strength of evidence for one habit, never a grade: strong (\ub69c\ub837\ud568), some (\uc870\uae08 \ubcf4\uc784),\nnone (\uac78\ub9b0 \uac83 \uc5c6\uc74c), insufficient (\uae30\ub85d \ubd80\uc871, fewer than `min_sample`)."
+      },
+      "SkillsOut": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "empty": {
+            "type": "boolean",
+            "title": "Empty"
+          },
+          "trades_total": {
+            "type": "integer",
+            "title": "Trades Total"
+          },
+          "trades_in_window": {
+            "type": "integer",
+            "title": "Trades In Window"
+          },
+          "suspicious_excluded": {
+            "type": "integer",
+            "title": "Suspicious Excluded"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Window End"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillOut"
+            },
+            "type": "array",
+            "title": "Skills"
+          },
+          "first_topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "First Topics"
+          },
+          "first_topics_source": {
+            "type": "string",
+            "enum": [
+              "ranking",
+              "default"
+            ],
+            "title": "First Topics Source"
+          },
+          "disclaimer_ko": {
+            "type": "string",
+            "title": "Disclaimer Ko"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "empty",
+          "trades_total",
+          "trades_in_window",
+          "suspicious_excluded",
+          "window_start",
+          "window_end",
+          "skills",
+          "first_topics",
+          "first_topics_source",
+          "disclaimer_ko",
+          "caveats"
+        ],
+        "title": "SkillsOut"
       },
       "SkippedCheckOut": {
         "properties": {
@@ -8334,6 +9184,151 @@
           "subject"
         ],
         "title": "ViolationOut"
+      },
+      "WatchItemOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "now",
+              "soon",
+              "setup"
+            ],
+            "title": "Severity"
+          },
+          "title_ko": {
+            "type": "string",
+            "title": "Title Ko"
+          },
+          "detail_ko": {
+            "type": "string",
+            "title": "Detail Ko"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Id"
+          },
+          "estimated": {
+            "type": "boolean",
+            "title": "Estimated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "severity",
+          "title_ko",
+          "detail_ko",
+          "route",
+          "date",
+          "symbol",
+          "lesson_id"
+        ],
+        "title": "WatchItemOut",
+        "description": "Something to check in the next days, tied to my own rules and policy, never to a\ndirection. `severity`: now (\uc9c0\uae08 \ud655\uc778), soon (\uc774\ubc88 \uc8fc), setup (\uc900\ube44)."
+      },
+      "WeekOut": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchItemOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "stale_symbols": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stale Symbols"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Caveats"
+          },
+          "disclaimer_ko": {
+            "type": "string",
+            "title": "Disclaimer Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "items",
+          "stale_symbols",
+          "errors",
+          "caveats",
+          "disclaimer_ko"
+        ],
+        "title": "WeekOut"
       },
       "WeightOut": {
         "properties": {

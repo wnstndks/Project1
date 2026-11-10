@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from fractions import Fraction
-from typing import Protocol
+from typing import Literal, Protocol
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,20 @@ class CorporateEvent:
     date: date  # ex-date
     kind: str  # "split" or "dividend"
     value: Decimal  # split ratio, or dividend per share in the quote currency
+
+
+EventKind = Literal["earnings", "ex_dividend"]
+
+
+@dataclass(frozen=True)
+class UpcomingEvent:
+    """A scheduled earnings release or ex-dividend date. `estimated` marks a date the
+    provider gave as a range (the first day is kept) rather than a confirmed one."""
+
+    symbol: str
+    kind: EventKind
+    date: date
+    estimated: bool = False
 
 
 def split_fraction(ratio: Decimal) -> Fraction:
@@ -97,4 +111,9 @@ class MarketDataProvider(Protocol):
 
     def get_actions(self, symbol: str) -> list[CorporateEvent]:
         """Past splits and cash dividends (empty for coins)."""
+        ...
+
+    def get_upcoming_events(self, symbol: str) -> list[UpcomingEvent]:
+        """Scheduled earnings releases and ex-dividend dates; empty for coins. Past dates may
+        be included (Yahoo keeps the last ex-dividend date), so consumers filter by today."""
         ...

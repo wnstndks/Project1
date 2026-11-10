@@ -6,7 +6,7 @@ import random
 from datetime import date, datetime, timedelta
 
 from app.data.assets import CRYPTO_ASSETS, FX_USDKRW, trades_every_day
-from app.data.provider import Bar, CorporateEvent, Quote
+from app.data.provider import Bar, CorporateEvent, Quote, UpcomingEvent
 
 _BASE_PRICES = {
     "BTC-USD": 60000.0,
@@ -21,12 +21,14 @@ _BASE_PRICES = {
     "KRW-SOL": 205_000.0,
 }
 _EPOCH = date(2015, 1, 1)
+_QUARTER = 91  # days between synthetic earnings releases / ex-dividend dates
 
 
 class FakeProvider:
     """Geometric random walk seeded per symbol, so the same symbol and day give the same bar.
 
     Symbols listed in `unknown` behave like tickers the provider has never heard of.
+    `upcoming` fixes the calendar of a symbol; other stocks get a deterministic quarterly one.
     """
 
     def __init__(
@@ -34,11 +36,14 @@ class FakeProvider:
         today: date | None = None,
         unknown: set[str] | None = None,
         actions: dict[str, list[CorporateEvent]] | None = None,
+        upcoming: dict[str, list[UpcomingEvent]] | None = None,
     ) -> None:
         self.today = today or date.today()
         self.unknown = unknown or set()
         self.actions = actions or {}
+        self.upcoming = upcoming or {}
         self.history_calls: list[tuple[str, date, date]] = []
+        self.event_calls: list[str] = []
 
     def get_history(self, symbol: str, start: date, end: date) -> list[Bar]:
         self.history_calls.append((symbol, start, end))
@@ -60,6 +65,22 @@ class FakeProvider:
 
     def get_actions(self, symbol: str) -> list[CorporateEvent]:
         return list(self.actions.get(symbol, []))
+
+    def get_upcoming_events(self, symbol: str) -> list[UpcomingEvent]:
+        self.event_calls.append(symbol)
+        if symbol in self.upcoming:
+            return list(self.upcoming[symbol])
+        if symbol in self.unknown or trades_every_day(symbol) or symbol.startswith("KRW-"):
+            return []
+        seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
+        estimated = seed % 2 == 0
+        # Earnings every 91 days from a symbol-specific phase; the next two after `today`.
+        earnings = _next_cycle(_EPOCH + timedelta(days=seed % _QUARTER), self.today, 2)
+        out = [UpcomingEvent(symbol, "earnings", d, estimated) for d in earnings]
+        if seed % 3 != 0:
+            ex_date = _next_cycle(_EPOCH + timedelta(days=(seed // 7) % _QUARTER), self.today, 1)
+            out += [UpcomingEvent(symbol, "ex_dividend", d) for d in ex_date]
+        return sorted(out, key=lambda e: (e.date, e.kind))
 
     def _series(self, symbol: str, end: date) -> list[Bar]:
         seed = int(hashlib.sha256(symbol.encode()).hexdigest()[:8], 16)
@@ -83,3 +104,9 @@ class FakeProvider:
                 bars.append(Bar(d, open_, high, low, price, price, volume))
             d += timedelta(days=1)
         return bars
+
+
+def _next_cycle(first: date, after: date, n: int) -> list[date]:
+    """The first n dates of the 91-day cycle starting at `first` that fall after `after`."""
+    periods = max(0, (after - first).days // _QUARTER + 1)
+    return [first + timedelta(days=(periods + i) * _QUARTER) for i in range(n)]

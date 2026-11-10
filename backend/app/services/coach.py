@@ -16,7 +16,7 @@ their ValueError becomes a 422.
 
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -39,15 +39,16 @@ from app.forecast.panel import AssetClass
 from app.services.benchmarks import BenchmarkService, cash_flows
 from app.services.corporate_actions import confirmed_events, split_events
 from app.services.errors import DomainError
-from app.services.ledger import ZERO, Position, build_positions, ordered, timeline
+from app.services.ledger import ZERO, Position, build_positions, ordered, timeline, trade_fx
 from app.services.market_data import MarketDataService, SymbolNotFoundError
 from app.services.portfolio import Holding, PortfolioService, quote_symbol
 from app.services.rules import RuleService
+from app.services.transactions import IMPORT_NOTE
 from app.strategy import coach as engine
 from app.strategy.coach import CashRecord, HoldingView, Policy, RiskWindow, TradeView
 from app.strategy.execution import KillSwitch
 from app.strategy.risk import Book, RiskLimits, apply_decision, kill_switch_triggers, max_drawdown
-from app.strategy.rules import BLOCK_LABELS
+from app.strategy.rules import BLOCK_LABELS, RuleSettings
 
 # A hand-entered cash balance older than this is flagged (D-033 §5).
 CASH_STALE_DAYS = 30
@@ -119,7 +120,7 @@ SUSPICIOUS_REVIEW_KO = (
 # N-COACH-2: habit flags exist only for the last PATTERN_WINDOW_DAYS of trades.
 FLAGS_OUTSIDE_WINDOW_KO = "습관 점검은 최근 1년 거래만 보므로 이 달의 플래그는 세지 않았습니다."
 PATTERN_DETAILS_KO: dict[str, str] = {
-    "chasing_buy": "매수 전 20봉 동안 15% 넘게 움직인 뒤 산 거래",
+    "chasing_buy": "매수 전 20봉 동안 15% 넘게 오른 뒤 산 거래",
     "averaging_down_below_cut": "평균단가 기준 손절선 아래에서 추가로 산 거래",
     "quick_rebuy_after_loss": "손실로 판 뒤 10일 안에 같은 종목을 다시 산 거래",
     "overtrading": "직전 12개월 평균의 2배를 넘고 6건 이상 거래한 달",
@@ -192,6 +193,46 @@ def _price_suspicious(price: float, close: float) -> bool:
         return False
     ratio = price / close
     return ratio >= SUSPICIOUS_PRICE_RATIO or ratio <= 1 / SUSPICIOUS_PRICE_RATIO
+
+
+def _origin(note: str | None) -> str:
+    """Where a trade record came from, judged from the note the writer left: the screenshot
+    import's fixed note, the demo seed's, or the user's own entry (D-034). The pure modules
+    never see these strings."""
+    if note == IMPORT_NOTE:
+        return "import"
+    if note == "demo":
+        return "demo"
+    return "manual"
+
+
+@dataclass(frozen=True)
+class Habits:
+    """Everything `patterns()` computes from one load of the last year's bars, so the learn
+    service (`LearnService.skills`, D-034) reports the same counts as the coach page.
+
+    `trades` is the whole ledger as engine views, `recent` the ones inside the window;
+    `closes` are the trade-currency closes of the symbols traded recently or still held,
+    `missing` the symbols without bars. Everything is empty when the ledger is empty.
+    `fx_missing` counts USD trades whose rate could not be looked up (`fx_krw=None`).
+    """
+
+    window_start: date
+    trades: list[TradeView]
+    recent: list[TradeView]
+    closes: dict[str, pd.Series]
+    missing: list[str]
+    chasing: list[engine.Flag]
+    skipped: int
+    averaging: list[engine.Flag]
+    rebuys: list[engine.Flag]
+    counts: list[engine.MonthCount]
+    busy: list[engine.MonthCount]
+    lag: list[engine.LagFlag]
+    holdings: list[Holding]
+    views: list[HoldingView]
+    rules: RuleSettings
+    fx_missing: int = 0
 
 
 class CoachService:
@@ -897,14 +938,32 @@ class CoachService:
 
     # --- habits in the trade log -----------------------------------------------------------
 
+    def _fx_lookup(self, txs: Sequence[Transaction]) -> Callable[[date], Decimal] | None:
+        """One USD/KRW lookup for the whole ledger (from 10 days before the first trade), or
+        None when the rate history cannot be read; the caller then leaves `fx_krw` empty and
+        counts those trades instead of guessing a rate."""
+        if not any((t.currency or Currency.USD) == Currency.USD for t in txs):
+            return None
+        try:
+            return self.market.usd_krw_lookup(txs[0].trade_date - SUSPICIOUS_LOOKBACK)
+        except (MarketDataError, SymbolNotFoundError):
+            return None
+
     def _trade_views(
         self, txs: Sequence[Transaction], events: Iterable[CorporateAction]
-    ) -> list[TradeView]:
+    ) -> tuple[list[TradeView], int]:
         """Every trade with the position state just before it, from one replay of the ledger
         (`ledger.timeline`, confirmed splits included). Average costs are in the trade's own
-        currency: the ledger's dollar cost for USD trades, its exact won cost for KRW ones."""
+        currency: the ledger's dollar cost for USD trades, its exact won cost for KRW ones.
+
+        Also fills the learn-coach fields (D-034): the fee in the trade currency, the won
+        rate the ledger used for the trade (`trade_fx`: the recorded rate, else that day's
+        market rate; 1.0 for KRW trades), the record's origin and the note. Returns the views
+        and how many USD trades got no rate (`fx_krw=None`)."""
+        fx_on = self._fx_lookup(txs)
         positions: dict[str, Position] = {}
         views: list[TradeView] = []
+        fx_missing = 0
         for item in timeline(txs, events):
             if isinstance(item, CorporateAction):
                 pos = positions.get(item.symbol)
@@ -918,6 +977,14 @@ class CoachService:
             if pos.quantity > ZERO:
                 avg_before = float(pos.avg_cost_krw if currency == Currency.KRW else pos.avg_cost)
             pos.apply(item)
+            fx_krw: float | None
+            if currency == Currency.KRW:
+                fx_krw = 1.0
+            elif fx_on is not None:
+                fx_krw = float(trade_fx(item, fx_on))
+            else:
+                fx_krw = None
+                fx_missing += 1
             views.append(
                 TradeView(
                     id=item.id,
@@ -930,33 +997,52 @@ class CoachService:
                     currency=currency.value,
                     avg_cost_before=avg_before,
                     qty_before=qty_before,
+                    fee=float(item.fee or 0),
+                    fx_krw=fx_krw,
+                    origin=_origin(item.note),
+                    note=item.note,
                 )
             )
+        return views, fx_missing
+
+    def trade_views(self) -> list[TradeView]:
+        """The whole ledger as engine views (see `_trade_views`), for the learn service."""
+        views, _ = self._trade_views(self._transactions(), confirmed_events(self.db))
         return views
 
-    def patterns(self) -> dict:
-        """Habits in the last year of trades, each as a count with the trades behind it, plus
-        held positions sitting below their stop-loss. Not a signal; the user's own rules
-        (`rule_settings`) supply the stop-loss percentages."""
-        today = self.today()
+    def suspicious_ids(self) -> frozenset[int]:
+        """Ids of the trades that fail the 20x price rule (`_suspicious_trades`)."""
+        return frozenset(t.id for t in self._suspicious_trades(self._transactions()))
+
+    def _habits(self, today: date) -> Habits:
+        """One pass over the ledger and the last year's bars: the engine's habit flags, the
+        monthly counts and the positions below their stop. `patterns()` and the learn
+        service's evidence both read this, so their counts agree (D-034)."""
         window_start = today - timedelta(days=PATTERN_WINDOW_DAYS)
         txs = self._transactions()
-        base = {"window_start": window_start, "window_end": today}
-        if not txs:
-            return base | {
-                "empty": True,
-                "trades_considered": 0,
-                "trades_without_bars": 0,
-                "patterns": [],
-                "monthly": [],
-                "rule_lag": [],
-                "caveats": ["거래 기록이 없습니다."],
-            }
-
-        trades = self._trade_views(txs, confirmed_events(self.db))
-        recent = [t for t in trades if t.date >= window_start]
         holdings, views = self._holding_views()
         rules = self.rules.get_settings()
+        if not txs:
+            return Habits(
+                window_start=window_start,
+                trades=[],
+                recent=[],
+                closes={},
+                missing=[],
+                chasing=[],
+                skipped=0,
+                averaging=[],
+                rebuys=[],
+                counts=[],
+                busy=[],
+                lag=[],
+                holdings=holdings,
+                views=views,
+                rules=rules,
+            )
+
+        trades, fx_missing = self._trade_views(txs, confirmed_events(self.db))
+        recent = [t for t in trades if t.date >= window_start]
 
         # Closes in each trade's currency for the symbols traded recently or still held.
         symbols: dict[str, str] = {t.symbol: t.currency for t in recent}
@@ -990,7 +1076,44 @@ class CoachService:
             for h in holdings
         ]
         lag = engine.rule_lag(positions, closes)
-        currency_of = {h.symbol: h.currency.value for h in holdings}
+        return Habits(
+            window_start=window_start,
+            trades=trades,
+            recent=recent,
+            closes=closes,
+            missing=missing,
+            chasing=chasing,
+            skipped=skipped,
+            averaging=averaging,
+            rebuys=rebuys,
+            counts=counts,
+            busy=busy,
+            lag=lag,
+            holdings=holdings,
+            views=views,
+            rules=rules,
+            fx_missing=fx_missing,
+        )
+
+    def patterns(self) -> dict:
+        """Habits in the last year of trades, each as a count with the trades behind it, plus
+        held positions sitting below their stop-loss. Not a signal; the user's own rules
+        (`rule_settings`) supply the stop-loss percentages."""
+        today = self.today()
+        h = self._habits(today)
+        base = {"window_start": h.window_start, "window_end": today}
+        if not h.trades:
+            return base | {
+                "empty": True,
+                "trades_considered": 0,
+                "trades_without_bars": 0,
+                "patterns": [],
+                "monthly": [],
+                "rule_lag": [],
+                "caveats": ["거래 기록이 없습니다."],
+            }
+
+        currency_of = {x.symbol: x.currency.value for x in h.holdings}
 
         def pattern(code: str, flags: Sequence[engine.Flag], months: Sequence[str] = ()) -> dict:
             return {
@@ -1006,20 +1129,20 @@ class CoachService:
             "거래 기록에서 집계한 패턴이며, 예측이나 신호가 아닙니다.",
             "스크린샷으로 가져온 거래는 날짜가 업로드일일 수 있어 패턴이 실제와 다를 수 있습니다.",
         ]
-        if missing:
-            caveats.append(f"시세를 받지 못해 건너뛴 종목: {', '.join(sorted(missing))}")
+        if h.missing:
+            caveats.append(f"시세를 받지 못해 건너뛴 종목: {', '.join(sorted(h.missing))}")
         return base | {
             "empty": False,
-            "trades_considered": len(recent),
-            "trades_without_bars": skipped,
+            "trades_considered": len(h.recent),
+            "trades_without_bars": h.skipped,
             "patterns": [
-                pattern("chasing_buy", chasing),
-                pattern("averaging_down_below_cut", averaging),
-                pattern("quick_rebuy_after_loss", rebuys),
-                pattern("overtrading", [], [m.month for m in busy]),
+                pattern("chasing_buy", h.chasing),
+                pattern("averaging_down_below_cut", h.averaging),
+                pattern("quick_rebuy_after_loss", h.rebuys),
+                pattern("overtrading", [], [m.month for m in h.busy]),
             ],
-            "monthly": [asdict(m) for m in counts],
-            "rule_lag": [asdict(f) | {"currency": currency_of.get(f.symbol, "USD")} for f in lag],
+            "monthly": [asdict(m) for m in h.counts],
+            "rule_lag": [asdict(f) | {"currency": currency_of.get(f.symbol, "USD")} for f in h.lag],
             "caveats": caveats,
         }
 

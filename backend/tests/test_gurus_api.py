@@ -4,7 +4,7 @@ FakeGuruProvider stands in for ARK and EDGAR; the TestClient runs background tas
 returning, so a sync scheduled by a request has finished by the next request.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.orm import sessionmaker
@@ -15,7 +15,11 @@ from app.deps import get_cusip_resolver, get_guru_provider, get_sec_configured, 
 from app.services import gurus as gurus_service
 from app.services.gurus import SEC_UA_MISSING
 
-AS_OF = date(2026, 10, 20)
+# Yesterday, not a fixed date: `GuruService.list_all` marks an ARK snapshot older than
+# `MAX_AGE["ark"]` (7 days) as stale against the real clock, so a fixed day went stale once the
+# calendar moved past it (the service's own clock is not overridable through the API route
+# that schedules the background sync).
+AS_OF = date.today() - timedelta(days=1)
 
 
 def snapshot(rows: list[tuple[str | None, str, float]], source: str = "ark") -> GuruSnapshot:
@@ -119,7 +123,7 @@ def test_compare_starts_first_sync_in_background_then_reports_overlaps(gclient, 
     }
 
     wood = by_id["cathie-wood"]
-    assert wood["guru"]["as_of"] == "2026-10-20" and wood["guru"]["stale"] is False
+    assert wood["guru"]["as_of"] == AS_OF.isoformat() and wood["guru"]["stale"] is False
     assert wood["guru"]["error"] is None and wood["guru"]["holdings_count"] == 3
     assert [(o["symbol"], o["guru_weight_pct"]) for o in wood["overlaps"]] == [
         ("TSLA", 50.0),

@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview",
-    "gen:api": "cd ../backend && py -m uv run python -m app.export_openapi ../frontend/src/api/openapi.json && cd ../frontend && npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts"
+    "gen:api": "cd ../backend && py -3.11 -m uv run python -m app.export_openapi ../frontend/src/api/openapi.json && cd ../frontend && npx --yes openapi-typescript@7 src/api/openapi.json -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.4",

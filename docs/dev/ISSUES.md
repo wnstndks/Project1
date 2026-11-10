@@ -498,3 +498,18 @@
 - 해결(2026-10-27): ① risk-engineer — `twr_index`를 fail-closed로: 평가액이 음수이거나 `V_d − f_d ≤ 0`인 날이 있으면 날짜·원인을 담은 한국어 `ValueError`("…입금을 뺀 수익률이 -100% 이하라 시간가중 지수를 만들 수 없습니다(단가가 틀린 거래가 있는지 거래 페이지에서 확인하세요)"). `V_{d-1} == 0`인 날은 기존대로 수익률 0으로 둔다(전량 매도 뒤 재매수가 정상 사용이고 `portfolio.history()`가 그런 날을 0으로 내기 때문). ② app-engineer — 서비스가 이 ValueError를 잡아 `actual=None`·`actual_error`로 응답하고, 거래 통화 단가가 거래일 종가와 20배 이상 차이 나는 "단가 확인" 거래가 있으면 실제 추이 낙폭을 계산하지 않고 그 사실(건수·종목)을 `actual_error`에 적으며, 월간 리뷰는 장부 사실인 입금·시장 손익은 그대로 두되 `suspicious_trades`와 단서를 붙이고 화면은 그 숫자에 손익 색을 쓰지 않는다. 근본 해결은 사용자가 거래 페이지에서 단가를 고치는 것이다(TODO_FOR_ME).
 - 대안(미채택, risk-engineer 제안): 시작 시점 유입 가정 `r = (V_d − V_{d−1} − f_d)/(V_{d−1} + f_d)`는 이 병리를 수식 차원에서 없애지만 `tests/test_coach_math.py`가 현재 공식을 손계산으로 고정하고 있어 별도 결정으로 미룬다.
 - 검증: `tests/test_coach.py`에 fail-closed 테스트(정확히 −100%도 거부, 첫 위반일 보고, 음수 거부, 0 구간 재시작) 추가, `test_coach_api.py`에 단가 20배 틀린 매수로 `actual=None`·`actual_error` 확인. verifier 재검증은 수정 라운드 뒤 리드가 테스트·브라우저로 확인(아래 PROGRESS 참고). verifier 재검증(2026-10-27) **해결 확인**: 데모 DB에서 `risk.actual=null`·`actual_error` "단가 확인이 필요한 거래 5건(…)", 598,141% 소멸, 창 수치 독립 재계산 117항목 차이 0; 같은 자산 추이·입금으로 `twr_index`를 직접 부르면 ValueError(2026-10-19), 20배 필터를 끈 서비스 경로도 `actual_error`로 닫힘; 리뷰 2026-10 `suspicious_trades=5`·caveats[0] 단가 확인 문장. pytest 883·vitest 220·ruff·oxlint·build 통과. 상세 `VERIFICATION.md` "수정 라운드 재검증". 남은 권고 N-COACH-10(20배 경계·분할 복원 직접 테스트 없음).
+
+### [ISSUE-049] `test_gurus_api.py::test_compare_starts_first_sync_in_background_then_reports_overlaps`가 날짜가 지나면 혼자 실패함
+- 현상: 2026-11-02 전체 pytest에서 이 테스트만 실패. 픽스처의 ARK 기준일이 2026-10-20으로 고정돼 있어 오늘과 7일 넘게 벌어지자 응답이 `stale=true`로 바뀜. 코드 변경 없이 날짜만으로 깨지는 테스트.
+- 원인: `services/gurus.py`의 stale 판정(`today - as_of > MAX_AGE["ark"]`)은 실제 날짜를 쓰는데, 비교 라우트의 백그라운드 첫 동기화(`api/gurus.py`)가 `GuruService`를 직접 만들어 테스트의 `now` 주입이 요청 경로 override로 닿지 않음.
+- 근거: 실패 메시지의 `stale` 값, `api/gurus.py:50` 부근의 서비스 생성, 픽스처 상수.
+- 해결(app-engineer, 2026-11-05): 픽스처 기준일을 `date.today() - timedelta(days=1)` 상대 날짜로 바꾸고 단언도 그 값으로. 프로덕션 코드는 바꾸지 않음. 백그라운드 라우트에 시계를 주입하는 정리는 비차단 후속(TODO).
+- 검증: app-engineer `tests/test_gurus_api.py` 통과, verifier 1차 검증에서 전체 pytest 재현 예정.
+
+### [ISSUE-050] 강의 한 편의 글자수 초과가 앱 전체 import를 막음
+- 현상: 2026-11-05 세션 재시작 뒤 `pytest` 전체가 수집 단계에서 `ValueError: body is 1540 chars; must be 700-1500 (chasing-buys)`로 멈추고 서버도 뜨지 않음. 콘텐츠 작성자가 검토 지적을 반영하던 중 본문이 상한을 넘은 상태로 세션이 끊김.
+- 원인: `app/learn/catalog.py`가 import 시점에 모든 강의를 로드·검증하고(fail-closed), `deps.py`가 `LearnService`를 import하므로 강의 하나의 검증 실패가 앱 전체로 번짐. 의도된 설계(잘못된 콘텐츠를 조용히 내보내지 않음)이지만 작성 중에는 전체 테스트가 함께 멈춤.
+- 근거: 스택 트레이스 `app/deps.py:29 → app/services/learn.py:28 → app/learn/catalog.py:61 → content/chasing_buys.py:5 → model.py:312`.
+- 해결 1차(quant-researcher, 리드 결정 D-034 8): 본문 상한을 1,500 → 1,800자로 올림(두 페르소나가 요구한 구조 문장을 넣을 자리; 하한 700 유지, 읽기 시간 계산 동일)과 "저장 전에 `tests/test_learn_content.py`를 먼저 돌린다"는 절차. → **재발**: verifier 1차 검증(N-LEARN-1) 중 같은 날 두 번 더(글자수 2,644·2,025·1,871자 초과, 이어서 금지어) 앱 전체 import가 막혀 홈·거래·코치까지 모든 API가 죽었다. 절차만으로는 막히지 않음.
+- 해결 2차(리드 결정, quant-researcher `catalog.py` + app-engineer 서비스·화면): fail-closed의 범위를 앱 전체 → 강의 한 편으로 좁힘. `catalog._load()`가 모듈을 하나씩 import해 실패한 강의만 빼고 `LESSON_LOAD_ERRORS[id]`에 기록·로그하며, `GET /api/learn/lessons`가 `load_errors`와 단서를 내보내고 화면이 그 단서를 보여 준다. `tests/test_learn_content.py`는 `LESSON_LOAD_ERRORS == {}`를 단언하므로 CI는 여전히 한 편이라도 틀리면 실패한다(조용한 대체 아님).
+- 검증: `tests/test_learn_content.py` 189 passed(깨진 모듈·잘못된 export·미작성 id를 monkeypatch로 흉내 내 나머지가 살아남는 테스트 포함), verifier 2차 검증에서 재현 예정.

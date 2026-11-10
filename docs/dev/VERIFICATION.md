@@ -1208,3 +1208,243 @@ verifier는 세션이 끊겨 브라우저 확인을 수행하지 못해 리드�
 **재검증 판정: 통과.** N-COACH-1(ISSUE-048)은 두 겹(20배 필터 → `actual_error`, 엔진 fail-closed → `actual_error`)으로 닫혔고, N-COACH-2~7·9도 코드·테스트·데모 응답에서 확인했다. 남은 것은 N-COACH-8(관찰)과 N-COACH-10(테스트 보강 권고)뿐이다.
 
 재현: backend\ `PYTHONPATH=<backend> AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run python -X utf8 <scratch>/coach_recheck.py <scratch>/demo_out` → `… coach_recompute.py demo.db <scratch>/demo_out r2_diagnosis.json` → `… coach_recheck2.py <scratch>/demo_out`; 테스트·린트·빌드 명령은 위 "재현 명령"과 같다.
+
+## 학습 코치 1차 검증 (2026-11-05, verifier)
+
+대상: 미커밋 작업 트리(브랜치 `agent-team`, HEAD b482db8). 사양은 `~/.claude/plans/cozy-noodling-volcano.md` "J. 학습 코치"와 D-034(§8 착수 중 결정 포함). 범위는 코드·API·수치(1차)이며 강의 편수·링크·브라우저 확인은 2차(리드)다. 검증 중 quant-researcher가 `app/learn/content/`에 강의를 계속 추가하고 있었고, 그 영향이 아래 N-LEARN-1이다.
+
+**판정: 조건부 통과 — 차단 후보 1건(N-LEARN-1: 강의 1편의 검증 실패가 `app.main` import를 막아 검증 시간 중 약 50분간 백엔드 전체가 뜨지 않음. 설계상 의도된 fail-closed지만 범위가 `/learn`이 아니라 앱 전체), 수정 권고 2건(N-LEARN-2 손절선 아래 보유 일수가 포지션 시작 전 기간을 포함, N-LEARN-3 `oversizing`이 표본 3건(최소 5)인데 `some`), 비차단 2건(N-LEARN-4·5), 관찰 4건. 재현·마이그레이션·빈 DB API·데모 독립 재계산(차이 0.0)·이번 주 캐시·문구·위생·설계 규칙은 반박 실패로 통과.**
+
+#### 1. 재현(절대 경로, bash; `py -3.11 -m uv`, ISSUE-032)
+| 명령 | 결과 | 팀 보고와 대조 |
+|---|---|---|
+| backend\ `py -3.11 -m uv run pytest -o addopts="" -q -p no:cacheprovider` | **1107 passed, 2 xfailed** in 141.88s (13:4x, 강의 2편 시점) | 보고 1105 + 2 xfailed → 이후 강의 추가로 2건 증가(파라미터화 테스트). 불일치 아님 |
+| `ruff check .` / `ruff format --check .` | All checks passed / 160 files already formatted | 보고된 `tests/test_skills.py:450` E501은 이미 고쳐짐 |
+| `alembic heads` | `26d32d8e1b7a (head)` 하나 (`down_revision = '8ed46201b220'`) | 일치 |
+| frontend\ `npm test -- --run` | **38 files / 255 tests passed** | 일치 |
+| `npm run lint` / `npm run build` | oxlint 0건(exit 0) / `built in 266ms`(exit 0) | 일치 |
+| `npm run gen:api` | 이 셸에서는 스크립트의 `py -m uv`가 `No module named uv`로 **실패**(ISSUE-032, `VIRTUAL_ENV`). 같은 두 단계를 수동 실행(`python -m app.export_openapi <scratch>/openapi.json` → `npx --yes openapi-typescript@7`)해 작업 트리 파일과 `diff -q` → `openapi.json`·`schema.d.ts` **IDENTICAL**(sha1 `dccc940c…`, `b746e09a…`). `git diff --stat frontend/src/api/`는 HEAD 대비라 항상 4파일 변경으로 나옴 → 재생성 비교로 대신함 | 보고 "diff 없음"과 같은 결론 |
+
+#### 2. 마이그레이션
+| 확인 | 결과 |
+|---|---|
+| 빈 DB(`AM_DATABASE_URL=sqlite:///verify_empty.db`, 새 파일) `alembic upgrade head` | … → 8ed46201b220 → **26d32d8e1b7a**. `sqlite_master`: `upcoming_events`(id PK, symbol VARCHAR(20) NOT NULL, kind VARCHAR(12), event_date DATE, estimated BOOLEAN NOT NULL, fetched_at DATETIME, source VARCHAR(20), **`uq_upcoming_events UNIQUE (symbol, kind, event_date)`**, `ix_upcoming_events_symbol` non-unique), `event_syncs`(symbol PK, fetched_at, error VARCHAR(300) NULL), `lesson_progress`(lesson_id VARCHAR(40) PK, read_at·quiz_score·quiz_total·quiz_at NULL, updated_at NOT NULL) = `db/models.py`와 일치 |
+| `alembic downgrade -1` → `upgrade head` 왕복(빈 DB) | 내려가면 세 테이블 사라지고 `alembic_version=8ed46201b220`, 다시 올리면 세 테이블 복귀·`26d32d8e1b7a`. `alembic check` "No new upgrade operations detected." |
+| 데모 DB(`backend/demo.db`) `alembic upgrade head` / `alembic check` | 이미 head(이전 세션에서 올라감), "No new upgrade operations detected." 거래 21건(데모 시드 16 + 2026-10-19 가져오기 검증 5건, 단가 오류라 20배 규칙에 걸림), `rule_settings` 1행, `policy_settings` 0행, `corporate_actions` detected 26·ignored 1 |
+| 임시 DB | `verify_empty.db`는 검증 뒤 삭제. `demo.db`에는 이번 검증으로 `event_syncs` 10행·`upcoming_events` 14행이 생겼고 `lesson_progress`는 0행 그대로(PUT은 빈 DB에만 보냄) |
+
+#### 3. 빈 DB API(8003, 실제 공급자 `market_provider=yfinance`, `live_trading=False` 확인)
+서버는 N-LEARN-1 때문에 작업 트리에서 바로 뜨지 않아, **`backend/app`의 스냅샷 사본(14:27, 당시 검증에 실패하던 `costs_fees_fx_tax.py`·`stop_loss_and_rules.py` 2개만 제외, `diff -rq`로 그 외 동일 확인)**에서 띄웠다(카탈로그 3편: diversification-basics·position-sizing·chasing-buys). 14:40에 작업 트리가 잠시 import 가능해졌을 때 작업 트리에서도 한 번 더 띄워 `skills`·`week`·`lessons`를 재확인했다(그 시점 카탈로그 7편).
+
+| 호출 | 결과 |
+|---|---|
+| `GET /api/learn/skills` | 200(0.35s). `empty=true`, `trades_total=0`, `window 2025-11-05..2026-11-05`, 9개 습관 **전부 `insufficient`**·`sample_n=0`·`lines=[]`. 거래 기반 7개 caveat = `NO_TRADES_KO`, `class_drift` caveat = `NO_POLICY_KO`, `concentration` caveat None. `loss_holding`·`short_holding`·`concentration`·`class_drift`의 `window_start=None`, 나머지 = 365일 창. `first_topics_source="default"`, `first_topics` = 스냅샷 `['diversification-basics','position-sizing']` / 작업 트리 `['diversification-basics','position-sizing','stop-loss-and-rules']`(카탈로그에 있는 것만) |
+| `GET /api/learn/week` | 200(0.22s). `start 2026-11-05 end 2026-11-12`, items = `policy_unset`·`cash_missing`(둘 다 setup, `/coach`)뿐. 휴장일 없음(11-05~11-12 NYSE 정규 개장, 11-11 재향군인의 날은 NYSE 개장이라 맞음). 종목 항목·`stale_symbols`·`errors` 없음 |
+| `GET /api/learn/lessons` / `/lessons/chasing-buys` | 200 / 200(`sections`·`references`·`quiz` 3문항·`minutes` 5 포함) |
+| `GET /api/learn/lessons/does-not-exist` | **404** `{"detail":"강의를 찾을 수 없습니다 (does-not-exist)","code":"lesson_not_found"}` |
+| `PUT /api/learn/progress/chasing-buys {"read": true}` | 200, `read_at` 채워짐, quiz 필드 null |
+| `PUT … {"answers": [0,0,0]}` | 200, `quiz_score=1, quiz_total=3, quiz_at` 채워짐(서버 채점; `lesson_progress` 행에 답은 없음) |
+| `PUT … {"answers": [0,0]}` | **422** `answers_length` "답은 문항 수(3)만큼 보내야 합니다 (받은 수 2)" |
+| `PUT … {}` | **422** `empty_progress` |
+| `PUT /api/learn/progress/does-not-exist {"read": true}` | **404** `lesson_not_found` |
+| `GET /api/learn/lessons` 이후 | `read_count=1`, 해당 강의 `progress` 채워짐 |
+
+리드 참고(화면): `first_topics`가 비면 `Learn.tsx:FirstTopicsCard`는 `lessons.default_first_topics`로 대체하고 그것도 비면 카드를 숨기며(`return null`), 홈 `LearnCard`는 `learnSummary`가 주제 없이 "공부 목록 N개 →"만 만든다(`lib/learn.ts:144-147`). 지금은 기본 3편이 모두 있어 해당 없음.
+
+#### 4. 데모 DB API·독립 재계산(8002, 실제 공급자; 스크래치 `recalc_demo.py`가 `transactions`·`price_bars(KRW=X)`만 sqlite3로 읽어 재계산)
+`GET /api/learn/skills` 200(4.28s, 첫 호출·봉 1년·시세 포함). `trades_total 21 · trades_in_window 11 · suspicious_excluded 5 · window 2025-11-05..2026-11-05`.
+
+| 항목 | 응답 | 재계산 | 차이 |
+|---|---|---|---|
+| 창 안 거래 수 | 11 | 11(2025-11-05 이후; 2025-11-03 거래는 제외) | 0 |
+| 단가 확인(20배) 거래 | 5 | 5(가져오기 5건) | 0 |
+| (b) 수수료 bp = Σfee·fx / Σ(qty·price·fx)×1e4 | `cost_blindness.lines[0].value` **6.430387822570605e-05** | **6.430387822570605e-05**(fee 2,185원 / 3.398e11원) | **0.0**(허용 1e-6) |
+| (c) 메모 비율 | `no_journal.lines[0].value` 0.0 (11건 중 0) | 0.0(모든 note가 `demo` 또는 `IMPORT_NOTE` → origin manual 0건), 가져온 거래 5건 줄 | 0.0 |
+| (d) 보유 종목 수 | `concentration.sample_n` 14 | 14 | 0 |
+| (d) top1 | VOO 21.19%(상한 20%) | 규칙 점검 `weight_pct` 21.1879와 동일 값(`weights()` 재사용) | 0 |
+| (a) 라운드트립 | `short_holding` n=0(닫힌 트립 없음), 열린 포지션 나이 717·697·667·617·567·517·467·397·367·17×5일 | 닫힌 트립 0(AAPL·NVDA·SOL 부분 매도만), 같은 나이 | 0 |
+| (a) 매도 결과 | `loss_holding` n=3 "손실 매도 1건 · 이익 매도 2건", 재매수 0 | NVDA gain(300일)·AAPL gain(580일)·SOL-USD loss(290일) | 일치 |
+
+레벨을 `SkillThresholds` 기본값으로 손확인: `no_journal` 0/11=0 < 0.20 → **strong**(n 11 ≥ 5) ✓ / `concentration` top1 21.19 > 20(+EPS)이고 ≤ 30, 실질 종목 수 8.78 ≥ 3, 코인 25.7 ≤ 30 → **some** ✓ / `rule_breaking` n = 추가 매수 3 + 점검 포지션 14 = 17, lag 7개·물타기 0 → **some** ✓(정책 미저장이지만 규칙 저장됨이라 `NO_RULES_KO` 없음 ✓) / `chasing` 0/8 → **none**(n 8 = 창 안 매수 8 − 봉 없음 0) ✓ / `class_drift` 정책 없음 → **insufficient** + `NO_POLICY_KO` ✓ / `cost_blindness` 수수료 기록 2/11 = 18% < 50% → bp 포기 + `NO_FEES_RECORDED_KO`, 과매매 달 0 → **insufficient** ✓ / `loss_holding` n 3 < 4 → **insufficient** ✓ / `short_holding` n 0 < 3 → **insufficient** ✓ / `oversizing` n 3(창 안 매수 8 − 첫 매수 없음 − 단가 확인 5) → 표본 부족인데 응답은 **some**(N-LEARN-3). 순서 strong → some → none → insufficient ✓. `first_topics` = ranking `['diversification-basics','position-sizing']`(strong `no_journal`의 trade-journal과 some `rule_breaking`의 stop-loss-and-rules가 스냅샷 카탈로그에 없어 빠짐; 로직 ✓). 모든 줄에 `n`이 있음(`n is None` 0건). 창: 365일 습관 5개 = `2025-11-05..2026-11-05`, 전 기간 2개 = `2024-11-18(첫 거래)..2026-11-05`, 오늘 상태 2개 = `None..2026-11-05` ✓. `caveats` = 단가 확인 5건 제외 안내 1건.
+
+#### 5. 이번 주 볼 것 — 지연·캐시(8002)
+| 확인 | 결과 |
+|---|---|
+| `GET /api/learn/week` 1·2·3회 | 200 **1.03s / 0.56s / 0.47s**. 첫 호출에 yfinance `Ticker.calendar` 10종목(주식 5 + 가져오기 5)을 8 워커 병렬로 받음. 서버 로그에 VOO "No fundamentals data found"(yfinance 자체 출력)가 있으나 빈 달력으로 성공 처리돼 `error=None`(ETF라 실적 없음, 맞음) |
+| `event_syncs` | 10행(주식만), `fetched_at` 전부 `05:30:57.651247`(한 트랜잭션·한 `now`), `error` 전부 None. 2·3회차 뒤에도 **변화 없음**(TTL 안 재요청 없음) |
+| `upcoming_events` | 14행, 전부 주식 심볼·`source=yfinance`·`estimated=0`. **코인(`BTC-USD`·`ETH-USD`·`XRP-USD`·`SOL-USD`) 행 0**. 지난 날짜(배당락 09-04·09-10·10-14, 실적 10-29)도 저장되고 `upcoming()`이 `date >= today`로 거름(설계대로) |
+| items(20개) | now 13(`suspicious_trade` 5건 → `/transactions?check=1`, `pending_action` 26건, `rule_triggered` 11종목 — 규칙 점검 `label_ko` 재사용) → soon 4(실적 11-06·11-10·11-10, AAPL 배당락 11-12, 창 밖 11-18·11-19는 제외 ✓) → setup 3(`policy_unset`·`cash_missing`·`near_cap` VOO 0.0%p). `(심각도, date or today, symbol)` 정렬 **True**. 응답 3회 전부 동일(`week1 == week2 == week3`) |
+| `stale_symbols` / `errors` | `[]` / `[]` |
+| `lesson_id` | `near_cap` → position-sizing만 채워짐(나머지 종류의 강의가 아직 없음, 2차에서) |
+
+#### 6. 문구·정직성 grep(Grep 도구; ripgrep은 `(?!…)`를 지원하지 않아 `수익(을|이)?\s?보장`은 따로 검색해 "하지 않"을 눈으로 제외)
+| 대상 | 결과 |
+|---|---|
+| `app/learn/**`, `strategy/skills.py`, `services/learn.py` — 금지어·등급어 | 정규식 정의(`model.py:61-65`), docstring 열거(`skills.py:16-18`), 고지문 `LEARN_DISCLAIMER_KO`·`chasing_buys.py:54` "수익을 보장하지 않"만. 사용자 문장 위반 **0** |
+| `lib/learn.ts`, `Learn.tsx`, `Lesson.tsx`, `LearnCard.tsx`, `SkillChip.tsx`, `LessonBody.tsx`, `ReferenceList.tsx`, `Quiz.tsx` | 정규식 정의(`learn.ts:30-31`)·주석·`LEARN_HONESTY_KO`만. "점수"는 화면 문구에 없음(`progressLabel` "셀프 체크 2/3", `quizResultPhrase` "N문제 맞았어요") |
+| 같은 8개 파일의 `PnL`·▲·▼·`text-gain`·`text-loss` | `learn.ts:10` 주석("no ▲▼") 1건뿐 |
+| `strategy/skills.py`·`services/learn.py`의 `execute(`·`Broker`·`KillSwitch` | 0건(`test_skills.py:860-872`가 소스 토큰 금지로 고정, `AM_LIVE_TRADING` 포함) |
+| `services/learn.py`·`services/events.py`·`deps.py`의 Fake | `learn.py`·`events.py` 0건. `deps.py`는 `market_provider == "fake"`일 때만 `FakeProvider`(49행), `AM_IMPORT_EXTRACTOR=fake`일 때만 `FakeExtractor`(127행); `get_learn_service`는 같은 공급자에 `source="fake"/"yfinance"` 표시 |
+| `yfinance` import | `app/data/yfinance_provider.py:13` 한 곳(`deps.py:52`는 주석) |
+| `AM_LIVE_TRADING` | `git diff`(추적 파일) 0건. 미추적 파일에서는 `test_skills.py:871`(금지 토큰 목록)·`coach.py:8` docstring뿐. 스냅샷 서버 `settings.live_trading=False` |
+
+#### 7. 공개 저장소 위생
+새 테스트 5개의 티커 토큰: AAA 212·BBB 103·CCC 22·DDD 8·ZZZZ 3(합성), AAPL 6·MSFT 5·BTC-USD 9·ETH-USD 1·KRW-BTC 7·KRW-SOL 1·BRK-B 1(기존 코치 테스트 `seed_mixed`·FakeProvider 값). `DECISIONS.md`·`PROGRESS.md` 추가분에 티커·금액 없음. `git status`에 `*.db`·`.env`·`backend/artifacts/`·`.claude/`·`frontend/.vitest/`·로그 없음(`git check-ignore -v`: `*.db`, `.env`, `backend/artifacts/`, `.claude`, `frontend/.gitignore:27 .vitest/`, `backend/.dev-backend*.log`). `backend/scripts/__pycache__`는 `__pycache__/`로 무시. 통과. 이 절의 수치는 데모 시드와 합성값만 쓰고 가져오기 검증 5건의 심볼은 적지 않는다.
+
+#### 8. 설계 규칙(코드 읽기)
+| 규칙 | 확인 |
+|---|---|
+| `week()`가 `CorporateActionService.detect()`를 부르지 않음 | `services/learn.py`에 `detect(`·`diagnosis(` 0건. `pending`은 `select(func.count()).where(status == DETECTED)`(696-703행) |
+| `skills()`가 `diagnosis()` 위가 아님 | `coach._habits(today)`(564행) + `rules.check_all()` + 순수 함수 |
+| `EventService.refresh` 네트워크 → 쓰기 순서 | `ThreadPoolExecutor(min(8, n)).map(_fetch)`가 끝난 뒤에야 `_replace_rows`·`event_syncs` upsert·`commit()`(76-97행) |
+| 공급자 실패 시 마지막 값 유지 + stale | 코드 81-87행(실패면 행 유지·`fetched_at` 유지·`error` 기록), `tests/test_events.py::test_failed_fetch_keeps_rows_reports_error_and_retries`·`test_first_fetch_failure_records_error_without_rows` 존재·통과 |
+| `TradeView` 기본값 | `fee=0.0`, `fx_krw=None`, `origin="manual"`, `note=None`(`strategy/coach.py`); 기존 `test_coach*`가 전체 통과에 포함 |
+| 거래 0건의 `rule_breaking` | 빈 DB 응답 `insufficient`·n 0·`NO_TRADES_KO`(서비스가 `_insufficient`로 만듦) |
+| 무효화 | `hooks.ts`: 거래·규칙·정책·킬스위치·배당/분할 mutation 7곳에 `['learn']` 무효화, 학습 훅 키 `['learn', …]` staleTime 5분 |
+
+#### 발견한 문제(ISSUE 형식, 번호는 리드가 부여)
+
+### [N-LEARN-1] 강의 1편의 검증 실패가 백엔드 전체 import를 막는다(검증 중 약 50분)
+- 현상: 13:51(`costs_fees_fx_tax.py` 2,644자 > 1,800)부터 14:36까지, 그리고 14:40 이후 다시(새 강의의 금지어 "section … contains banned wording"), `app.main` import가 `ValueError`로 실패. 그 동안 `uvicorn`(8002·8003 모두 exit 1), `python -m app.export_openapi`, `pytest`(`deps.py` → `services/learn.py` → `catalog.py`를 거치는 모든 테스트) 전부 불가. 홈·거래·코치 등 학습과 무관한 모든 API 포함.
+- 원인: `app/learn/catalog.py:61`이 모듈 import 시점에 `_load()`로 모든 강의를 만들고, `model.py`의 `__post_init__`이 실패하면 예외가 `deps.py` import까지 전파된다. D-034 §8이 "의도된 fail-closed"로 적었지만 그 범위가 `/learn`이 아니라 앱 전체다.
+- 근거: 스크래치 `server_8002.log`·`server_8003.log`(Traceback `catalog.py:52 → model.py:312 ValueError`), `check_content_modules.py` 14:26 결과(OK 3 / BAD 2: costs 2,025자·stop-loss 1,871자), 14:36 OK 5, 14:40 `pytest tests/test_learn_content.py` 금지어 실패.
+- 해결: (비움 — 리드 판단) 후보: ① 콘텐츠 검증 실패를 `/learn` 범위로 한정(카탈로그는 유효한 강의만 들고 실패 목록을 보관 → `LearnService`가 실패가 있으면 학습 라우트만 503/`errors`로 닫음; 다른 라우트는 영향 없음) ② 최소한 콘텐츠 작업 절차에 "저장 전 `pytest tests/test_learn_content.py`"를 강제(D-034 §8에 이미 적혔지만 지켜지지 않음).
+- 검증: 이번 1차는 유효 강의만 둔 스냅샷에서 API를 확인했고, 작업 트리가 import 가능해진 14:40 시점에 빈 DB 호출을 재확인함. 수정 뒤 verifier 재확인 필요. 담당 추정: quant-researcher(절차) + 리드/app-engineer(①의 설계).
+
+### [N-LEARN-2] `rule_breaking` 줄의 "손절선 아래 머문 일수"가 포지션이 생기기 전 기간을 포함한다
+- 현상: 데모 응답 `rule_breaking.lines[1]` = "손절선 아래에 머문 채 들고 있는 종목 7개 (… 283일 이상 …)"에서 2026-10-19에 처음 산(17일째) 5개 포지션이 "283일 이상"으로 나온다. `short_holding` 줄은 같은 종목을 "17일째"로 적어 한 응답 안에서 모순된다.
+- 원인(확인): `strategy/coach.py:1478 rule_lag`는 `(symbol, avg_cost, cut_pct)`만 받아 조회 시작(`window_start − PATTERN_BARS_MARGIN`)부터의 종가 전부를 센다. 포지션 시작일을 모르므로 매수 전 종가가 손절선 아래이면 그 기간도 "머문" 것으로 센다(가져오기 단가 오류가 아니어도, 고점 매수 뒤 15% 하락처럼 매수 전 1년 종가가 손절선보다 낮았던 경우에 같은 일이 난다). 코치 페이지는 N-COACH-6에서 "N봉 이상 (조회 범위 처음부터)"로 한정어를 붙여 닫았지만, 학습의 `LAG_DETAIL_KO = "{sym} {days}일{more}"`(`skills.py:101`)는 "봉"을 "일"로 바꾸고 한정어를 뺐다.
+- 근거: 데모 `skills.json`·`patterns.json`(`rule_lag` 5종목 `days=283, since_window_start=true`), 거래 테이블의 첫 매수일 2026-10-19.
+- 해결: (비움) 제안: `_habits`가 `replay`/`open_since`의 포지션 시작일을 넘겨 `rule_lag`가 시작일 이후 종가만 세거나, 적어도 학습 줄에서 `min(days, 보유일)`로 잘라 "N봉 이상(조회 범위 처음부터)" 한정어를 복원. 담당 추정: risk-engineer(`skills.py` 문구·클리핑, 엔진 `rule_lag` 시그니처), app-engineer(`services/coach.py` 호출).
+- 검증: 미수정.
+
+### [N-LEARN-3] `oversizing`이 표본 3건(최소 5)인데 `some`으로 나온다
+- 현상: 데모 `oversizing`: `sample_n=3, min_sample=5, level="some"`, 줄 "손절선까지 손실 합 9.9% (한도 8%)". 화면은 "조금 보임 · 표본 3건"이 된다.
+- 원인(확인): `skills.py:683-698` — `_level_for`가 n < min_sample로 `insufficient`를 낸 뒤 `total_risk_pct > max_total_risk_pct`이면 `_at_least(level, "some")`가 표본과 무관하게 `some`으로 올린다. `SkillEvidence` docstring("`sample_n` below `min_sample` makes it `insufficient`")과 D-034 §8의 `rule_breaking` 선례("`some` 바닥은 표본이 `min_sample` 이상일 때만")와 어긋난다. 총 손실 한도는 표본이 아니라 오늘 상태의 사실이라 줄 자체는 맞다.
+- 근거: 데모 `skills.json`, `tests/test_skills.py`에 이 경계(표본 부족 + 총 손실 초과) 테스트 없음.
+- 해결: (비움) 제안: `rule_breaking`과 같이 `n >= th.min_sample`일 때만 바닥 적용(줄은 그대로 남김), 또는 총 손실 초과를 오늘 상태 항목으로 분리. 담당 추정: risk-engineer(+ evaluation-engineer 테스트).
+- 검증: 미수정.
+
+### [N-LEARN-4] (비차단) `cost_blindness` bp 분모에 단가 확인 거래가 들어간다
+- 현상: 데모 "거래 비용 합 2,185원 = 거래 금액의 0.00%"(bp 6.4e-05). 단가 확인 5건(가격이 실제의 수천 배)을 빼면 분모 3.398e11원 → 1.600e7원, **1.3654bp**.
+- 원인(확인): `cost_blindness_evidence`(`skills.py:858-866`)는 `suspicious_ids`를 받지 않는다. D-034는 단가 확인 거래를 "크기·결과 증거"에서만 빼기로 했고 비용은 언급이 없다.
+- 근거: 스크래치 `bp_clean.py`(위 수치). 이번 데모는 수수료 기록 부족으로 레벨에는 영향이 없었지만 줄의 숫자는 그대로 보인다.
+- 해결: (비움) 제안: bp 합에서 `suspicious_ids` 제외 + `excluded_suspicious` 보고. 담당 추정: risk-engineer.
+- 검증: 미수정.
+
+### [N-LEARN-5] (비차단) 정책 미저장 시 `class_drift`의 현재 상태 줄이 `n=0`이라 화면에 "표본 0건"이 붙는다
+- 현상: 데모 `class_drift.lines[0]` = "지금 주식 74.3% · 코인 25.7%", `n=0`. `lib/learn.ts:116 skillLine`은 `n`이 null이 아니면 "· 표본 N건"을 붙이므로 "표본 0건"으로 보인다.
+- 원인(확인): `skills.py:589` `EvidenceLine(..., n=0)`. 오늘 상태 줄은 표본이 아니라 `n=None`이 맞다(다른 오늘 상태 줄은 보유 종목 수를 n으로 씀).
+- 해결: (비움) `n=None` 또는 보유 종목 수. 담당 추정: risk-engineer.
+- 검증: 미수정.
+
+**관찰(비차단)**
+- `EventService._stale`(`events.py:175`)은 `error is not None`이면 TTL과 무관하게 다음 요청마다 다시 받는다(테스트가 그 동작을 고정). 배당·분할 감지("실패한 종목은 다음 요청에서 재시도")와 같은 선례라 허용하되, 홈 `LearnCard`가 5분마다 `/week`를 부르므로 계속 실패하는 심볼(상장폐지·오타 티커)이 있으면 yfinance 요청이 5분마다 나간다. 10분 백오프(의원 거래 선례)를 고려할 만하다.
+- VOO가 상한 20%로 계산돼 `concentration some`·`near_cap 0.0%p`가 된다. `strategy/risk.py:40 INDEX_FUNDS = {"SPY"}`(D-025 "넓히려면 새 결정")라 학습 코치 결함이 아니다. 리드가 D-025 범위 결정 시 참고.
+- `npm run gen:api`의 `py -m uv`는 `VIRTUAL_ENV`가 잡힌 셸에서 실패한다(ISSUE-032와 같은 원인). 스크립트를 `py -3.11 -m uv`로 바꾸거나 CLAUDE.md에 적어 두면 재발을 막는다.
+- `week()`의 `rule_triggered` 11건 중 5건은 가져오기 단가 오류 포지션(평균단가가 실제의 수천 배라 항상 "손절 검토")이다. 설계대로 규칙 점검 결과를 그대로 옮긴 것이며, 단가를 고치면 사라진다(`suspicious_trade` 항목이 그 안내를 한다).
+
+재현: backend\ `py -3.11 -m uv run pytest -o addopts="" -q` / `ruff check .` / `ruff format --check .` / `alembic heads`; `AM_DATABASE_URL=sqlite:///verify_empty.db py -3.11 -m uv run alembic upgrade head` → `downgrade -1` → `upgrade head` → `alembic check`; 서버 `AM_DATABASE_URL=sqlite:///C:/…/backend/demo.db py -3.11 -m uv run uvicorn app.main:app --port 8002`(빈 DB는 8003) 뒤 `curl http://127.0.0.1:8002/api/learn/{skills,week,lessons}`; 재계산 `py -3.11 -I <scratch>/recalc_demo.py demo.db 2026-11-05 <scratch>/demo/skills.json`, `py -3.11 -I <scratch>/bp_clean.py demo.db`; frontend\ `npm test -- --run` / `npm run lint` / `npm run build`; gen:api는 `cd backend && py -3.11 -m uv run python -m app.export_openapi <out>.json && cd ../frontend && npx --yes openapi-typescript@7 <out>.json -o <out>.d.ts` 뒤 `diff -q`. 정리: 8002·8003 프로세스 종료(`taskkill`), `verify_empty.db`·스냅샷 삭제 확인.
+
+추기(검증 종료 시점): 리드가 `ISSUES.md`에 등록한 **ISSUE-050**(강의 한 편의 글자수 초과가 앱 전체 import를 막음)이 위 N-LEARN-1과 같은 현상이다(N-LEARN-1 → ISSUE-050). **ISSUE-049**(`test_gurus_api.py`의 고정 날짜 의존)는 이번 재현에서 `AS_OF = date.today() − 1`로 바뀐 테스트가 통과했음을 확인했다. N-LEARN-2~5는 번호 미부여. 정리 확인: 8002·8003 리스너 없음, `verify_empty.db`·스냅샷 삭제, `demo.db`는 `event_syncs`·`upcoming_events` 캐시 행만 추가된 채 유지.
+
+## 학습 코치 2차 검증 (2026-11-06~09, verifier)
+
+대상: 미커밋 작업 트리(브랜치 `agent-team`, HEAD b482db8). 1차(위 절) 뒤 바뀐 것: N-LEARN-1(강의 단위 fail-closed·`catalog.LESSON_LOAD_ERRORS`·`GET /api/learn/lessons`의 `load_errors`·`caveats`), N-LEARN-2~5(`skills.py` 문구·바닥·단가 확인 제외·오늘 상태 표본), 재매수 비율 분모(`loss_holding_evidence(..., rebuy_window_start=)`), `EventService.error_ttl`(1시간, `event_syncs.error` = "<ISO 시도 시각> <메시지>"), 강의 14편 완성(본문 상한 1,800자), `gen:api` 스크립트 `py -3.11 -m uv`, `test_gurus_api.py` 상대 날짜. 검증은 2026-11-06에 수행했고 세션이 끊겨 기록은 11-09에 적었다(스크래치 `scratchpad/verifier/r2_*`에 남은 산출물 기준이며, 재실행하지 않은 항목은 그렇게 적었다). 사용자 확인용 8001·5173 서버와 실제 DB는 건드리지 않았다(8002 데모·8003 빈 DB만 사용, 검증 뒤 종료·임시 DB 삭제 확인).
+
+**판정: 통과(브라우저 확인 제외) — N-LEARN-1~5 모두 해소 확인. 새 발견은 경미 1건(N-LEARN-6, 강의 각주 위치)뿐이고 차단 항목 없음. 화면(`/learn`·`/learn/:lessonId`·홈 `LearnCard`)은 미실시라 사용자 확인이 필요하다.**
+
+#### 1. 재현(절대 경로, bash; `py -3.11 -m uv`, ISSUE-032)
+| 명령 | 결과 | 팀 보고와 대조 |
+|---|---|---|
+| backend\ `py -3.11 -m uv run pytest -o addopts="" -q -p no:cacheprovider` | **1261 passed** in 141.90s (xfail 없음) | 보고 "1,100대" → 강의 12편 추가·새 테스트로 증가. 불일치 아님 |
+| 파일별 `pytest -o addopts="" -q tests/test_skills.py` 등 | `test_skills.py` **46** · `test_skills_math.py` **79** · `test_learn_content.py` **189** · `test_events.py` **41** · `test_learn_api.py` **23** | 다섯 수치 모두 일치 |
+| `ruff check .` / `ruff format --check .` | All checks passed / 172 files already formatted(1차 160 → 강의 12편 추가) | 일치 |
+| `alembic heads` / 데모 DB `alembic check` | `26d32d8e1b7a (head)` 하나 / "No new upgrade operations detected." | 일치. 마이그레이션 자체는 1차에서 왕복 확인했고 이번에 변경 없음 |
+| frontend\ `npm test -- --run` | **38 files / 257 tests passed**(1차 255 → +2) | 일치 |
+| `npm run lint` / `npm run build` | oxlint 0건(exit 0) / `built in 371ms`(exit 0) | 일치 |
+| `npm run gen:api` | **성공**(exit 0, "Wrote ..\frontend\src\api\openapi.json" → openapi-typescript 7.13.0). 실행 전후 `openapi.json`·`schema.d.ts` sha1 동일(`e4c07207…`/`8aec397d…`) → 스키마와 생성물이 맞다 | 1차 실패(ISSUE-032)가 스크립트 `py -3.11`로 해소됨. `git status --short frontend/src/api`는 `M client.ts/hooks.ts/openapi.json/schema.d.ts` 4건인데, 이는 HEAD b482db8에 학습 코치가 아직 없어서이지 gen:api 결과가 달라서가 아니다(해시 동일이 근거). 커밋 뒤에는 비어야 한다 |
+
+#### 2. 강의·fail-closed 범위
+| 확인 | 결과 |
+|---|---|
+| 강의 파일 수 | `backend/app/learn/content/*.py` 14편(`chasing-buys, costs-fees-fx-tax, crypto-specifics, diversification-basics, earnings-week, ex-dividend-date, fx-and-dollar-assets, handling-losses, holding-period-turnover, position-sizing, reading-forecasts, rebalancing-bands, stop-loss-and-rules, trade-journal`) |
+| 작업 트리 `LESSON_LOAD_ERRORS == {}` | 데모 8002 `GET /api/learn/lessons`: `total 14`, `load_errors []`, `caveats []`. `test_learn_content.py` 189건 통과(그 안의 `LESSON_LOAD_ERRORS == {}` 단언 포함) |
+| 참고 링크 | `PYTHONPATH=. py -3.11 -m uv run python scripts/check_lesson_links.py` → **46/46 references answered 200 (38 unique URLs)**, exit 0. 보고와 일치 |
+| 콘텐츠 금지어 | 14편 전체에서 금지 식 매치는 `chasing_buys.py:52` "수익을 보장하지 않지만" 하나이고 lookahead `(?!하지 않)`로 허용되는 문장이다. 등급어(`실력|점수|등급|레벨`) 0건 |
+| 깨진 강의 시뮬레이션(**복사본**) | `backend/app`을 스크래치 `snap2`로 복사해 두 편만 고장: `trade_journal.py` 끝에 `LESSON = replace(LESSON, takeaway_ko=… + " 추천")`(금지어), `earnings_week.py` 끝에 `raise RuntimeError("verifier: simulated import failure")`(import 실패). `PYTHONPATH=<snap2>`·빈 DB(`verify_empty.db`)·실제 공급자로 8003에 기동 → **서버가 뜬다**(1차에는 앱 전체가 죽던 상황). 서버 로그에 `lesson trade-journal failed to load and is not served: ValueError: … banned wording: ['추천']`, `lesson earnings-week failed to load and is not served: RuntimeError: …` 두 줄 |
+| 8003 응답 | `GET /api/learn/lessons` 200: `total 12`, `load_errors` = `[{earnings-week, "RuntimeError: verifier: simulated import failure"}, {trade-journal, "ValueError: lesson 'trade-journal' contains banned wording: ['추천']"}]`, `caveats` = ["강의 2편을 불러오지 못했어요. 목록에서 빠져 있습니다(개발 중 오류)."], `default_first_topics` 3개. `/lessons/trade-journal` **404** `lesson_not_found`, `/lessons/earnings-week` **404**, `/lessons/chasing-buys` **200**. `/learn/skills` 200(빈 DB: 습관 9개 모두 `insufficient`, `first_topics_source=default` 3개), `/learn/week` 200. 다른 라우트도 살아 있음: `/portfolio/summary`·`/portfolio/holdings`·`/transactions`·`/coach/policy`·`/coach/diagnosis`·`/rules/check`·`/corporate-actions` 모두 200 |
+| 화면 단서 | `frontend/src/pages/Learn.tsx:232`가 `data.caveats`를 `<Caveats>`로 그리므로 위 문장이 목록 화면에 보인다(코드 확인, 화면은 미실시) |
+| 실제 콘텐츠 보존 | 작업 트리 `backend/app/learn/content/`는 `??`(신규)만이고 내가 고친 것은 `snap2` 사본뿐. `snap2`·`verify_empty.db`는 11-09에 삭제 확인 |
+
+→ **N-LEARN-1(= ISSUE-050) 해소**: fail-closed가 "앱 전체"에서 "그 편만"으로 좁혀졌고, 빠진 편은 API·화면 단서·로그·CI(189건 테스트) 네 곳에 드러난다.
+
+#### 3. 데모 DB 독립 재계산(8002, `AM_DATABASE_URL=sqlite:///demo.db`, 실제 공급자, 2026-11-06)
+입력: 거래 21건(데모 시드 16 + 2026-10-19 가져오기 검증 5건), 1년 창 2025-11-06~2026-11-06에 11건, 20배 규칙 단가 확인 5건(가져오기 검증 5건과 일치). 스크래치 `recalc_demo_r2.py`가 sqlite를 직접 읽어 `skills.json`과 대조했다. 응답 시간 `skills` 4.18s(1년 봉 조회 포함), `week` 1.07s → 두 번째 0.58s(이벤트 24시간 TTL 적중).
+
+| 항목 | API | 독립 계산 | 결과 |
+|---|---|---|---|
+| (a) `cost_blindness` bp | 1.3654008136694085 bp, `excluded_suspicious=5`, 줄 "단가 확인이 필요한 거래 5건은 비용 계산에서 뺐어요", n=6, `insufficient`(수수료 기록 2/6 < 50% → `NO_FEES_RECORDED` 단서) | 수수료 2,185원 / 거래 금액 16,002,627원(단가 확인 5건 제외) = **1.3654 bp**, 차이 0.0 | **일치** → N-LEARN-4 해소(1차 6.4e-05 bp, 분모 3.398e11원 오류가 사라짐) |
+| (b) `rule_breaking` 손절선 아래 보유 줄 | 가져오기 검증 5건 포지션(보유 18일) "… 284봉 이상(조회 범위 처음부터)", XRP-USD "303봉"(보유 468일), SOL-USD "360봉"(보유 398일) | 조회한 봉 범위 첫날부터 아래였으면 `since_window_start`로 "이상" 라벨이 붙는지: 18일 보유 종목에 "284봉 **이상(조회 범위 처음부터)**" → 봉 수 ≠ 보유일이 라벨로 설명됨. 468·398일 보유 종목은 "이상" 없이 실제 봉 수 | **모순 해소** → N-LEARN-2 해소(`short_holding` "18일째"와 같은 화면에서 어긋나지 않음) |
+| (c) `oversizing` | `sample_n=3`(min 5), level **`insufficient`**, 1차에 있던 "손절선까지 손실 합 …(한도 8%)" 줄은 이번 응답에 없음(표본 부족 시 총 손실 바닥을 적용하지 않는 코드 `skills.py:713-714` 확인) | 1년 창 매수 3건 → n=3 | **일치** → N-LEARN-3 해소 |
+| (d) `class_drift`·`concentration` | `class_drift` `sample_n=14`, 줄 `n=14`; `concentration` `n=14`; `n==0`인 줄 없음 | 보유 종목 14개 | **일치** → N-LEARN-5 해소 |
+| (e) `loss_holding` 재매수 줄 | "최근 365일 손실 매도 1건 중 0건은 10일 안에 다시 샀어요", value 0.0, n=1 | 창 안 손실 매도 1건, 10일 내 재매수 0건 → 0/1 | **일치**, 분모가 창 안 손실 매도라 100%를 넘을 수 없음(`rebuy_window_start` 확인) |
+| 그 외 | `no_journal` strong 0/11, `concentration` some(VOO 21.6% vs 상한 20%, 유효 종목 수 8.5, 코인 25.6%), `chasing` none 0/8, `loss_holding` n=3/4 insufficient("손실 매도 1건 · 이익 매도 2건"), `short_holding` n=0(미청산)에 보유 일수 718/698/668/618/568/518/468/398/368/18×5 | 메모 없는 거래 11/11, 라운드트립 3건, 매도 3건, 보유 일수 전부 내 계산과 동일 | **일치** |
+| `first_topics` | `['trade-journal', 'diversification-basics', 'stop-loss-and-rules']`(`source=ranking`) | strong(no_journal) → some(concentration) → 나머지 순서 | **일치** |
+| `week` | 두 번 호출 결과 동일(`week1 == week2`), 정렬 `(severity, date, symbol)` 확인 True, `stale_symbols []`·`errors []` | — | 통과 |
+| DB 부작용 | `event_syncs` 주식 10행, 단일 `fetched_at 2026-11-06 09:03:47`, `error` 전부 None; `upcoming_events` 주식 14행; `lesson_progress` 0행 그대로 | — | 데모 DB에만 캐시 행 추가 |
+
+#### 4. 일정 재시도(`error_ttl`)
+- 데모 DB에는 실패 행이 없었다(`event_syncs.error` 전부 None). VOO는 서버 로그에 yfinance의 `HTTP Error 404 … No fundamentals data found for symbol: VOO`가 찍혔지만 yfinance가 빈 달력으로 돌려주어 성공 행(이벤트 0건)으로 저장됐다 — ETF라 정상이고 24시간 뒤 다시 받는다(참고: 이 경우 공급자는 404와 "일정 없음"을 구분하지 못하는데 yfinance 동작이라 학습 코치 결함으로 보지 않음).
+- 따라서 재시도 동작은 테스트로 확인했다(`tests/test_events.py` 360~474행, 41건 통과): `test_failed_fetch_keeps_rows_reports_error_and_retries`(378~382행 `p.event_calls == calls_before` → **error_ttl 안에서는 네트워크 호출 0건**, 385~388행 `DEFAULT_ERROR_TTL` 경과 뒤 재시도), `test_first_fetch_failure_records_error_without_rows`, `test_failed_symbol_waits_error_ttl_but_stays_stale_meanwhile`(error_ttl=30분으로 5…29분 루프마다 호출 수 불변·`stale ["AAA"]`에 메시지 유지, 30분에 재시도, 계속 실패하면 시도 시각이 갱신되어 60분에 다시), `test_error_row_without_attempt_time_is_retried_once`(시각 접두어 없는 구형 행은 한 번 재시도 뒤 접두어 형식으로 저장), `test_error_prefix_round_trip_and_column_width`.
+- 코드 대조: `services/events.py` `DEFAULT_ERROR_TTL = timedelta(hours=1)`, `join_error(attempted_at, message)` → `"<ISO 초 단위> <메시지>"[:ERROR_MAX]`, `split_error`로 분리, `refresh()`는 `_due`(`attempted_at is None or now - attempted_at >= error_ttl`)로 고르고 실패 종목은 `fetched_at`·기존 행을 유지한 채 `error`만 갱신, `upcoming()`의 `errors`는 `split_error(...)[1]`(메시지만) → 1차 관찰("실패 행은 매 요청 재시도") 해소.
+
+#### 5. 콘텐츠 인용 확인(HTTP·코드)
+`fetch_pages.py`(urllib, 링크 스크립트와 같은 UA)로 4쪽을 받아 `pages/*.html`에 저장하고 `kw_check*.py`로 본문 문구를 찾았다(모두 200).
+| 출처 | 인용한 강의 | 확인된 문구 | 결과 |
+|---|---|---|---|
+| investor.gov `beginners-guide-asset` | `diversification-basics`·`position-sizing`·`rebalancing-bands` | "at least a dozen carefully selected individual stocks", "diversified at two levels: between asset categories and within asset categories", "every six or twelve months", "relatively infrequent basis", "transaction fees or tax consequences" | 강의가 적은 다섯 주장 모두 원문에 있음 |
+| investor.gov `investor-bulletins-15` | `stop-loss-and-rules`·`earnings-week` | "July 13, 2017 Updated August 18, 2026"(참고 자료 note "2017년 발행, 2026년 8월 갱신"과 일치), "The stop price is not the guaranteed execution price … becomes a market order", "triggered by a short-term, intraday price move … substantially worse than the stock's closing price", "can deviate significantly from the stop price" | 각주 [1]/[3]의 주장(체결가 미보장·장중 단기 변동으로 발동·정한 가격보다 훨씬 아래 체결) 확인. 단, "정규장에만 작동하거나 유효기간이 있는 경우가 많으니"(`stop_loss_and_rules.py:56-58`)는 원문에 없음(regular trading/extended/expire/time in force/cancel 0건) — 각주가 그 문장 바로 앞에 붙어 있어 N-LEARN-6 |
+| kcie `content_idx=1198` | `diversification-basics` | "분산투자에서 중요한 지표는 바로 '상관계수'", "서로 같이 움직이지 않는 자산끼리 분산투자를 해야 위험이 줄어드는 효과" | 확인 |
+| kcie `content_idx=1080` | `costs-fees-fx-tax` | "환전수수료 0.3%, 기타제비용 0.2% … 해외 주식 거래 시 매매금액의 약 1%", "100만 원짜리 해외 주식을 거래할 때마다 환전하며 차익 없이 100번만 거래하면 투자금을 모두 수수료로 내고 0원", "잦은 거래를 할 경우 수수료 등의 비용 또한 생각보다 많이 발생" | 각주 [1]의 "환전까지 되풀이하면 … 원금이 크게 주는 계산 예"·"잦은 거래일수록 비용" 확인. 강의 본문의 "1년에 한 번 vs 매주 약 50번"은 강의 자체의 산술이고 `principle` 섹션에 `%` 없음(규칙 준수). "스프레드: 고시 환율과 실제 적용 환율의 차이"는 강의의 용어 설명이고 원문은 "환전수수료"로만 적음(의미 충돌 없음) |
+| `ex-dividend-date` vs 코드 | `services/corporate_actions.py:3` "Dividends are recorded when the user held shares the day before the ex-date", `_shares_before(..., as_of=ex_date - 1일)`(268~270행) | 강의 74~75행 "배당락일 전날 보유하고 있었을 때만 올라오는데 … 실제 입금은 보통 몇 주 뒤" | 감지 기준과 강의 설명 일치 |
+
+#### 6. 위생·문구
+| 확인 | 결과 |
+|---|---|
+| `wording_scan.py`(BANNED·GRADE·▲▼ 정규식, `-X utf8`) 대상 `skills.py`·`services/learn.py`·`services/events.py`·`learn/catalog.py`·`lib/learn.ts`·`pages/Learn.tsx`·`pages/Lesson.tsx`·`components/LearnCard.tsx`·`SkillChip.tsx`·`LessonBody.tsx`·`ReferenceList.tsx`·`Quiz.tsx` | 매치는 **규칙 정의·주석뿐**: `skills.py:16,18`(docstring의 금지어 목록), `learn.ts:6,8,10`(주석), `learn.ts:30,31`(`BANNED_WORDS_RE`·`GRADE_WORDS_RE` 정의). 사용자에게 보이는 문자열 매치 0건, 화면 컴포넌트 7개 0건 |
+| `AM_LIVE_TRADING` | `git diff`(추적 파일)에 `live_trading` 설정 변경 없음(문서 문구와 `openapi.json`의 기존 필드 줄 이동만). 8002·8003 모두 `live_trading=False`로 기동 |
+| yfinance import 위치 | `backend/app/data/yfinance_provider.py:13` 하나 |
+| Fake 경로 | `Fake*`는 `deps.py:49,127`의 설정 조건부뿐. `services/learn.py`·`services/events.py`에 Fake·합성·하드코딩 값 없음. 두 서버 모두 실제 공급자(`market_provider=yfinance`) |
+| 저장소 위생 | `git status --short`에 `*.db`·`.env`·`artifacts/`·`.claude/`·`.vitest/`·`*.log` 없음(`check-ignore` 확인). `backend/`의 DB 파일은 기존 `asset_manager.db`·`demo.db`뿐이고 `verify_empty.db`는 삭제됨. `.env`는 읽지 않음 |
+| 기록 | 이 절에 실제 보유 종목·수량·금액 없음(데모 시드와 "가져오기 검증 5건"만) |
+
+#### 7. N-LEARN-1~5 해소 여부
+| 번호 | 내용 | 판정 | 근거 |
+|---|---|---|---|
+| N-LEARN-1 (= ISSUE-050) | 강의 1편 오류가 앱 전체 import를 막음 | **해소** | §2 복사본 시뮬레이션: 두 편 고장에도 서버 기동, `/lessons` 200 + `load_errors` 2건 + 단서 문장, 해당 편만 404, 다른 라우트 200, 로그 2줄, CI 단언 유지 |
+| N-LEARN-2 | 손절선 아래 보유 "N봉"과 보유 일수가 어긋남 | **해소(라벨)** | §3(b) "284봉 이상(조회 범위 처음부터)"로 뜻이 드러남. 봉 수 자체를 보유 일수로 자르지는 않음 — D-034 설계("조회한 첫 봉부터 아래였으면 `since_window_start`") 그대로 |
+| N-LEARN-3 | `oversizing` 표본 3건인데 `some` | **해소** | §3(c) `insufficient`, 바닥은 `n >= min_sample`일 때만 |
+| N-LEARN-4 | `cost_blindness` bp 분모에 단가 확인 거래 포함 | **해소** | §3(a) 1.3654 bp 독립 계산과 일치, `excluded_suspicious=5` + 줄 |
+| N-LEARN-5 | `class_drift` 줄 `n=0` → "표본 0건" | **해소** | §3(d) `holdings_count` 14로 `sample_n`·줄 `n` 채움, `n==0` 줄 없음 |
+
+1차 관찰 사항도 함께 닫힘: `_stale`가 매 요청 재시도 → `error_ttl` 1시간(§4), `gen:api`의 `py -m uv` → `py -3.11`(§1). 남은 관찰 "VOO가 `INDEX_FUNDS`에 없어 상한 20% 적용"은 D-025 범위 문제라 이번 대상이 아님.
+
+#### 8. 브라우저 확인
+미실시 — 리드의 Chrome 확장이 연결되지 않아 화면 확인을 하지 못했다. 사용자 확인 필요(`/learn`·`/learn/:lessonId`·홈 `LearnCard`; 특히 §2의 `caveats` 문장과 §3의 "이상(조회 범위 처음부터)" 라벨이 화면에 그대로 보이는지).
+
+#### 발견 사항
+
+### [N-LEARN-6] (경미, 콘텐츠) `stop-loss-and-rules`의 "정규장에만 작동하거나 유효기간이 있는 경우가 많으니"가 SEC 안내문 각주 옆에 있지만 원문에 없다
+- 현상: `backend/app/learn/content/stop_loss_and_rules.py:56-58` "자동 손절 주문은 체결 가격이 보장되지 않고[1] 정규장에만 작동하거나 유효기간이 있는 경우가 많으니, 알림을 받아 직접 주문하는 방식도 둡니다." 각주 [1](investor-bulletins-15)은 "보장되지 않고"까지만 가리키지만, 독자는 뒤 절까지 SEC 근거로 읽기 쉽다.
+- 원인(확인): 저장한 원문(2026-11-06 200)에 regular trading/extended hours/expire/time in force/cancel에 해당하는 문구가 없다. 원문이 말하는 것은 "증권사마다 스톱 주문 제공 여부·발동 기준이 다르니 증권사에 확인하라"(brokerage firm 8회)다.
+- 근거: 스크래치 `kw_check.py`·`kw_check2.py` 출력(`pages/investor_bull15.html`).
+- 해결: (비움) 제안 둘 중 하나 — ① 뒤 절을 원문에 있는 "증권사마다 조건이 달라 증권사 안내를 확인한다"로 바꾸거나, ② 뒤 절은 각주 없이 "증권사마다 다르다"로 완화하고 [1]은 "보장되지 않고" 뒤 그대로 둔다. 내용 검증 규칙(`learn/model.py`)은 숫자가 아닌 주장에는 각주를 요구하지 않으므로 코드 변경 아님. 담당 추정: app-engineer(콘텐츠).
+- 검증: 미수정. 차단 아님(강의 내용 자체는 보수적이며 사용자에게 손해를 주는 방향이 아님).
+
+**관찰(비차단)**
+- `git status --short frontend/src/api`는 학습 코치가 HEAD에 없어 커밋 전까지 비어질 수 없다. gen:api 정합성은 실행 전후 해시 동일로 확인했고, 커밋 뒤에는 이 명령이 비어야 한다.
+- VOO의 yfinance 달력 404는 빈 일정으로 저장된다(§4). ETF에는 맞는 결과이고 TTL 24시간이라 노출이 제한되지만, 일시적 404도 같은 모양이 된다는 점은 공급자 수준 한계로 남는다.
+- `oversizing`의 "손절선까지 손실 합" 줄은 표본 5건 이상일 때만 나오게 바뀌어 이번 데모(3건)에서는 그 줄의 수치를 대조하지 못했다. 표본이 충분한 데이터로의 대조는 다음 검증 과제.
+
+재현: backend\ `py -3.11 -m uv run pytest -o addopts="" -q` / `ruff check .` / `ruff format --check .` / `alembic heads`; `AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run alembic check`; `PYTHONPATH=. py -3.11 -m uv run python scripts/check_lesson_links.py`; frontend\ `npm test -- --run` / `npm run lint` / `npm run build` / `npm run gen:api`(전후 sha1 비교); 데모 서버 `AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run uvicorn app.main:app --port 8002` → `GET /api/learn/skills`·`/week`×2·`/lessons`; 깨진 강의 시뮬레이션은 `backend/app` 사본에서 두 편을 고친 뒤 `PYTHONPATH=<사본> AM_DATABASE_URL=sqlite:///verify_empty.db <backend>/.venv/Scripts/python.exe -m uvicorn app.main:app --port 8003`(실제 콘텐츠 불변); 인용 확인은 urllib로 4쪽 저장 후 문구 검색. 검증 뒤 8002·8003 종료, `verify_empty.db`·사본 삭제.
