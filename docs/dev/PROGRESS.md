@@ -507,4 +507,6 @@ S2-1d(예측 변동성으로 SPY·BTC 노출 조절, D-024, STRATEGIES.md S2)를
   - 미실시: 터널을 거쳐야 보이는 것(Cloudflare가 넣는 방문자 주소와 방문자별 요청 제한, https에서의 쿠키, cloudflared의 read_only 동작), 브라우저로 보는 것(verifier 쪽 확장 미연결), GitHub Actions 실제 실행(푸시 전).
 - **WP4 리드** (완료): `docs/DEPLOY.md`(무엇이 공개되나 → 내 PC에서만 → quick 터널 → named 터널 → 운영 → 공개 데모를 돌리는 PC에서 지킬 것 → 백업 → 로그인 → 한계), CLAUDE.md(명령·배포·접근 제어 문단·공개 저장소 주의), README 배포 절, DECISIONS D-035 7번, ISSUES 051~055, TODO_FOR_ME 배포 절, verifier 지적에 따른 `deploy/README.md` 점검 명령 보완. Docker Desktop은 리드가 켰다(이미지 빌드 검증을 위해, D-035 7번). 브라우저 확인: app-engineer가 데모 컨테이너를 Chrome으로 열어 홈·종목 상세(선·캔들)·거래·코치·가져오기·공부·장부 밖 종목·로그인 리다이렉트에서 CSP 위반 없음을 확인. 리드의 확인은 확장이 끊겨 HTTP 수준(화면 주소 10개 200, 쓰기 403, 종목 가드 403, 보안 헤더)까지만 했고, 화면은 사용자가 직접 보도록 열어 두었다. 폰 너비 헤더와 실제 쿠키 로그인 흐름의 눈 확인은 TODO_FOR_ME에 남겼다.
 
+- **GitHub Actions 첫 실행**(커밋 `68a38f6`, `agent-team` 푸시에서 CI가 처음 돎): backend 잡 통과(리눅스에서 린트·마이그레이션 일치·전체 pytest·OpenAPI 최신 여부), frontend 잡 통과, docker 잡은 이미지 점검 단계의 셸 종료 코드 문제로 실패(ISSUE-056, 이미지에는 문제 없음) → 수정 커밋을 푸시해 다시 확인한다.
+
 세션이 여러 번 재시작되어(11-10 저녁, 11-11 10:16·10:40·11:06·13:50) 팀원이 그때마다 멈췄고 `SendMessage`로 다시 이어 갔다. 서브에이전트는 스크래치에 보고 파일을 쓰지 못해 리드가 체크포인트를 옮겨 적었다.

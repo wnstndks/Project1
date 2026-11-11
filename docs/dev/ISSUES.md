@@ -548,3 +548,10 @@
 - 근거: 실패 메시지의 파일·줄, `tests/test_execution.py`의 `PATTERNS`.
 - 해결(verifier, 리드 지시): 그 줄을 "실매매 값을 켠 환경변수" 같은 표현으로 바꿨다(자기 절의 문구 수정).
 - 검증: 수정 뒤 `tests/test_execution.py` 12 passed, 그 테스트의 패턴 4개를 `VERIFICATION.md` 전체에 돌려 0건(verifier N-DEPLOY-14). 교훈: 기록·문서에서도 그 변수 이름과 켜짐 값을 붙여 쓰지 않는다. 가드 테스트가 문서까지 훑는 것은 의도된 동작이다.
+
+### [ISSUE-056] 새 CI docker 잡이 GitHub Actions 첫 실행에서 실패함(로컬 재현은 통과했었음)
+- 현상: 2026-11-11 커밋 `68a38f6` 푸시 뒤 첫 실행에서 backend·frontend 잡은 통과, docker 잡은 "The image has no secrets, database or trained models in it" 단계에서 실패. 로그에 찾은 파일은 없었다.
+- 원인: 그 단계는 `found="$(docker run … find / -xdev … 2>/dev/null)"` 꼴인데, `find`가 이미지 사용자(10001)로 돌아 읽을 수 없는 폴더 4곳(`/var/cache/ldconfig`, `/var/cache/apt/archives/partial`, `/etc/ssl/private`, `/root`)에서 종료 코드 1을 낸다. GitHub의 `run:`은 `bash -eo pipefail`이라 출력이 비어 있어도 대입문의 종료 코드로 단계가 끝난다. app-engineer와 verifier의 로컬 재현은 `-e` 없이 돌려서 통과했다. 이미지에 비밀이 든 것이 아니라 점검 명령의 결함이다.
+- 근거: 리드의 로컬 재현 — 이미지 사용자로 실행하면 `exit=1`·출력 없음(stderr에 Permission denied 4줄), `--user 0`으로 실행하면 `exit=0`·출력 없음. GitHub 작업 목록의 실패 단계 이름.
+- 해결(app-engineer, 2026-11-11): 그 `docker run`에 `--user 0`을 넣고 `2>/dev/null`을 뺐다(전에는 `/root`를 읽지 못해 검사에서 빠져 있었으므로 검사도 더 강해졌다). 같은 종류를 하나 더 찾아 고쳤다: 스모크 단계의 `assets="$(grep … | sed …)"`는 일치가 없으면 grep의 종료 코드 1로 단계가 말없이 끝나 다음 줄의 오류 안내가 실행되지 않았다 → `|| true`.
+- 검증: app-engineer가 docker 잡의 모든 단계를 `bash --noprofile --norc -eo pipefail`로 로컬에서 실행해 전부 종료 코드 0(`/root/.env`와 `/app/leak.db`를 심으면 둘 다 잡힘). GitHub에서의 재실행 결과는 PROGRESS "배포 1단계"에 적는다. 교훈: CI 단계를 로컬에서 재현할 때는 러너와 같은 셸 옵션(`-eo pipefail`)으로 돌린다. verifier의 P 항목도 같은 이유로 이 결함을 잡지 못했다.

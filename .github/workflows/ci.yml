@@ -85,10 +85,12 @@ jobs:
         run: docker build -t asset-manager-demo:ci .
       - name: The image has no secrets, database or trained models in it
         run: |
-          # Everything under /app, plus anything that looks like a .env, a database or a model.
-          found="$(docker run --rm --entrypoint sh asset-manager-demo:ci -c \
+          # Anything in the image that looks like a .env, a database or a model. As root: the
+          # image's own user cannot read /root and a few system folders, so find would skip
+          # them and exit 1, which fails this step (the shell runs with -e) with nothing found.
+          found="$(docker run --rm --user 0 --entrypoint sh asset-manager-demo:ci -c \
             "find / -xdev \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite*' \
-               -o -name '*.joblib' -o -name '*.pt' \) -not -path '/proc/*' -not -path '/opt/venv/*' 2>/dev/null")"
+               -o -name '*.joblib' -o -name '*.pt' \) -not -path '/proc/*' -not -path '/opt/venv/*'")"
           if [ -n "$found" ]; then echo "::error::unexpected files in the image:"; echo "$found"; exit 1; fi
       - name: Start the demo container
         # AM_MARKET_PROVIDER=fake is for this smoke test ONLY: CI has no business calling a
@@ -149,7 +151,8 @@ jobs:
           fi
 
           # Every script and stylesheet the page names is served, hashed ones cacheable for good.
-          assets="$(grep -oE '(src|href)="/[^"]+\.(js|css)"' page.html | sed -E 's/^(src|href)="//; s/"$//')"
+          # `|| true`: with no match grep exits 1, and the next line is what should report it.
+          assets="$(grep -oE '(src|href)="/[^"]+\.(js|css)"' page.html | sed -E 's/^(src|href)="//; s/"$//' || true)"
           test -n "$assets" || fail "index.html names no script"
           for path in $assets; do
             curl -fsS -D asset.headers -o /dev/null "$BASE$path" || fail "$path is not served"
