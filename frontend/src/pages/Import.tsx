@@ -10,7 +10,9 @@ import {
   useSupportedCrypto,
 } from '../api/hooks'
 import { Card, ErrorBox, Muted, SegmentedControl } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import { displaySymbol, formatKrw, formatQty, isoDate } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 
 const MAX_FILES = 5
 
@@ -71,6 +73,8 @@ export function Import() {
   const [files, setFiles] = useState<Picked[]>([])
   const preview = usePreviewScreenshots()
   const commit = useCommitImport()
+  // The read-only demo neither reads screenshots nor records anything.
+  const demo = useDemoMode()
   const [rows, setRows] = useState<EditableRow[]>([])
   const [today] = useState(() => isoDate(new Date()))
   const [tradeDate, setTradeDate] = useState(today)
@@ -153,6 +157,11 @@ export function Import() {
           평가손익으로 단가를 계산하고, 직접 입력에서 평균단가를 비우면 현재가로 채웁니다. 매수일은 화면에 없으니
           아래 날짜를 실제 매수일로 바꿔 주세요.
         </p>
+        {demo && (
+          <p role="status" className="mt-2 text-sm font-medium text-ink">
+            {AUTH_TEXT.demoReadOnly}
+          </p>
+        )}
       </div>
 
       {created !== null && (
@@ -199,7 +208,8 @@ export function Import() {
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  disabled={files.length === 0 || preview.isPending}
+                  disabled={files.length === 0 || preview.isPending || demo}
+                  title={demo ? AUTH_TEXT.demoReadOnly : undefined}
                   onClick={recognize}
                   className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
                 >
@@ -320,7 +330,8 @@ export function Import() {
             </label>
             <button
               type="button"
-              disabled={selected.length === 0 || commit.isPending}
+              disabled={selected.length === 0 || commit.isPending || demo}
+              title={demo ? AUTH_TEXT.demoReadOnly : undefined}
               onClick={submit}
               className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
             >
@@ -371,6 +382,7 @@ const inputClass =
 function ManualEntry({ onAdd }: { onAdd: (rows: ImportPreviewRow[]) => void }) {
   const crypto = useSupportedCrypto()
   const manual = useManualImport()
+  const demo = useDemoMode()
   const [form, setForm] = useState<ManualState>(emptyManual)
   const set = <K extends keyof ManualState>(key: K, value: ManualState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -482,7 +494,8 @@ function ManualEntry({ onAdd }: { onAdd: (rows: ImportPreviewRow[]) => void }) {
       {manual.error && <ErrorBox error={manual.error} />}
       <button
         type="submit"
-        disabled={manual.isPending}
+        disabled={manual.isPending || demo}
+        title={demo ? AUTH_TEXT.demoReadOnly : undefined}
         className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
       >
         {manual.isPending ? '확인 중…' : '목록에 추가'}

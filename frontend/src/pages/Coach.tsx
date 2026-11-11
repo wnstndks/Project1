@@ -24,6 +24,7 @@ import {
 import { CorrelationHeatmap } from '../components/CorrelationHeatmap'
 import { Field } from '../components/FormField'
 import { Card, Disclosure, ErrorBox, InfoRow, PnL, Skeleton, StatTile } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import {
   actualCurveNote,
   betaPhrase,
@@ -66,6 +67,7 @@ import {
   type PolicyForm,
 } from '../lib/coach'
 import { displaySymbol, formatDate, formatKrw, formatKrwShort, formatPct } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 
 /**
  * The portfolio coach (D-033): the user's investment policy and where the holdings stand
@@ -123,6 +125,7 @@ export function Coach() {
 function StatusStrip({ rules }: { rules: RuleCheckAll | undefined }) {
   const reset = useResetKillSwitch()
   const [confirming, setConfirming] = useState(false)
+  const demo = useDemoMode()
   if (!rules) return null
   const kill = rules.kill_switch
   const killChip = killSwitchChip(kill.tripped)
@@ -142,7 +145,9 @@ function StatusStrip({ rules }: { rules: RuleCheckAll | undefined }) {
           <button
             type="button"
             onClick={() => setConfirming(true)}
-            className="rounded-lg border border-line px-3 py-1 text-xs font-medium hover:bg-hover"
+            disabled={demo}
+            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
+            className="rounded-lg border border-line px-3 py-1 text-xs font-medium hover:bg-hover disabled:opacity-50"
           >
             해제
           </button>
@@ -189,6 +194,7 @@ function PolicyFormCard({ data, onSave, pending, saved, error }: {
   const [form, setForm] = useState<CoachForm>(() => policyToForm(data))
   const [formError, setFormError] = useState<string | null>(null)
   const [resetHint, setResetHint] = useState(false)
+  const demo = useDemoMode()
 
   const setPolicy = (key: keyof PolicyForm, value: string) =>
     setForm((f) => ({ ...f, policy: { ...f.policy, [key]: value } }))
@@ -296,7 +302,8 @@ function PolicyFormCard({ data, onSave, pending, saved, error }: {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || demo}
+            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
             className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
           >
             {pending ? '저장 중…' : '저장'}

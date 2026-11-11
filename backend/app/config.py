@@ -6,14 +6,21 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.security.policy import DEFAULT_CONTENT_SECURITY_POLICY, deployment_problem
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
     """Application settings, overridable via environment variables prefixed with AM_."""
 
+    # hide_input_in_errors: a validation error at startup names the field but never prints
+    # the value, so a mistyped key, password hash or session secret cannot end up in a log.
     model_config = SettingsConfigDict(
-        env_file=BACKEND_DIR / ".env", env_prefix="AM_", extra="ignore"
+        env_file=BACKEND_DIR / ".env",
+        env_prefix="AM_",
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
     database_url: str = f"sqlite:///{(BACKEND_DIR / 'asset_manager.db').as_posix()}"
@@ -109,11 +116,53 @@ class Settings(BaseSettings):
     coach_max_crypto_weight_pct: Decimal = Field(Decimal("30"), gt=0, lt=100)
     coach_max_total_risk_pct: Decimal = Field(Decimal("8"), gt=0, lt=100)
 
-    @field_validator("anthropic_api_key", "finnhub_api_key", "risk_max_order_krw", mode="before")
+    # --- Deployment and access control (app/security/, DECISIONS.md D-035) ---
+    # "production" turns on security headers and Secure cookies, turns /docs off, and refuses
+    # to start unless the instance is a read-only demo or has a login (validator below).
+    env: Literal["development", "production"] = "development"
+    # Public demo: every write under /api is refused except the compute-only routes listed in
+    # app/security/demo.py, and ticker routes only answer for the demo ledger's symbols.
+    demo_mode: bool = False
+    # Single-account login. The hash comes from `python -m app.security.hash_password`
+    # (scrypt$<n>$<r>$<p>$<salt_b64>$<hash_b64>); the secret signs session cookies and must be
+    # at least 32 bytes. A hash without the secret refuses to start; without a hash there is
+    # no login and /api is open, as in local development.
+    auth_password_hash: SecretStr | None = None
+    session_secret: SecretStr | None = None
+    session_ttl_hours: int = Field(168, ge=1, le=24 * 90)
+    # Wrong passwords one address may send inside the window before it gets 429.
+    login_max_attempts: int = Field(5, ge=1, le=100)
+    login_window_minutes: int = Field(15, ge=1, le=24 * 60)
+    # /api requests one address may send per minute (0 = no limit; the demo sets a value).
+    rate_limit_per_minute: int = Field(0, ge=0, le=100_000)
+    # Header to read the client address from, e.g. CF-Connecting-IP behind Cloudflare Tunnel.
+    # Empty: the socket peer. Name one only when every request passes through that proxy.
+    client_ip_header: str = Field("", pattern=r"^[A-Za-z0-9-]*$")
+    # Built frontend to serve (index.html + assets); unset in development (Vite serves it).
+    static_dir: Path | None = None
+    # Sent in production only. Adjust when the built frontend needs another source.
+    content_security_policy: str = DEFAULT_CONTENT_SECURITY_POLICY
+
+    @field_validator(
+        "anthropic_api_key",
+        "finnhub_api_key",
+        "risk_max_order_krw",
+        "auth_password_hash",
+        "session_secret",
+        "static_dir",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, v: object) -> object:
-        # `AM_FINNHUB_API_KEY=` left empty in .env means "not configured".
+        # `AM_FINNHUB_API_KEY=` left empty in .env means "not configured". For static_dir this
+        # matters twice over: an empty path would otherwise mean the working directory.
         return None if isinstance(v, str) and not v.strip() else v
+
+    @field_validator("content_security_policy", mode="before")
+    @classmethod
+    def _blank_csp_is_default(cls, v: object) -> object:
+        # An empty value must not switch the policy off.
+        return DEFAULT_CONTENT_SECURITY_POLICY if isinstance(v, str) and not v.strip() else v
 
     @field_validator("live_trading", mode="before")
     @classmethod
@@ -131,6 +180,25 @@ class Settings(BaseSettings):
         if self.strategy_budget_stock + self.strategy_budget_crypto > 1:
             raise ValueError("AM_STRATEGY_BUDGET_STOCK + AM_STRATEGY_BUDGET_CRYPTO must be <= 1")
         return self
+
+    @model_validator(mode="after")
+    def _deployment_is_closed(self) -> "Settings":
+        # Fail closed at startup (D-035): no public instance without the demo lock or a login,
+        # and a demo never runs with real orders. The rules live in app/security/policy.py.
+        problem = deployment_problem(
+            production=self.env == "production",
+            demo_mode=self.demo_mode,
+            real_orders_enabled=self.live_trading,
+            password_hash=_reveal(self.auth_password_hash),
+            session_secret=_reveal(self.session_secret),
+        )
+        if problem:
+            raise ValueError(problem)
+        return self
+
+
+def _reveal(secret: SecretStr | None) -> str | None:
+    return None if secret is None else secret.get_secret_value()
 
 
 @lru_cache

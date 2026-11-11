@@ -26,4 +26,7 @@ class NewsOut(BaseModel):
     articles: list[ArticleOut]
     days: list[NewsDayOut]
     finnhub_enabled: bool
+    # False on a server without the FinBERT libraries (torch, transformers): headlines are
+    # then neither fetched nor scored, and the screen says so instead of showing a score.
+    sentiment_enabled: bool
     warnings: list[str]

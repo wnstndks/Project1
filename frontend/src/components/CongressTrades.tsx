@@ -2,8 +2,10 @@ import { Link } from 'react-router-dom'
 
 import type { CongressStatus, CongressTrade } from '../api/client'
 import { useCongressStatus, useCongressTrades, useSyncCongress } from '../api/hooks'
+import { AUTH_TEXT } from '../lib/auth'
 import { amountRange, distinctMembers, groupBySymbol, memberLine, sideLabel, type SymbolGroup } from '../lib/congress'
 import { displaySymbol, formatDate } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 import { Card, Disclosure, ErrorBox, Skeleton } from './ui'
 
 /** How far back both the Compare card and the asset-detail line look. */
@@ -25,6 +27,7 @@ export function CongressTrades({ symbols, days = CONGRESS_DAYS }: { symbols: str
   // With nothing to ask about, the trades query is off; the status still gives the caveats.
   const status = useCongressStatus(symbols !== undefined && list.length === 0)
   const sync = useSyncCongress()
+  const demo = useDemoMode()
 
   const info: CongressStatus | undefined = trades.data?.status ?? status.data
   const syncing = trades.data?.syncing === true || sync.isPending
@@ -78,7 +81,8 @@ export function CongressTrades({ symbols, days = CONGRESS_DAYS }: { symbols: str
           <button
             type="button"
             onClick={() => sync.mutate()}
-            disabled={syncing}
+            disabled={syncing || demo}
+            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
             className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover disabled:opacity-50"
           >
             지금 받기
@@ -87,6 +91,11 @@ export function CongressTrades({ symbols, days = CONGRESS_DAYS }: { symbols: str
       }
     >
       {info && <StatusLines status={info} />}
+      {sync.error ? (
+        <div className="mb-3">
+          <ErrorBox error={sync.error} />
+        </div>
+      ) : null}
       {body()}
     </Card>
   )

@@ -4,6 +4,10 @@ import { ErrorBox, Muted } from './ui'
 
 type Article = News['articles'][number]
 
+/** Shown when the server has no FinBERT (`sentiment_enabled: false`, e.g. the deployment image). */
+export const NO_SENTIMENT_MODEL_KO =
+  '이 서버에는 헤드라인 감성 모델(FinBERT)이 설치되어 있지 않아 기사 헤드라인을 새로 받거나 채점하지 않습니다. 해외 뉴스 논조(GDELT)만 갱신됩니다.'
+
 function label(a: Article): { text: string; tone: string; icon: string } {
   const score = a.positive - a.negative
   if (a.neutral >= Math.max(a.positive, a.negative) || Math.abs(score) < 0.2)
@@ -28,7 +32,7 @@ export function NewsCard({ symbol }: { symbol: string }) {
   if (news.error) return <ErrorBox error={news.error} />
   if (!news.data) return <Muted>해외 뉴스를 모으는 중… (처음에는 30초 정도 걸립니다)</Muted>
 
-  const { articles, days, finnhub_enabled, warnings } = news.data
+  const { articles, days, finnhub_enabled, sentiment_enabled, warnings } = news.data
   const tones = days.map((d) => d.tone).filter((t): t is number => t != null)
   const avgTone = tones.length ? tones.reduce((a, b) => a + b, 0) / tones.length : null
   const recent = articles.slice(0, 8)
@@ -60,13 +64,17 @@ export function NewsCard({ symbol }: { symbol: string }) {
         </div>
       </div>
 
-      {!finnhub_enabled ? (
+      {!sentiment_enabled && (
+        // No model, no score: headlines are not fetched rather than shown with a made-up label.
+        <p className="text-xs text-muted">{NO_SENTIMENT_MODEL_KO}</p>
+      )}
+      {sentiment_enabled && !finnhub_enabled ? (
         <p className="text-xs text-muted">
           기사 헤드라인을 보려면 <code className="rounded bg-hover px-1">backend/.env</code>에{' '}
           <code className="rounded bg-hover px-1">AM_FINNHUB_API_KEY</code>를 설정하세요(finnhub.io 무료 가입).
         </p>
       ) : recent.length === 0 ? (
-        <Muted>최근 기사가 없습니다.</Muted>
+        sentiment_enabled ? <Muted>최근 기사가 없습니다.</Muted> : null
       ) : (
         <ul className="divide-y divide-[var(--border)]">
           {recent.map((a) => {

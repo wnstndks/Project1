@@ -23,5 +23,6 @@ async def news(
         articles=summary.articles,
         days=summary.days,
         finnhub_enabled=summary.finnhub_enabled,
+        sentiment_enabled=summary.sentiment_enabled,
         warnings=summary.warnings,
     )

@@ -30,6 +30,84 @@
         }
       }
     },
+    "/api/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Session",
+        "operationId": "session_api_auth_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Wrong password (`code: invalid_credentials`)"
+          },
+          "409": {
+            "description": "No login configured on this server (`code: login_not_configured`)"
+          },
+          "429": {
+            "description": "Too many attempts; see `Retry-After` (`code: rate_limited`)"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/market/crypto": {
       "get": {
         "tags": [
@@ -790,6 +868,9 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "torch is not installed (`code: lstm_not_installed`)"
           }
         }
       }
@@ -822,6 +903,9 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "torch is not installed (`code: lstm_not_installed`)"
           },
           "422": {
             "description": "Validation Error",
@@ -869,6 +953,9 @@
               }
             }
           },
+          "501": {
+            "description": "torch is not installed (`code: lstm_not_installed`)"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -911,6 +998,9 @@
               }
             }
           },
+          "501": {
+            "description": "torch is not installed (`code: lstm_not_installed`)"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -950,6 +1040,9 @@
                 }
               }
             }
+          },
+          "501": {
+            "description": "torch is not installed (`code: lstm_not_installed`)"
           },
           "422": {
             "description": "Validation Error",
@@ -5308,6 +5401,21 @@
         "title": "LoadErrorOut",
         "description": "A lesson module that failed the content contract at import; it is left out of the\nlist instead of taking the whole app down (fail-closed per lesson)."
       },
+      "LoginIn": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "LoginIn"
+      },
       "ManualIn": {
         "properties": {
           "rows": {
@@ -5530,6 +5638,10 @@
             "type": "boolean",
             "title": "Finnhub Enabled"
           },
+          "sentiment_enabled": {
+            "type": "boolean",
+            "title": "Sentiment Enabled"
+          },
           "warnings": {
             "items": {
               "type": "string"
@@ -5544,6 +5656,7 @@
           "articles",
           "days",
           "finnhub_enabled",
+          "sentiment_enabled",
           "warnings"
         ],
         "title": "NewsOut"
@@ -8041,6 +8154,29 @@
         ],
         "title": "SectionOut",
         "description": "A lesson section. `kind` is shown as a chip: fact (\uc0ac\uc2e4), principle (\uc77c\ubc18 \uc6d0\uce59) or app\n(\uc774 \uc571\uc5d0\uc11c\ub294, with `route` pointing at the screen it talks about)."
+      },
+      "SessionOut": {
+        "properties": {
+          "auth_required": {
+            "type": "boolean",
+            "title": "Auth Required"
+          },
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated"
+          },
+          "demo_mode": {
+            "type": "boolean",
+            "title": "Demo Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auth_required",
+          "authenticated",
+          "demo_mode"
+        ],
+        "title": "SessionOut"
       },
       "Side": {
         "type": "string",

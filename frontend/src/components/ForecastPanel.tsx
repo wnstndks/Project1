@@ -19,6 +19,7 @@ import {
   useForecastTraining,
   useTrackRecord,
 } from '../api/hooks'
+import { AUTH_TEXT } from '../lib/auth'
 import { useMoney } from '../lib/currency'
 import {
   COVERAGE_PHRASE,
@@ -37,6 +38,7 @@ import {
 } from '../lib/forecast'
 import { formatDate, formatPct, isoDate } from '../lib/format'
 import { DAY_MS, tickLabel } from '../lib/priceChart'
+import { useDemoMode } from '../lib/session'
 import { Disclosure, ErrorBox, Muted, SegmentedControl } from './ui'
 
 const HORIZON_OPTIONS = Object.entries(HORIZON_LABEL).map(([value, label]) => ({ value, label }))
@@ -49,12 +51,14 @@ const day = (d: string) => new Date(`${d}T00:00:00`).getTime()
 /** Training controls for the one global model, shared by every page that shows forecasts. */
 export function TrainButton({ notTrained }: { notTrained: boolean }) {
   const { running, start, status } = useForecastTraining()
+  const demo = useDemoMode()
   const job = status.data?.job
   return (
     <div className="space-y-2">
       <button
         type="button"
-        disabled={running}
+        disabled={running || demo}
+        title={demo ? AUTH_TEXT.demoReadOnly : undefined}
         onClick={() => start.mutate()}
         className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover disabled:opacity-50"
       >

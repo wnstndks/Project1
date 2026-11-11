@@ -7,6 +7,7 @@ import { LessonBody } from '../components/LessonBody'
 import { Quiz } from '../components/Quiz'
 import { ReferenceList } from '../components/ReferenceList'
 import { Card, ErrorBox, Skeleton } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import { displaySymbol } from '../lib/format'
 import {
   EXTERNAL_LINK_NOTE_KO,
@@ -18,6 +19,7 @@ import {
   SKILL_LABELS_KO,
   type OwnExample,
 } from '../lib/learn'
+import { useDemoMode } from '../lib/session'
 
 /**
  * One lesson (D-034): summary, "from my records" (evidence lines and week items joined on the
@@ -59,6 +61,8 @@ export function Lesson() {
 
 function LessonView({ lesson }: { lesson: LessonDetail }) {
   const save = useSaveProgress(lesson.id)
+  // On the read-only demo the self-check still explains each answer; only saving is off.
+  const demo = useDemoMode()
   const read = !!lesson.progress?.read_at
   const chips = [
     LESSON_LEVEL_LABELS_KO[lesson.level] ?? lesson.level,
@@ -95,14 +99,21 @@ function LessonView({ lesson }: { lesson: LessonDetail }) {
       </Card>
 
       <Card title="셀프 체크">
-        <Quiz questions={lesson.quiz} onComplete={(answers) => save.mutate({ answers })} />
+        <Quiz
+          questions={lesson.quiz}
+          onComplete={(answers) => {
+            if (!demo) save.mutate({ answers })
+          }}
+        />
+        {demo && <p className="mt-4 text-xs text-muted">{AUTH_TEXT.demoQuizNotSaved}</p>}
       </Card>
 
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           aria-pressed={read}
-          disabled={save.isPending}
+          disabled={save.isPending || demo}
+          title={demo ? AUTH_TEXT.demoReadOnly : undefined}
           onClick={() => save.mutate({ read: !read })}
           className={`rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-60 ${
             read ? 'bg-fill text-ink' : 'bg-accent text-white hover:opacity-90'

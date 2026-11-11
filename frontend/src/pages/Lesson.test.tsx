@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LearnSkills, LearnWeek, LessonDetail, LessonProgressInput } from '../api/client'
 import { ApiError } from '../api/client'
 import { BANNED_WORDS_RE, GRADE_WORDS_RE } from '../lib/learn'
+import { SessionProvider } from '../lib/session'
 import { Lesson } from './Lesson'
 
 // Synthetic lesson (AAA/BBB only).
@@ -177,6 +178,30 @@ describe('Lesson page', () => {
     expect(screen.getByText('3문제 중 2문제 맞았어요. 틀린 문제의 설명을 다시 읽어 보세요.')).toBeInTheDocument()
     expect(save).toHaveBeenCalledTimes(1)
     expect(save).toHaveBeenCalledWith({ answers: [1, 1, 0] })
+  })
+
+  it('on the read-only demo still explains each answer, but saves nothing', () => {
+    render(
+      <SessionProvider value={{ auth_required: false, authenticated: false, demo_mode: true }}>
+        <MemoryRouter initialEntries={['/learn/chasing-buys']}>
+          <Routes>
+            <Route path="/learn/:lessonId" element={<Lesson />} />
+          </Routes>
+        </MemoryRouter>
+      </SessionProvider>,
+    )
+    const groups = screen.getAllByRole('group')
+    fireEvent.click(within(groups[0]).getAllByRole('radio')[0])
+    expect(screen.getAllByRole('status')[0]).toHaveTextContent('맞았어요. 코치의 기준은 20봉 15%입니다.')
+    fireEvent.click(within(groups[1]).getAllByRole('radio')[1])
+    fireEvent.click(within(groups[2]).getAllByRole('radio')[0])
+    expect(screen.getByText('3문제 중 3문제 맞았어요. 설명도 한 번 더 읽어 두면 좋아요.')).toBeInTheDocument()
+    // The server would refuse the write (403 demo_read_only), so it is not sent at all.
+    expect(save).not.toHaveBeenCalled()
+    expect(screen.getByText('데모에서는 셀프 체크 결과를 저장하지 않아요')).toBeInTheDocument()
+    const read = screen.getByRole('button', { name: '읽었어요' })
+    expect(read).toBeDisabled()
+    expect(read).toHaveAttribute('title', '데모에서는 저장·수정할 수 없어요')
   })
 
   it('marks the lesson read with a pressed button, and shows the saved state', () => {

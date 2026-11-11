@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 
 import {
   api,
+  authApi,
   coachApi,
   compareApi,
   congressApi,
@@ -17,6 +18,33 @@ import {
   type RuleSettingsInput,
   type TransactionInput,
 } from './client'
+import { pollDelay, sessionKey } from './queryClient'
+
+// --- Login and the read-only demo (D-035). Keys under ['auth']. ---
+
+/** Whether this server needs a login, whether this browser has one, and whether it is the demo.
+ *  The route is always reachable, so a failure is shown rather than retried. */
+export const useAuthSession = () =>
+  useQuery({ queryKey: sessionKey, queryFn: authApi.session, retry: false })
+
+/** Logs in. Everything fetched before (the 401 errors included) is dropped and the session is
+ *  asked again before the mutation settles, so `authenticated` comes from the server. */
+export function useLogin() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (password: string) => authApi.login(password),
+    onSuccess: async () => {
+      client.removeQueries({ predicate: (q) => q.queryKey[0] !== sessionKey[0] })
+      await client.invalidateQueries({ queryKey: sessionKey })
+    },
+  })
+}
+
+/** Logs out and forgets everything this browser had fetched, the session included. */
+export function useLogout() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: authApi.logout, onSuccess: () => client.clear() })
+}
 
 export const keys = {
   summary: ['portfolio', 'summary'] as const,
@@ -386,7 +414,7 @@ export function useGuruCompare() {
     queryKey: compareKeys.guruCompare,
     queryFn: compareApi.guruCompare,
     staleTime: 5 * 60_000,
-    refetchInterval: (q) => (q.state.data?.syncing ? 5000 : false),
+    refetchInterval: (q) => pollDelay(q.state.data?.syncing, q.state.error, 5000),
   })
   const syncing = result.data?.syncing
   const wasSyncing = useRef(false)
@@ -446,7 +474,7 @@ export const useCongressTrades = (symbols: string[], days = 180) => {
     queryFn: () => congressApi.trades(key.split(','), days),
     enabled: key.length > 0,
     staleTime: 5 * 60_000,
-    refetchInterval: (q) => (q.state.data?.syncing ? 15_000 : false),
+    refetchInterval: (q) => pollDelay(q.state.data?.syncing, q.state.error, 15_000),
   })
 }
 

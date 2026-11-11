@@ -2,8 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # agent-team is where the work lands before it is merged into main.
+    branches: [main, agent-team]
   pull_request:
+
+# A newer push to the same branch or pull request replaces the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
@@ -19,6 +25,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      # `ml` (transformers, lightgbm) is left out; `lstm` (torch, CPU build) stays so the old
+      # LSTM tests in tests/test_ml.py run. The deployment image has neither:
+      # tests/test_import_without_torch.py starts the app with torch and transformers
+      # impossible to import, and the docker job below runs the real image.
       - name: Install
         run: uv sync --locked --no-group ml
       - name: Lint
@@ -60,3 +70,121 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # The deployment image (DECISIONS.md D-035): build it, start it the way
+  # deploy/docker-compose.yml does (read-only demo, read-only root file system, no
+  # capabilities) and check that the site, the API and the demo lock answer.
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: "1"
+      BASE: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t asset-manager-demo:ci .
+      - name: The image has no secrets, database or trained models in it
+        run: |
+          # Everything under /app, plus anything that looks like a .env, a database or a model.
+          found="$(docker run --rm --entrypoint sh asset-manager-demo:ci -c \
+            "find / -xdev \( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite*' \
+               -o -name '*.joblib' -o -name '*.pt' \) -not -path '/proc/*' -not -path '/opt/venv/*' 2>/dev/null")"
+          if [ -n "$found" ]; then echo "::error::unexpected files in the image:"; echo "$found"; exit 1; fi
+      - name: Start the demo container
+        # AM_MARKET_PROVIDER=fake is for this smoke test ONLY: CI has no business calling a
+        # price provider, and synthetic prices are enough to see that the container serves.
+        # The real deployment (deploy/docker-compose.yml) uses the real provider and is never
+        # switched to synthetic data. The database is a throwaway file on the tmpfs.
+        run: |
+          docker run -d --name demo -p 127.0.0.1:8000:8000 \
+            --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -e AM_ENV=production \
+            -e AM_DEMO_MODE=true \
+            -e AM_LIVE_TRADING=false \
+            -e AM_MARKET_PROVIDER=fake \
+            -e AM_DATABASE_URL=sqlite:////tmp/ci-smoke.db \
+            asset-manager-demo:ci
+      - name: Wait for the health check
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "$BASE/api/health" >/dev/null 2>&1; then echo "up after ${i} tries"; exit 0; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' demo)" != "true" ]; then
+              echo "::error::the container stopped"; docker logs demo; exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::no answer from /api/health after 120 s"; docker logs demo; exit 1
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+          # The API answers and says it is the demo.
+          test "$(curl -fsS "$BASE/api/health")" = '{"status":"ok"}' || fail "/api/health"
+          curl -fsS "$BASE/api/auth/session" | tee session.json
+          test "$(jq -r .demo_mode session.json)" = "true" || fail "session.demo_mode is not true"
+          test "$(jq -r .auth_required session.json)" = "false" || fail "the demo should not ask for a login"
+
+          # The demo ledger was seeded (with the synthetic prices of this smoke test).
+          test "$(curl -fsS "$BASE/api/transactions" | jq length)" -gt 0 || fail "the demo ledger is empty"
+
+          # Writes are refused, by the demo lock.
+          curl -s -o write.json -w '%{http_code}' -X POST "$BASE/api/transactions" \
+            -H 'Content-Type: application/json' -d '{}' > write.status
+          test "$(cat write.status)" = "403" || fail "POST /api/transactions answered $(cat write.status), not 403"
+          test "$(jq -r .code write.json)" = "demo_read_only" || fail "the 403 is not demo_read_only"
+          test "$(status -X DELETE "$BASE/api/transactions?confirm=all")" = "403" || fail "DELETE was not refused"
+
+          # The frontend: the page, with the security headers and without an inline script.
+          curl -fsS -D page.headers -o page.html "$BASE/"
+          grep -qi '^content-type: text/html' page.headers || fail "/ is not HTML"
+          grep -qi '^cache-control: no-cache' page.headers || fail "index.html must be revalidated"
+          grep -qi "^content-security-policy: .*script-src 'self'" page.headers || fail "no CSP on the page"
+          grep -qi '^x-content-type-options: nosniff' page.headers || fail "no nosniff on the page"
+          grep -q '<div id="root">' page.html || fail "/ is not the app's index.html"
+          if grep -o '<script[^>]*>' page.html | grep -v 'src='; then
+            fail "index.html has an inline script, which the CSP (script-src 'self') blocks"
+          fi
+
+          # Every script and stylesheet the page names is served, hashed ones cacheable for good.
+          assets="$(grep -oE '(src|href)="/[^"]+\.(js|css)"' page.html | sed -E 's/^(src|href)="//; s/"$//')"
+          test -n "$assets" || fail "index.html names no script"
+          for path in $assets; do
+            curl -fsS -D asset.headers -o /dev/null "$BASE$path" || fail "$path is not served"
+            case "$path" in
+              /assets/*) grep -qi '^cache-control: .*immutable' asset.headers || fail "$path is not cached as immutable" ;;
+              *) grep -qi '^cache-control: no-cache' asset.headers || fail "$path should be revalidated" ;;
+            esac
+            case "$path" in
+              *.js) grep -qi '^content-type: text/javascript' asset.headers || fail "$path is not served as JavaScript" ;;
+            esac
+          done
+
+          # Pages of the single-page app, including the ticker page under Vite's assets/ prefix.
+          for page in /coach /learn /login /assets/AAPL; do
+            test "$(curl -fsS "$BASE$page")" = "$(cat page.html)" || fail "$page is not answered with index.html"
+          done
+
+          # ...but never under /api, and never for a missing build file.
+          curl -s -o missing.json -w '%{http_code}' "$BASE/api/no-such-route" > missing.status
+          test "$(cat missing.status)" = "404" || fail "/api/no-such-route answered $(cat missing.status)"
+          test "$(jq -r .detail missing.json)" = "Not Found" || fail "/api/no-such-route is not the JSON 404"
+          test "$(status "$BASE/assets/index-0ldBu1ld.js")" = "404" || fail "a missing build file is not a 404"
+
+          # A production instance publishes no API schema.
+          test "$(status "$BASE/openapi.json")" = "404" || fail "/openapi.json is reachable"
+
+          # The image has no torch: the old LSTM routes say so instead of failing to import.
+          curl -s -o lstm.json -w '%{http_code}' "$BASE/api/predictions" > lstm.status
+          test "$(cat lstm.status)" = "501" || fail "/api/predictions answered $(cat lstm.status), not 501"
+          test "$(jq -r .code lstm.json)" = "lstm_not_installed" || fail "the 501 is not lstm_not_installed"
+
+          # A ticker outside the demo ledger is refused by the API.
+          curl -s -o symbol.json -w '%{http_code}' "$BASE/api/market/ZZZZ/quote" > symbol.status
+          test "$(cat symbol.status)" = "403" || fail "an off-ledger ticker answered $(cat symbol.status), not 403"
+          test "$(jq -r .code symbol.json)" = "demo_symbol_not_allowed" || fail "the 403 is not demo_symbol_not_allowed"
+      - name: Container log
+        if: always()
+        run: docker logs demo || true

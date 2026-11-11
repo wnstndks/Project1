@@ -19,6 +19,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# 배포용 값(터널 토큰 등)은 deploy/.env 에만 둔다. 위 규칙으로 이미 무시되지만 명시해 둔다.
+deploy/.env
+# DB 백업(backend/scripts/backup_db.py)이 검증 전에 쓰는 임시 파일
+*.db.partial
 
 # ML artifacts
 backend/artifacts/

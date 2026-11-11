@@ -8,6 +8,7 @@ Time boundary rules (a feature dated t may only use news published before the cl
 - Crypto daily bars close at 00:00 UTC, so UTC calendar days line up with bars directly.
 """
 
+import importlib.util
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -46,6 +47,26 @@ NEWS_FEATURES = [
     # Finnhub's free tier only reaches back about a year.
     "finbert_covered",
 ]
+
+# Why a background sync stops on a server without the FinBERT libraries (the deployment image
+# leaves out torch and transformers, DECISIONS.md D-035).
+SENTIMENT_UNAVAILABLE = (
+    "FinBERT sentiment model is not installed (transformers and torch); "
+    "headlines cannot be scored on this server"
+)
+
+
+def finbert_installed() -> bool:
+    """FinBERT needs both libraries. Checked without importing them (torch takes seconds)."""
+
+    def found(name: str) -> bool:
+        try:
+            return importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):  # a half-removed install counts as missing
+            return False
+
+    return found("transformers") and found("torch")
+
 
 # GDELT rejects short phrases ("The specified phrase is too short"), so tickers like "AAPL"
 # or "BTC" cannot be searched; queries use names of at least MIN_PHRASE characters.
@@ -111,6 +132,9 @@ class NewsSummary:
     articles: list[NewsArticle]
     days: list[dict]
     finnhub_enabled: bool
+    # False: no sentiment model on this server, so no new headlines are fetched or scored
+    # (those already stored with a score are still returned).
+    sentiment_enabled: bool
     warnings: list[str]
 
 
@@ -121,7 +145,7 @@ class NewsService:
         provider: MarketDataProvider,
         gdelt: GdeltClient,
         finnhub: FinnhubClient | None,
-        scorer: SentimentScorer,
+        scorer: SentimentScorer | None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC).replace(tzinfo=None),
     ) -> None:
         self.db = db
@@ -138,6 +162,11 @@ class NewsService:
 
         Interactive syncs (a user is waiting) try each source once and report failures as
         warnings, falling back to cached data. Background syncs wait out rate limits and raise.
+
+        Without a sentiment model (`scorer` is None) headlines are not fetched at all: a
+        headline is only ever stored with its score, and no score is made up. An interactive
+        sync then returns GDELT only and `NewsSummary.sentiment_enabled` tells the screen why;
+        a background sync, whose caller wants the sentiment features, raises.
         """
         state = self._state(symbol)
         today = self.now().date()
@@ -145,7 +174,9 @@ class NewsService:
         # Phase 1: network and FinBERT only. Each step returns a write to apply later, so the
         # SQLite write lock is never held while waiting on GDELT, Finnhub or the model.
         steps = [("GDELT", lambda: self._fetch_gdelt(state, start, today, interactive))]
-        if self.finnhub is not None:
+        if self.finnhub is not None and self.scorer is None and not interactive:
+            raise NewsDataError(SENTIMENT_UNAVAILABLE)
+        if self.finnhub is not None and self.scorer is not None:
             since = max(start, today - FINNHUB_LOOKBACK)
             steps.append(("Finnhub", lambda: self._fetch_finnhub(state, since, today)))
         writes = []
@@ -355,6 +386,7 @@ class NewsService:
             articles=articles,
             days=[{"date": g.date, "tone": g.tone, "volume": g.volume} for g in gd],
             finnhub_enabled=self.finnhub is not None,
+            sentiment_enabled=self.scorer is not None,
             warnings=report.warnings,
         )
 

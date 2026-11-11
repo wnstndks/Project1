@@ -2,6 +2,8 @@ import { useState } from 'react'
 
 import type { Transaction } from '../api/client'
 import { useDeleteAllTransactions } from '../api/hooks'
+import { AUTH_TEXT } from '../lib/auth'
+import { useDemoMode } from '../lib/session'
 import { ErrorBox } from './ui'
 
 /** Matches the note the backend puts on screenshot imports. */
@@ -13,6 +15,7 @@ type Scope = 'all' | 'imports'
 export function BulkDelete({ transactions }: { transactions: Transaction[] }) {
   const [pending, setPending] = useState<Scope | null>(null)
   const remove = useDeleteAllTransactions()
+  const demo = useDemoMode()
   const imported = transactions.filter((t) => t.note === IMPORT_NOTE).length
   const count = pending === 'imports' ? imported : transactions.length
 
@@ -39,11 +42,11 @@ export function BulkDelete({ transactions }: { transactions: Transaction[] }) {
       ) : (
         <div className="flex flex-wrap justify-end gap-2">
           {imported > 0 && (
-            <button type="button" className={button} onClick={() => setPending('imports')}>
+            <button type="button" className={button} disabled={demo} title={demo ? AUTH_TEXT.demoReadOnly : undefined} onClick={() => setPending('imports')}>
               가져온 거래만 삭제 ({imported})
             </button>
           )}
-          <button type="button" className={button} onClick={() => setPending('all')}>
+          <button type="button" className={button} disabled={demo} title={demo ? AUTH_TEXT.demoReadOnly : undefined} onClick={() => setPending('all')}>
             전체 삭제
           </button>
         </div>

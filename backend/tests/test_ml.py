@@ -1,16 +1,20 @@
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pytest
+from fastapi import Depends
 
 from app.data.calendar import next_trading_dates
 from app.data.fake_provider import FakeProvider
-from app.deps import get_artifacts_dir
+from app.deps import get_artifacts_dir, get_market_service, get_prediction_service
 from app.ml.artifacts import TrainConfig
 from app.ml.dataset import feature_frame, prepare, split_bounds
 from app.ml.evaluate import evaluate
 from app.ml.features import FEATURES, add_features, bars_to_frame
 from app.ml.train import train_model
+from app.services.market_data import MarketDataService
+from app.services.predictions import PredictionService
 from tests.conftest import TODAY
 
 LOOKBACK, HORIZON = 30, 5
@@ -80,8 +84,19 @@ def test_next_trading_dates_follow_the_nyse_calendar():
     ]
 
 
+def _predictions_as_of_today(
+    market: MarketDataService = Depends(get_market_service),
+    artifacts_dir: Path = Depends(get_artifacts_dir),
+) -> PredictionService:
+    """The route's service with its clock on the fixtures' TODAY. The fake provider's bars end
+    there, and the model's input window is counted back only about 110 days from "today":
+    on the real clock it runs short of bars within weeks (ISSUE-051)."""
+    return PredictionService(market, artifacts_dir, today=lambda: TODAY)
+
+
 def test_train_smoke_and_prediction_api(tmp_path, client, provider):
     client.app.dependency_overrides[get_artifacts_dir] = lambda: tmp_path
+    client.app.dependency_overrides[get_prediction_service] = _predictions_as_of_today
 
     assert client.get("/api/predictions/AAPL").status_code == 404
 

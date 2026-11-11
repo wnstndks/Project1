@@ -1,3 +1,5 @@
+import { AUTH_TEXT } from '../lib/auth'
+import { ApiError } from './errors'
 import type { components } from './schema'
 
 type Schemas = components['schemas']
@@ -39,17 +41,7 @@ export type RuleTrigger = Schemas['RuleTriggerOut']
 export type RuleSettings = Schemas['RuleSettingsOut']
 export type RuleSettingsInput = Schemas['RuleSettingsIn']
 
-export class ApiError extends Error {
-  readonly status: number
-  /** Machine-readable reason from the backend (e.g. 'not_trained'), when it sends one. */
-  readonly code?: string
-
-  constructor(status: number, message: string, code?: string) {
-    super(message)
-    this.status = status
-    this.code = code
-  }
-}
+export { ApiError }
 
 /** FastAPI returns `detail` as a string for domain errors and as a list for validation errors. */
 function errorMessage(body: unknown, fallback: string): string {
@@ -65,10 +57,18 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback
 }
 
+/** `Retry-After` as whole seconds (the backend sends a number, never a date). */
+function retryAfterSeconds(res: Response): number | undefined {
+  const seconds = Number(res.headers.get('Retry-After') ?? NaN)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // FormData bodies must let the browser set the multipart boundary header itself.
   const json = !(init?.body instanceof FormData)
   const res = await fetch(`/api${path}`, {
+    // The session cookie (HttpOnly, SameSite=Strict) goes to this app's own origin only.
+    credentials: 'same-origin',
     ...init,
     headers: { ...(json && { 'Content-Type': 'application/json' }), ...init?.headers },
   })
@@ -76,7 +76,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await res.json().catch(() => null)
   if (!res.ok) {
     const code = body && typeof body === 'object' && 'code' in body ? String(body.code) : undefined
-    throw new ApiError(res.status, errorMessage(body, res.statusText), code)
+    // A request limit can also come from a proxy in front, with no JSON body to read a reason from.
+    const message = res.status === 429 ? AUTH_TEXT.tooManyRequests : errorMessage(body, res.statusText)
+    throw new ApiError(res.status, message, code, retryAfterSeconds(res))
   }
   return body as T
 }
@@ -84,6 +86,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 function query(params: Record<string, string | undefined>): string {
   const entries = Object.entries(params).filter((e): e is [string, string] => e[1] !== undefined)
   return entries.length ? `?${new URLSearchParams(entries)}` : ''
+}
+
+// --- Login and the read-only demo (D-035). The session is an HttpOnly cookie the server sets;
+// this code never sees the token and only asks what to show. ---
+export type AuthSession = Schemas['SessionOut']
+
+export const authApi = {
+  /** Always reachable: whether this server needs a login, whether this browser has one, demo or not. */
+  session: () => request<AuthSession>('/auth/session'),
+  login: (password: string) =>
+    request<void>('/auth/login', { method: 'POST', body: JSON.stringify({ password } satisfies Schemas['LoginIn']) }),
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
 }
 
 export const api = {

@@ -1,3 +1,5 @@
 * text=auto eol=lf
+# Shell scripts run inside the Linux container: a CRLF checkout breaks `#!/bin/sh` and `set -eu`.
+*.sh text eol=lf
 *.png binary
 *.pt binary

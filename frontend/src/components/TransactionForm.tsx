@@ -9,7 +9,9 @@ import {
   type TransactionInput,
 } from '../api/client'
 import { useSupportedCrypto } from '../api/hooks'
+import { AUTH_TEXT } from '../lib/auth'
 import { daysAgo, displaySymbol, isoDate } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 import { ErrorBox, SegmentedControl } from './ui'
 
 type FormState = {
@@ -65,6 +67,7 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
   error: unknown
 }) {
   const crypto = useSupportedCrypto()
+  const demo = useDemoMode()
   const [today] = useState(() => isoDate(new Date()))
   // Remount (via `key` in the parent) resets the form when the edited row changes.
   const [form, setForm] = useState<FormState>(() => (editing ? fromTransaction(editing) : empty()))
@@ -265,7 +268,8 @@ export function TransactionForm({ editing, onSubmit, onCancel, pending, error }:
       <div className="flex gap-2">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || demo}
+          title={demo ? AUTH_TEXT.demoReadOnly : undefined}
           className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
         >
           {editing ? '수정 저장' : '거래 추가'}

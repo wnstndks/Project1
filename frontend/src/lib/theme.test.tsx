@@ -99,6 +99,69 @@ describe('ThemeProvider', () => {
   })
 })
 
+describe('first-paint theme preset (public/theme-init.js)', () => {
+  const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')
+  const preset = readFileSync(resolve(process.cwd(), 'public/theme-init.js'), 'utf8')
+  // The file is served as is and run by a plain <script>, so running its text is the same thing.
+  const run = () => new Function(preset)()
+
+  afterEach(() => {
+    localStorage.clear()
+    delete document.documentElement.dataset.theme
+  })
+
+  it('is a blocking same-origin file in <head>, and index.html has no inline script (CSP script-src self)', () => {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const scripts = Array.from(doc.querySelectorAll('script'))
+    expect(scripts.length).toBeGreaterThan(0)
+    for (const s of scripts) {
+      expect(s.getAttribute('src'), 'every script comes from a file').toMatch(/^\//)
+      expect(s.textContent?.trim()).toBe('')
+    }
+    const tag = doc.querySelector('head script[src="/theme-init.js"]')
+    expect(tag).not.toBeNull()
+    for (const attr of ['async', 'defer', 'type']) expect(tag!.hasAttribute(attr)).toBe(false)
+    // Inline handlers and style attributes would need 'unsafe-inline' as well.
+    expect(html).not.toMatch(/\son[a-z]+\s*=/i)
+    expect(html).not.toMatch(/\sstyle\s*=/i)
+  })
+
+  it('uses the same storage key as the provider', () => {
+    expect(preset).toContain(`'${THEME_STORAGE_KEY}'`)
+  })
+
+  it('applies a stored dark or system choice and leaves everything else alone', () => {
+    document.documentElement.dataset.theme = 'light' // what index.html ships with
+    for (const stored of ['dark', 'system'] as const) {
+      localStorage.setItem(THEME_STORAGE_KEY, stored)
+      run()
+      expect(document.documentElement.dataset.theme).toBe(stored)
+      document.documentElement.dataset.theme = 'light'
+    }
+    for (const stored of ['light', 'sepia']) {
+      localStorage.setItem(THEME_STORAGE_KEY, stored)
+      run()
+      expect(document.documentElement.dataset.theme).toBe('light')
+    }
+    localStorage.clear()
+    run()
+    expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
+  it('keeps the default when storage throws', () => {
+    document.documentElement.dataset.theme = 'light'
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError')
+    })
+    try {
+      expect(run).not.toThrow()
+      expect(document.documentElement.dataset.theme).toBe('light')
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+})
+
 describe('index.css theme tokens', () => {
   const block = (selector: string): string[] => {
     const start = css.indexOf(selector)

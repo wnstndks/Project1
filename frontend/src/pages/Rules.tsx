@@ -6,6 +6,7 @@ import { useHoldings, useRuleCheck, useRuleSettings, useUpdateRuleSettings, useU
 import { Field } from '../components/FormField'
 import { RuleStatusChip } from '../components/RuleStatusChip'
 import { Card, ErrorBox, Muted, Skeleton } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import { displaySymbol, formatKrwShort, formatPct } from '../lib/format'
 import {
   addPricePhrase,
@@ -26,6 +27,7 @@ import {
   type RuleForm,
   type SymbolForm,
 } from '../lib/rules'
+import { useDemoMode } from '../lib/session'
 
 const cellInputClass =
   'num w-24 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm outline-none focus:border-accent'
@@ -109,6 +111,7 @@ function RulesForm({ settings, holdings, onSave, pending, saved, error }: {
   const [form, setForm] = useState<RuleForm>(() => settingsToForm(settings, symbols))
   const [formError, setFormError] = useState<string | null>(null)
   const [resetHint, setResetHint] = useState(false)
+  const demo = useDemoMode()
 
   const setGlobal = (key: keyof RuleForm['global'], value: string | boolean) =>
     setForm((f) => ({ ...f, global: { ...f.global, [key]: value } }))
@@ -262,7 +265,8 @@ function RulesForm({ settings, holdings, onSave, pending, saved, error }: {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || demo}
+            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
             className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface disabled:opacity-50"
           >
             {pending ? '저장 중…' : '저장'}

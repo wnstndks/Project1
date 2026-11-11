@@ -91,6 +91,18 @@ npm run dev                                    # http://localhost:5173
 
 네트워크 없이 실행하려면 `AM_MARKET_PROVIDER=fake`를 설정하세요. 합성 시세를 사용합니다.
 
+## 배포
+
+읽기 전용 데모를 Docker로 띄우고 Cloudflare Tunnel로 공개할 수 있습니다. 공개되는 것은 가짜 장부로 도는 데모 컨테이너뿐이고, 실제 장부·`.env`·학습된 모델은 이미지에 들어가지 않습니다. 데모에서는 저장·수정 요청이 모두 403으로 막힙니다.
+
+```powershell
+cd deploy
+Copy-Item .env.example .env
+docker compose up -d --build      # http://127.0.0.1:8010, 터널은 .env의 COMPOSE_PROFILES로 선택
+```
+
+순서와 주의할 점은 [docs/DEPLOY.md](docs/DEPLOY.md)에 있습니다. 단일 계정 로그인(비밀번호 해시 + 서명 세션 쿠키)도 들어 있어, 설정하면 로그인하지 않은 `/api` 요청은 401이 됩니다.
+
 ## 테스트
 
 ```bash
@@ -98,7 +110,7 @@ cd backend && uv run pytest && uv run ruff check .
 cd frontend && npm test && npm run lint && npm run build
 ```
 
-GitHub Actions가 push마다 린트, 마이그레이션 일치 여부, 테스트, OpenAPI 타입 최신 여부, 프론트엔드 빌드를 검사합니다.
+GitHub Actions가 push마다 린트, 마이그레이션 일치 여부, 테스트, OpenAPI 타입 최신 여부, 프론트엔드 빌드를 검사하고, Docker 이미지를 빌드해 데모 컨테이너가 뜨는지(쓰기 403, 이미지 안에 비밀·DB 없음)까지 확인합니다.
 
 ## 한계
 

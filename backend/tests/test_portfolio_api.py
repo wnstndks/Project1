@@ -1,7 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
+from app.deps import get_market_service, get_portfolio_service
 from app.services.market_data import HISTORY_TTL, MarketDataService, QuoteCache
 from app.services.portfolio import PortfolioService
 from tests.conftest import TODAY
@@ -353,7 +357,17 @@ def test_day_change_is_measured_from_the_previous_close(client, provider):
     assert summary["day_change"] != 0
 
 
+def _portfolio_as_of_today(
+    db: Session = Depends(get_db), market: MarketDataService = Depends(get_market_service)
+) -> PortfolioService:
+    """The route's service with its clock on the fixtures' TODAY. The fake provider's bars end
+    there, so a window counted back from the real date would shrink day by day and be empty
+    a month later (ISSUE-051)."""
+    return PortfolioService(db, market, today=lambda: TODAY)
+
+
 def test_sparklines_read_closes_where_each_position_is_priced(client, provider):
+    client.app.dependency_overrides[get_portfolio_service] = _portfolio_as_of_today
     assert client.get("/api/portfolio/sparklines").json() == []
     buy(client, "AAPL", 10, 100)
     krw_trade(client, "BTC", "0.01", "80000000")
@@ -362,18 +376,19 @@ def test_sparklines_read_closes_where_each_position_is_priced(client, provider):
 
     body = client.get("/api/portfolio/sparklines?days=30").json()
     assert [s["symbol"] for s in body] == ["AAPL", "BTC-USD"]
-    start = date.today() - timedelta(days=30)
+    start = TODAY - timedelta(days=30)
     aapl = next(s for s in body if s["symbol"] == "AAPL")
     assert aapl["closes"] == pytest.approx(
-        [b.close for b in provider.get_history("AAPL", start, date.today())]
+        [b.close for b in provider.get_history("AAPL", start, TODAY)]
     )
     # The KRW coin's line is its Upbit won series, not the dollar price.
     btc = next(s for s in body if s["symbol"] == "BTC-USD")
     assert btc["closes"] == pytest.approx(
-        [b.close for b in provider.get_history("KRW-BTC", start, date.today())]
+        [b.close for b in provider.get_history("KRW-BTC", start, TODAY)]
     )
     assert any(sym == "KRW-BTC" for sym, _, _ in provider.history_calls)
-    assert 0 < len(aapl["closes"]) < len(btc["closes"])  # weekdays vs every day
+    # 30 days back from a Friday: 23 weekday bars against 31 daily ones.
+    assert (len(aapl["closes"]), len(btc["closes"])) == (23, 31)
 
     assert client.get("/api/portfolio/sparklines?days=3").status_code == 422
     assert client.get("/api/portfolio/sparklines?days=400").status_code == 422

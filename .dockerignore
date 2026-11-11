@@ -1,0 +1,51 @@
+# Build context of the demo image (Dockerfile, DECISIONS.md D-035).
+#
+# Allow-list: everything is excluded, then only what the Dockerfile copies is let back in.
+# A file added anywhere else in the repository later (a database, a key, a log, notes) stays
+# out of the image without anyone having to remember to list it here.
+*
+
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/alembic.ini
+!backend/alembic/
+!backend/app/
+!backend/seed/
+!backend/scripts/
+!frontend/
+
+# Never, not even inside the allowed folders. The last matching rule wins, so these stay
+# below the allow-list.
+# Secrets and settings (the image gets its settings from compose, never from a .env file).
+**/.env
+**/.env.*
+# Databases: the real ledger, demo files, WAL/SHM/journal side files, backups.
+**/*.db*
+**/*.sqlite*
+# Trained models contain the symbols of the real holdings.
+backend/artifacts/
+**/artifacts/
+# Version control, local tooling, notes.
+.git
+**/.git
+.github/
+.claude/
+**/.claude
+docs/
+deploy/
+**/.vscode
+**/.idea
+# Dependencies and build output are produced inside the image.
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/*.tsbuildinfo
+# Tests, caches, logs.
+backend/tests/
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.vitest
+**/*.log

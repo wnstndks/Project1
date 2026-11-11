@@ -13,8 +13,10 @@ import { BulkDelete } from '../components/BulkDelete'
 import { CorporateActions } from '../components/CorporateActions'
 import { TransactionForm } from '../components/TransactionForm'
 import { Card, ErrorBox, Muted, SegmentedControl } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import { useMoney } from '../lib/currency'
 import { displaySymbol, formatDate, formatQty } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 import { needsPriceCheck, PRICE_CHECK_REASON, priceCheckRows } from '../lib/transactionChecks'
 
 type Filter = 'all' | AssetType
@@ -25,6 +27,8 @@ export function Transactions() {
   const create = useCreateTransaction()
   const update = useUpdateTransaction()
   const remove = useDeleteTransaction()
+  // The read-only demo: edit and delete are switched off up front (the server refuses them anyway).
+  const demo = useDemoMode()
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [confirmId, setConfirmId] = useState<number | null>(null)
@@ -109,7 +113,9 @@ export function Transactions() {
                     <button
                       type="button"
                       onClick={() => edit(t)}
-                      className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-surface"
+                      disabled={demo}
+                      title={demo ? AUTH_TEXT.demoReadOnly : undefined}
+                      className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-surface disabled:opacity-50"
                     >
                       수정
                     </button>
@@ -209,12 +215,19 @@ export function Transactions() {
                       ) : (
                         <>
                           <button
-                            className={`mr-3 hover:underline ${flagged.has(t.id) ? 'font-semibold text-accent' : 'text-ink-2'}`}
+                            className={`mr-3 hover:underline disabled:opacity-50 disabled:hover:no-underline ${flagged.has(t.id) ? 'font-semibold text-accent' : 'text-ink-2'}`}
+                            disabled={demo}
+                            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
                             onClick={() => edit(t)}
                           >
                             수정
                           </button>
-                          <button className="text-ink-2 hover:underline" onClick={() => setConfirmId(t.id)}>
+                          <button
+                            className="text-ink-2 hover:underline disabled:opacity-50 disabled:hover:no-underline"
+                            disabled={demo}
+                            title={demo ? AUTH_TEXT.demoReadOnly : undefined}
+                            onClick={() => setConfirmId(t.id)}
+                          >
                             삭제
                           </button>
                         </>

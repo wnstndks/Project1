@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { CorporateAction } from '../api/client'
 import { useConfirmAllDividends, useCorporateActions, useSetActionStatus, useSetWithholding } from '../api/hooks'
+import { AUTH_TEXT } from '../lib/auth'
 import { formatQty, formatUsd } from '../lib/format'
+import { useDemoMode } from '../lib/session'
 import { splitShares } from '../lib/split'
 import { ErrorBox, Muted } from './ui'
 
@@ -19,6 +21,7 @@ export function CorporateActions() {
   const setStatus = useSetActionStatus()
   const confirmAll = useConfirmAllDividends()
   const setWithholding = useSetWithholding()
+  const demo = useDemoMode()
   const [editing, setEditing] = useState<{ symbol: string; value: string } | null>(null)
 
   if (actions.error) return <ErrorBox error={actions.error} />
@@ -84,8 +87,9 @@ export function CorporateActions() {
         {formatQty(a.shares_before)}주 ·{' '}
         <button
           type="button"
-          className="underline decoration-dotted hover:text-ink"
-          title="해외 ADR 등 원천징수율이 다른 종목은 눌러서 바꾸세요"
+          className="underline decoration-dotted hover:text-ink disabled:no-underline"
+          disabled={demo}
+          title={demo ? AUTH_TEXT.demoReadOnly : '해외 ADR 등 원천징수율이 다른 종목은 눌러서 바꾸세요'}
           onClick={() => setEditing({ symbol: a.symbol, value: String(+(a.withholding * 100).toFixed(2)) })}
         >
           원천징수 {percent(a.withholding)}
@@ -107,7 +111,8 @@ export function CorporateActions() {
             <button
               type="button"
               className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover disabled:opacity-50"
-              disabled={confirmAll.isPending}
+              disabled={confirmAll.isPending || demo}
+              title={demo ? AUTH_TEXT.demoReadOnly : undefined}
               onClick={() => confirmAll.mutate()}
             >
               배당 {pendingDividends.length}건 모두 반영 (약 {formatUsd(pendingTotal)})
@@ -142,7 +147,8 @@ export function CorporateActions() {
                       <button
                         type="button"
                         className="mr-3 font-medium text-accent hover:underline disabled:opacity-50"
-                        disabled={setStatus.isPending}
+                        disabled={setStatus.isPending || demo}
+                        title={demo ? AUTH_TEXT.demoReadOnly : undefined}
                         onClick={() => setStatus.mutate({ id: a.id, status: 'confirmed' })}
                       >
                         반영
@@ -150,11 +156,13 @@ export function CorporateActions() {
                       <button
                         type="button"
                         className="text-ink-2 hover:underline disabled:opacity-50"
-                        disabled={setStatus.isPending}
+                        disabled={setStatus.isPending || demo}
                         title={
-                          a.kind === 'split'
-                            ? '분할 전 거래를 이미 분할 후 수량·가격으로 입력했다면 무시하세요'
-                            : undefined
+                          demo
+                            ? AUTH_TEXT.demoReadOnly
+                            : a.kind === 'split'
+                              ? '분할 전 거래를 이미 분할 후 수량·가격으로 입력했다면 무시하세요'
+                              : undefined
                         }
                         onClick={() => setStatus.mutate({ id: a.id, status: 'ignored' })}
                       >

@@ -1,8 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 
+import type { AuthSession } from './api/client'
+import { useAuthSession, useLogout } from './api/hooks'
 import { SegmentedControl } from './components/ui'
+import { AUTH_TEXT, LOGIN_PATH, loginPath } from './lib/auth'
 import { useCurrency, type Currency } from './lib/currency'
+import { SessionProvider } from './lib/session'
 import { useTheme, type Theme } from './lib/theme'
 
 type Options<T extends string> = { value: T; label: string }[]
@@ -63,6 +67,37 @@ function NavLabel({ short, long }: { short: string; long: string }) {
 }
 
 /**
+ * The gate in front of every page (D-035). It asks the server once what this browser may see:
+ * - still asking: nothing is drawn yet, because every page request would come back 401;
+ * - a login is required and there is no session: off to the login page, remembering this one.
+ *   The same happens later when any request is answered 401 (`createQueryClient` marks the
+ *   session logged out);
+ * - otherwise the app, with the session handed down for the demo strip and `useDemoMode()`.
+ * If the session request itself fails the app is drawn as before; the server still decides
+ * every request, so this gate is a convenience, not the lock.
+ */
+export function Layout() {
+  const session = useAuthSession()
+  const location = useLocation()
+
+  if (session.isPending) {
+    return (
+      <p role="status" className="py-16 text-center text-sm text-muted">
+        {AUTH_TEXT.checking}
+      </p>
+    )
+  }
+  if (session.data?.auth_required && !session.data.authenticated) {
+    return <Navigate to={loginPath(location)} replace />
+  }
+  return (
+    <SessionProvider value={session.data ?? null}>
+      <Shell session={session.data ?? null} />
+    </SessionProvider>
+  )
+}
+
+/**
  * Header on wide screens: brand · nav · currency · theme · search in one row. On phones the brand
  * and the two toggles (short labels: ₩/$ and ☀/☾/자동) share the first row; the nav and the search
  * box take the second, where the nav wraps onto a second line rather than scrolling (every link
@@ -71,11 +106,13 @@ function NavLabel({ short, long }: { short: string; long: string }) {
  * width would otherwise be the nowrap links' full width, pushing the document wider than a 390px
  * phone. `sm:contents` dissolves the wrapper on wide screens.
  */
-export function Layout() {
+function Shell({ session }: { session: AuthSession | null }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const { currency, setCurrency } = useCurrency()
   const { theme, setTheme } = useTheme()
+  const logout = useLogout()
+  const loggedIn = session?.auth_required === true && session.authenticated
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault()
@@ -86,12 +123,29 @@ export function Layout() {
 
   return (
     <div className="min-h-screen">
+      {session?.demo_mode && (
+        // Neutral ink on purpose: this is a notice about the data, not a gain or a loss.
+        <p role="status" className="bg-ink px-4 py-2 text-center text-[13px] font-medium text-surface">
+          {AUTH_TEXT.demoBanner}
+        </p>
+      )}
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <span className="shrink-0 font-semibold">Asset Manager</span>
           <div className="ml-auto flex shrink-0 items-center gap-2 sm:order-2">
             <Toggle label="표시 통화" value={currency} onChange={setCurrency} short={CURRENCY_SHORT} long={CURRENCY_LONG} />
             <Toggle label="화면 테마" value={theme} onChange={setTheme} short={THEME_SHORT} long={THEME_LONG} />
+            {loggedIn && (
+              <button
+                type="button"
+                disabled={logout.isPending}
+                // The cache is cleared by the hook first; then the login page asks the server afresh.
+                onClick={() => logout.mutate(undefined, { onSuccess: () => navigate(LOGIN_PATH, { replace: true }) })}
+                className="shrink-0 rounded-md px-2 py-1.5 text-sm whitespace-nowrap text-ink-2 hover:text-ink disabled:opacity-50"
+              >
+                {logout.isPending ? AUTH_TEXT.loggingOut : AUTH_TEXT.logout}
+              </button>
+            )}
           </div>
           <div className="flex min-w-0 basis-full items-center gap-2 sm:contents">
             <nav
@@ -122,6 +176,11 @@ export function Layout() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">
+        {logout.error ? (
+          <p role="alert" className="mb-4 text-sm text-danger">
+            {AUTH_TEXT.logoutFailed}
+          </p>
+        ) : null}
         <Outlet />
       </main>
       <footer className="mx-auto max-w-6xl px-4 pb-8 text-xs text-muted">

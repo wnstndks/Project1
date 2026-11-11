@@ -1,11 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode, type ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 
+import { createQueryClient } from './api/queryClient'
 import { Layout } from './App'
 import { Muted } from './components/ui'
 import './index.css'
+import { LOGIN_PATH } from './lib/auth'
 import { CurrencyProvider } from './lib/currency'
 import { ThemeProvider } from './lib/theme'
 
@@ -28,14 +30,13 @@ const coach = page(() => import('./pages/Coach').then((m) => ({ Component: m.Coa
 const learn = page(() => import('./pages/Learn').then((m) => ({ Component: m.Learn })))
 const lesson = page(() => import('./pages/Lesson').then((m) => ({ Component: m.Lesson })))
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    // Backend caches quotes for 60s; refetching more often gains nothing.
-    queries: { staleTime: 60_000, refetchOnWindowFocus: false },
-  },
-})
+const login = page(() => import('./pages/Login').then((m) => ({ Component: m.Login })))
+
+const queryClient = createQueryClient()
 
 const router = createBrowserRouter([
+  // Outside the layout: the login page is all there is to see without a session.
+  { path: LOGIN_PATH, ...login },
   {
     element: <Layout />,
     children: [

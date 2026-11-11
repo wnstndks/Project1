@@ -21,6 +21,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session */
+        get: operations["session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/crypto": {
         parameters: {
             query?: never;
@@ -2153,6 +2204,11 @@ export interface components {
             /** Error */
             error: string;
         };
+        /** LoginIn */
+        LoginIn: {
+            /** Password */
+            password: string;
+        };
         /** ManualIn */
         ManualIn: {
             /** Rows */
@@ -2229,6 +2285,8 @@ export interface components {
             days: components["schemas"]["NewsDayOut"][];
             /** Finnhub Enabled */
             finnhub_enabled: boolean;
+            /** Sentiment Enabled */
+            sentiment_enabled: boolean;
             /** Warnings */
             warnings: string[];
         };
@@ -3012,6 +3070,15 @@ export interface components {
             /** Route */
             route?: string | null;
         };
+        /** SessionOut */
+        SessionOut: {
+            /** Auth Required */
+            auth_required: boolean;
+            /** Authenticated */
+            authenticated: boolean;
+            /** Demo Mode */
+            demo_mode: boolean;
+        };
         /**
          * Side
          * @enum {string}
@@ -3566,6 +3633,96 @@ export interface operations {
             };
         };
     };
+    session_api_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+        };
+    };
+    login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Wrong password (`code: invalid_credentials`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No login configured on this server (`code: login_not_configured`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many attempts; see `Retry-After` (`code: rate_limited`) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_supported_crypto_api_market_crypto_get: {
         parameters: {
             query?: never;
@@ -4069,6 +4226,13 @@ export interface operations {
                     "application/json": components["schemas"]["TrainedModelOut"][];
                 };
             };
+            /** @description torch is not installed (`code: lstm_not_installed`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     forecast_api_predictions__symbol__get: {
@@ -4099,6 +4263,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description torch is not installed (`code: lstm_not_installed`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4131,6 +4302,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description torch is not installed (`code: lstm_not_installed`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     training_status_api_predictions__symbol__train_get: {
@@ -4162,6 +4340,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description torch is not installed (`code: lstm_not_installed`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     start_training_api_predictions__symbol__train_post: {
@@ -4192,6 +4377,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description torch is not installed (`code: lstm_not_installed`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

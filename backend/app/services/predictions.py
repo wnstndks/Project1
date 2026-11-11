@@ -1,28 +1,72 @@
-"""Serve forecasts from trained artifacts and run training jobs in the background."""
+"""Serve forecasts from trained artifacts and run training jobs in the background.
+
+The old LSTM comparison model needs torch, which the deployment image leaves out (the `lstm`
+dependency group, DECISIONS.md D-035). So nothing here imports torch or `app.ml` when the
+module loads: each entry point imports what it uses, and without torch it raises
+`LstmUnavailableError` (501) instead of answering with made-up numbers.
+"""
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
-import torch
 
 from app.data.calendar import next_trading_dates
-from app.ml import artifacts
-from app.ml.artifacts import LoadedModel, TrainConfig
-from app.ml.dataset import latest_window
-from app.ml.features import bars_to_frame
-from app.ml.train import train_model
-from app.services.errors import ConflictError, NotFoundError
+from app.services.errors import ConflictError, DomainError, NotFoundError
 from app.services.market_data import MarketDataService
 
-_model_cache: dict[tuple[Path, str], tuple[Path, LoadedModel]] = {}
+if TYPE_CHECKING:
+    from app.ml.artifacts import LoadedModel, TrainConfig
+
+LSTM_UNAVAILABLE_CODE = "lstm_not_installed"
+LSTM_UNAVAILABLE_DETAIL = (
+    "이 서버에는 예전 LSTM 비교 모델(torch)이 설치되어 있지 않습니다. "
+    "화면의 예측은 /api/forecasts 를 씁니다"
+)
+
+
+class LstmUnavailableError(DomainError):
+    """torch is not installed here, so the old LSTM routes cannot answer."""
+
+    status_code = 501
+
+    def __init__(self) -> None:
+        super().__init__(LSTM_UNAVAILABLE_DETAIL, code=LSTM_UNAVAILABLE_CODE)
+
+
+def _torch():
+    """The torch module, or `LstmUnavailableError` on an install without it."""
+    try:
+        import torch
+    except ImportError as exc:
+        raise LstmUnavailableError from exc
+    return torch
+
+
+def require_lstm() -> None:
+    """Route guard for `/api/predictions`: every route there answers 501 without torch."""
+    _torch()
+
+
+def _artifacts():
+    """`app.ml.artifacts`, which imports torch at module load."""
+    _torch()
+    from app.ml import artifacts
+
+    return artifacts
+
+
+_model_cache: dict[tuple[Path, str], tuple[Path, "LoadedModel"]] = {}
 _cache_lock = threading.Lock()
 
 
-def _load(artifacts_dir: Path, symbol: str) -> LoadedModel:
+def _load(artifacts_dir: Path, symbol: str) -> "LoadedModel":
     """Load once per process and reload only when `current.json` points at a new run."""
+    artifacts = _artifacts()
     run = artifacts.resolve(artifacts_dir, symbol)
     if run is None:
         raise NotFoundError(
@@ -38,20 +82,33 @@ def _load(artifacts_dir: Path, symbol: str) -> LoadedModel:
     return cached[1]
 
 
-def _history_start(config: TrainConfig) -> date:
+def _history_start(config: "TrainConfig", today: date) -> date:
     # Enough calendar days for warm-up + lookback trading days, with room for holidays.
-    return date.today() - timedelta(days=int((config.lookback + 40) * 1.6))
+    return today - timedelta(days=int((config.lookback + 40) * 1.6))
 
 
 class PredictionService:
-    def __init__(self, market: MarketDataService, artifacts_dir: Path) -> None:
+    def __init__(
+        self,
+        market: MarketDataService,
+        artifacts_dir: Path,
+        today: Callable[[], date] = date.today,
+    ) -> None:
+        """`today` is the clock the history window is counted back from; tests pin it to
+        the date their fake prices end on."""
         self.market = market
         self.artifacts_dir = artifacts_dir
+        self.today = today
 
     def forecast(self, symbol: str) -> dict:
+        torch = _torch()
+        from app.ml.dataset import latest_window
+        from app.ml.features import bars_to_frame
+
         loaded = _load(self.artifacts_dir, symbol)
         config = loaded.config
-        bars = self.market.get_history(symbol, _history_start(config), final_only=True)
+        start = _history_start(config, self.today())
+        bars = self.market.get_history(symbol, start, final_only=True)
         df = bars_to_frame(bars)
         x = latest_window(df, config.lookback, config.horizon, loaded.x_scaler)
         with torch.no_grad():
@@ -79,10 +136,12 @@ class PredictionService:
         }
 
     def backtest(self, symbol: str) -> list[dict]:
+        artifacts = _artifacts()
         _load(self.artifacts_dir, symbol)
         return artifacts.load_backtest(artifacts.resolve(self.artifacts_dir, symbol))
 
     def trained(self) -> list[dict]:
+        artifacts = _artifacts()
         if not self.artifacts_dir.exists():
             return []
         out = []
@@ -122,8 +181,18 @@ class TrainingJobs:
         return self._jobs.get(symbol)
 
     def start(
-        self, symbol: str, market: MarketDataService, artifacts_dir: Path, config: TrainConfig
+        self,
+        symbol: str,
+        market: MarketDataService,
+        artifacts_dir: Path,
+        config: "TrainConfig | None" = None,
     ) -> TrainingJob:
+        """`config` defaults to `TrainConfig()`; the router passes none, so it never has to
+        import `app.ml` (and with it torch) itself."""
+        artifacts = _artifacts()
+        from app.ml.train import train_model
+
+        config = config or artifacts.TrainConfig()
         with self._lock:
             running = [j for j in self._jobs.values() if j.state == "running"]
             if running:

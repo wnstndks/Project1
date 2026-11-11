@@ -5,15 +5,43 @@ reference is reported as `not_trained` rather than invented. Amounts are demo nu
 """
 
 import pytest
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
-from app.deps import get_artifacts_dir
+from app.config import get_settings
+from app.db.session import get_db
+from app.deps import (
+    get_artifacts_dir,
+    get_forecast_service,
+    get_market_service,
+    get_portfolio_service,
+    get_rule_service,
+)
+from app.services.forecasts import ForecastService
+from app.services.market_data import MarketDataService
+from app.services.portfolio import PortfolioService
+from app.services.rules import RuleService
+from tests.conftest import TODAY
 
 from .test_portfolio_api import buy, krw_trade
+
+
+def _rules_as_of_today(
+    db: Session = Depends(get_db),
+    market: MarketDataService = Depends(get_market_service),
+    portfolio: PortfolioService = Depends(get_portfolio_service),
+    forecasts: ForecastService = Depends(get_forecast_service),
+) -> RuleService:
+    """`get_rule_service` with its clock on the fixtures' TODAY. The fake provider's bars end
+    there, and the check reads the bars of the 400 days before "today": on the real clock the
+    window slides past them and every check would run on zero bars (ISSUE-051)."""
+    return RuleService(db, market, portfolio, get_settings(), forecasts, today=lambda: TODAY)
 
 
 @pytest.fixture(autouse=True)
 def _no_model(client, tmp_path):
     client.app.dependency_overrides[get_artifacts_dir] = lambda: tmp_path
+    client.app.dependency_overrides[get_rule_service] = _rules_as_of_today
 
 
 def settings_body(client, **over):

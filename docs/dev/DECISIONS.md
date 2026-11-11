@@ -570,3 +570,25 @@
    - 강의 검증 실패의 범위는 **앱 전체 → 강의 한 편**으로 좁혔다(ISSUE-050 재발 뒤). `catalog._load()`는 모듈을 하나씩 import해 실패한 강의만 `LESSON_LOAD_ERRORS`에 기록·로그하고 `LESSONS`에는 성공분만 남기며, `GET /api/learn/lessons`의 `load_errors`와 화면 단서로 드러낸다. `tests/test_learn_content.py`가 `LESSON_LOAD_ERRORS == {}`를 단언하므로 CI는 여전히 한 편이라도 틀리면 실패한다(조용한 대체가 아님).
    - 일정 조회에 실패한 심볼은 `error_ttl`(기본 1시간)이 지나기 전에는 다시 받지 않는다(verifier 1차 관찰: 홈 카드가 5분마다 `/api/learn/week`를 불러 상장폐지 종목 하나로 5분마다 yfinance를 쳤다). `EventService`는 요청마다 새로 만들어져 메모리 캐시가 의미 없고 `event_syncs`에 시도 시각 칼럼이 없어, 마이그레이션 대신 `event_syncs.error`를 `"<ISO 시도 시각> <메시지>"`로 저장하고 `split_error`로 나눈다(응답 `errors`에는 메시지만). `stale_symbols` 표시는 그대로이고, 접두사 없는 옛 행은 다음 요청에 한 번 재시도된다.
    - 강의 수준은 작성자가 기초 11편·중급 3편(예측 읽기·코인·환율)으로 정했다. 계획 표의 중급 후보 중 보유 기간·실적 주간·리밸런싱은 본문 난이도가 기초 수준이라 기초로 두었다.
+
+## D-035 배포 1단계: 내 PC + Cloudflare Tunnel, 공개는 읽기 전용 데모 (2026-11-10, 사용자 결정, 리드)
+
+배경: 사용자가 "상용화 가능하게, 일단 배포까지"를 요청했다. 점검 결과 앱은 로그인·사용자 구분이 없는 로컬 1인용이라 그대로 공개할 수 없다. 사용자가 "1단계만 먼저, Cloudflare Tunnel, 일단 데모"로 정했다. 다중 사용자·Postgres·유료 시세·약관(계획 K-2)은 이번에 하지 않는다.
+
+1. **공개되는 것은 데모 인스턴스뿐이다.** Docker Compose로 `demo`(앱, `AM_DEMO_MODE=true`, 가짜 장부 `seed`)와 `tunnel`(cloudflared) 두 컨테이너를 띄운다. 컨테이너에는 실제 DB·`backend/.env`·`backend/artifacts/`를 넣지도 마운트하지도 않는다(공개 프로세스가 내 파일과 키를 볼 수 없게 하는 것이 Docker를 쓰는 이유). 실제 장부를 쓰는 인스턴스는 지금처럼 PC에서 로컬로만 돈다.
+2. **데모는 fail-closed 읽기 전용이다.** `/api` 아래 GET/HEAD/OPTIONS가 아닌 요청은 403(`code: demo_read_only`)이고, 계산만 하는 POST(장기 시뮬레이션 등)만 명시적 허용 목록으로 연다. 테스트가 등록된 라우트 전체를 열거해 목록에 없는 쓰기 라우트가 새로 생기면 실패한다. 시세는 Fake가 아니라 실제 공급자를 쓴다(조용한 대체 금지 유지). 임의 심볼 조회로 시세 캐시를 부풀리거나 Yahoo에 차단당하지 않도록 심볼 허용 범위와 IP별 요청 제한을 둔다.
+3. **로그인(단일 계정)도 이번에 만든다.** 나중에 실제 인스턴스를 터널에 올릴 때 필요하다. 새 의존성 없이 표준 라이브러리(scrypt 해시, HMAC 서명 세션 쿠키 HttpOnly·SameSite=Strict, 로그인 시도 제한, 쓰기 요청 Origin 검사)로 만든다. `AM_ENV=production`이면 데모 모드이거나 로그인 설정이 있어야만 서버가 뜬다(둘 다 없으면 시작 거부). 개발 기본값(`development`, 로그인 없음)은 기존 동작 그대로다. 비밀번호 해시는 사용자가 직접 만든다(에이전트는 비밀번호를 입력하지 않는다).
+4. **단일 이미지**: node로 프론트를 빌드하고 FastAPI가 `AM_STATIC_DIR`의 정적 파일과 SPA fallback을 서빙한다. 워커 1개(서비스의 메모리 캐시·백그라운드 스레드 전제). `torch`(예전 LSTM 비교용)는 선택 그룹으로 옮기고 import를 지연시켜 이미지에서 뺀다. 예측 모델 artifacts는 학습 당시 실제 보유 종목이 들어 있어 데모 이미지에 넣지 않으며, 화면은 지금처럼 "모델 없음"으로 답한다.
+5. **터널**: 계정 없이 되는 quick tunnel(`*.trycloudflare.com`, 주소가 매번 바뀜)을 기본으로 하고, 도메인이 있으면 `TUNNEL_TOKEN`으로 고정 주소를 쓴다. Cloudflare 계정·도메인·토큰 입력은 사용자가 한다. 앱은 `CF-Connecting-IP`를 설정으로 켰을 때만 클라이언트 IP로 믿는다(컨테이너 포트는 호스트 밖으로 열지 않는다).
+6. **담당**: `app/security/**`·`api/auth.py`·`config.py`의 배포 필드·`main.py` 미들웨어 배선·보안 테스트 = risk-engineer. `Dockerfile`·`.dockerignore`·`deploy/**`·`pyproject.toml` 그룹·엔트리포인트·DB 백업 스크립트 = data-engineer. 정적 서빙·지연 import·로그인 화면·401 처리·데모 띠·CSP에 맞춘 프론트 수정·CI = app-engineer(risk 뒤). verifier가 이미지 빌드·스모크·비로그인 401 전수·데모 쓰기 403 전수·시크릿 누출을 확인한다.
+
+7. **착수 중 결정(2026-11-10~11)**
+   - **계약보다 더 닫은 것(risk-engineer)**: 시작 거부 조건 추가(해시만 있고 시크릿 없음, 시크릿 32바이트 미만, 해시 형식 오류, production의 약한 scrypt 파라미터), 빈 `AM_STATIC_DIR`은 미설정으로 취급(빈 문자열이면 작업 디렉터리를 서빙할 뻔함), `hide_input_in_errors`(시작 검증 오류가 시크릿 일부를 로그에 찍지 않게), 로그인 미설정 서버의 로그인은 409 `login_not_configured`, production 쿠키 이름 `__Host-am_session`, 모든 주소 합산 로그인 실패 한도(`login_max_attempts × 20`, 닫힘 쪽이라 공격 중에는 주인도 잠김), 데모·인증 경로의 본문 64KiB 상한, CORS를 TrustedHost 안쪽으로 옮김. 쓰기 Origin 검사는 호스트만 비교한다(터널 뒤에서 앱은 http, 브라우저는 https).
+   - **데모 허용 쓰기는 3개**: `POST /api/projection/simulate`(계산만), `POST /api/auth/login`·`logout`. 나머지 쓰기 20개는 403. `POST /api/imports/manual`은 미리보기지만 본문의 임의 티커로 시세를 조회하므로 막는다. 강의 진행 저장도 방문자 전원이 한 DB를 공유하므로 막는다.
+   - **데모 종목 제한은 미들웨어가 아니라 앱 전역 의존성**이다(`symbol`/`symbols` 파라미터, 공급자·캐시에 닿기 전). 허용 집합 = 데모 장부 종목 + 그 업비트 마켓 + `AM_BENCHMARKS` + 내부 대리 지표. GET 파라미터 이름이 새로 생기면 테스트가 실패해 검토를 강제한다.
+   - **이미지는 Python 3.11**(브리핑은 3.12였다): `backend/.python-version`·로컬·CI가 3.11이고 `uv.lock`이 3.12에서는 다른 numpy를 고른다. 테스트가 한 번도 돈 적 없는 조합을 공개 이미지에 쓰지 않는다.
+   - **이미지에는 기본 의존성만**(`uv sync --no-default-groups`): torch(`lstm` 그룹)뿐 아니라 lightgbm·transformers(`ml`)도 없다. 모델 artifacts를 싣지 않기로 했으므로 추론 라이브러리도 필요 없다. LSTM 라우트는 torch가 없으면 501 `lstm_not_installed`, 뉴스 감성은 `sentiment_enabled=false`로 답한다(조용한 대체 없음).
+   - **데모 seed 실패는 기본 중단**: 첫 시작에서 실제 시세를 못 받으면 빈 데모를 공개하지 않고 로그를 남긴 뒤 300초 후 종료해 재시작 정책이 다시 시도한다(`DEMO_SEED_ON_FAILURE=continue`로만 빈 장부 허용). Fake 시세로 바꾸지 않는다.
+   - **터널 서비스는 둘**(`tunnel` = quick, `tunnel-named` = named, compose profile로 선택). uvicorn은 두 터널 컨테이너의 고정 주소에서 온 `X-Forwarded-*`만 믿고, 요청 제한은 `CF-Connecting-IP`를 직접 읽는다.
+   - **같은 PC의 실제 인스턴스 보호(data-engineer 발견, risk-engineer 의견)**: Docker Desktop의 컨테이너는 `host.docker.internal`로 호스트의 localhost 서비스와 집 LAN에 닿는다. 데모 컨테이너가 뚫리면 로그인 없는 8001 실제 인스턴스가 열려 있다. `TrustedHostMiddleware`·CORS·SameSite는 브라우저 전제라 방어가 아니고, compose `extra_hosts`로 이름만 막는 것은 게이트웨이 IP로 우회되어 넣지 않는다. 1단계 결론: **공개 데모를 돌리는 PC에서는 실제 앱에 항상 로그인을 켠다**(DEPLOY.md·TODO_FOR_ME에 사용자 단계로, 코드로 강제하지 않음 — 실제 앱은 컨테이너가 떠 있는지 알 수 없다). 이를 위해 테스트가 `backend/.env`의 로그인 설정에 영향받지 않게 conftest에서 설정을 고정한다. 구조적 해결(허용 도메인만 통과시키는 egress 프록시 + `internal` 네트워크, 또는 데모를 호스팅으로 이전)은 2단계 선택지로 남긴다.
+   - **Docker Desktop은 리드가 켰다**(2026-11-10·11). 처음에는 사용자 단계로 두었으나 이미지 빌드 검증 없이 배포 파일을 넘길 수 없어 바꿨다. 터널 연결(공개)과 Cloudflare 계정·토큰·비밀번호 입력은 계속 사용자 몫이다.

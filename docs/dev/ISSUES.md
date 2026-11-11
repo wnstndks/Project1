@@ -513,3 +513,38 @@
 - 해결 1차(quant-researcher, 리드 결정 D-034 8): 본문 상한을 1,500 → 1,800자로 올림(두 페르소나가 요구한 구조 문장을 넣을 자리; 하한 700 유지, 읽기 시간 계산 동일)과 "저장 전에 `tests/test_learn_content.py`를 먼저 돌린다"는 절차. → **재발**: verifier 1차 검증(N-LEARN-1) 중 같은 날 두 번 더(글자수 2,644·2,025·1,871자 초과, 이어서 금지어) 앱 전체 import가 막혀 홈·거래·코치까지 모든 API가 죽었다. 절차만으로는 막히지 않음.
 - 해결 2차(리드 결정, quant-researcher `catalog.py` + app-engineer 서비스·화면): fail-closed의 범위를 앱 전체 → 강의 한 편으로 좁힘. `catalog._load()`가 모듈을 하나씩 import해 실패한 강의만 빼고 `LESSON_LOAD_ERRORS[id]`에 기록·로그하며, `GET /api/learn/lessons`가 `load_errors`와 단서를 내보내고 화면이 그 단서를 보여 준다. `tests/test_learn_content.py`는 `LESSON_LOAD_ERRORS == {}`를 단언하므로 CI는 여전히 한 편이라도 틀리면 실패한다(조용한 대체 아님).
 - 검증: `tests/test_learn_content.py` 189 passed(깨진 모듈·잘못된 export·미작성 id를 monkeypatch로 흉내 내 나머지가 살아남는 테스트 포함), verifier 2차 검증에서 재현 예정.
+
+### [ISSUE-051] `test_portfolio_api.py::test_sparklines_read_closes_where_each_position_is_priced`가 2026-11-11부터 날짜만으로 실패함
+- 현상: 2026-11-11 전체 pytest `1 failed, 1431 passed`. 실패 줄은 `assert 0 < len(aapl["closes"]) < len(btc["closes"])` → `assert 5 < 5`. 전날 같은 코드로는 전부 통과했다.
+- 원인: `tests/conftest.py`의 `provider`는 `FakeProvider(today=TODAY)`이고 `TODAY = date(2026, 10, 16)`(금요일)인데, `PortfolioService.sparklines`는 서비스의 `today()`(실제 오늘)에서 30일 창을 잡는다. 실제 날짜가 11-11이 되면 창 시작이 10-12(월)라 두 시계열 모두 10-12~10-16의 5봉만 남아 "평일 수 < 매일 수" 가정이 깨진다. ISSUE-049와 같은 유형(고정 픽스처 + 벽시계).
+- 근거: `app/services/portfolio.py`의 `start = self.today() - timedelta(days=days)`, `tests/conftest.py`의 `TODAY`, 실패 메시지의 두 목록 길이(5, 5).
+- 해결(app-engineer, 2026-11-11): 이 테스트만 `get_portfolio_service`를 `today=TODAY`로 고정하는 override를 쓰고 기대값도 `TODAY` 기준으로 바꿨다(봉 수 23·31 단언). 프로덕션 코드는 바꾸지 않았다. 서비스 기본 시계를 N일 앞당기는 임시 pytest 플러그인(스크래치)으로 전체를 돌려 같은 유형을 찾았다: 수정 전 +30일·+200일 모두 이 1건만 실패.
+- 검증: 수정 뒤 현재 시계와 +200일 시계에서 전체 통과(app-engineer). verifier 확인(VERIFICATION.md "배포 1단계 검증" N 절): `test_portfolio_api.py` 26 passed, 단언이 약해지지 않았음, 더 강한 시계 이동에서 이 테스트는 통과. 같은 유형이 더 나와 ISSUE-054로 이어졌다. 남은 위험: 함수 본문에서 `date.today()`를 직접 부르는 곳(`services/forecasts.py` 730일 창, `services/projection.py` 5년 창, `api/market.py` 기본 start 365일)은 플러그인이 옮기지 못한다. 가짜 시세가 2026-10-16에서 끝나므로 시간이 지나면 같은 식으로 줄어든다(TODO_FOR_ME 후속).
+
+### [ISSUE-052] `backend/.env`에 로그인이나 production 설정을 넣으면 기존 API 테스트가 전부 401/403이 됨(배포 작업 중 발견, 잠재)
+- 현상: 실제 실패는 아직 없었다. risk-engineer가 보안 계층을 만든 뒤 지적: `tests/conftest.py`의 `client`가 `create_app()` → `get_settings()`로 `backend/.env`를 읽으므로, 사용자가 `.env`에 `AM_AUTH_PASSWORD_HASH`·`AM_SESSION_SECRET`(또는 `AM_ENV=production`, `AM_DEMO_MODE=true`, 요청 제한)을 넣는 순간 기존 API 테스트 1,000여 건이 401/403/429가 된다.
+- 원인: 테스트 앱이 개발자의 로컬 설정 파일에 의존한다. 배포 전에는 `.env`에 동작을 바꾸는 값이 키 정도뿐이라 드러나지 않았다.
+- 근거: `tests/conftest.py`의 `create_app()` 호출, `app/config.py`의 `env_file=BACKEND_DIR / ".env"`. DEPLOY.md가 "공개 데모를 돌리는 PC에서는 실제 앱에 항상 로그인을 켠다"고 안내하므로 곧 현실이 되는 조합이다(D-035 7).
+- 해결(app-engineer, 2026-11-11): conftest가 app 모듈을 import하기 전에 `AM_ENV=development`, `AM_DEMO_MODE=false`, `AM_AUTH_PASSWORD_HASH`·`AM_SESSION_SECRET` 빈 값, `AM_RATE_LIMIT_PER_MINUTE=0`, `AM_CLIENT_IP_HEADER`·`AM_STATIC_DIR` 빈 값, `AM_ALLOWED_HOSTS` 기본값을 환경변수로 고정한다. 보안 테스트 3개 파일은 `Settings(_env_file=None)`을 주입해 원래 영향이 없다. 실매매 값도 같은 자리에서 꺼짐으로 고정한다(verifier N-DEPLOY-11 제안: 규칙은 코드·에이전트가 실매매를 켜지 않는다는 것이고, 테스트 프로세스에서 꺼짐으로 고정하는 것은 그 규칙을 강화하는 쪽이다. 사용자의 `backend/.env`는 건드리지 않는다).
+- 검증: verifier 2차 M 절 — 셸 환경변수로 production·데모·로그인·요청 제한 1·다른 허용 호스트·정적 폴더를 준 적대적 환경에서도 API 테스트 10개 파일 275 passed(평범한 환경과 같음). 실매매 값 고정을 넣은 뒤 재실행도 같음.
+
+### [ISSUE-053] 새로 쓴 `tests/test_static_serving.py`가 끝나지 않아 전체 pytest가 97%에서 30분 넘게 멈춤
+- 현상: 2026-11-11 11:14 verifier의 전체 pytest가 97% 부근에서 멈췄고, 같은 시각 app-engineer의 시계 이동 실행도 끝나지 않았다. CPU를 쓰면서 진행이 없었다.
+- 원인: 앱 코드가 아니라 테스트 도우미. 경로 탈출 테스트가 ASGI 앱을 직접 부르면서 쓴 가짜 `receive()`가 매번 즉시 `http.request`를 돌려줬다. Starlette `FileResponse`는 파일을 보내는 동안 연결 종료를 기다리며 `receive()`를 반복 호출하므로 양보 없는 무한 루프가 됐다(`index.html`을 주는 첫 경로에서).
+- 근거: 멈춘 테스트 `test_nothing_outside_the_folder_can_be_read`, 도우미의 `receive` 구현, verifier 로그 `A_pytest_full_hung_1114.log`.
+- 해결(app-engineer, 2026-11-11): 도우미를 "요청 1회 뒤에는 대기"로 바꾸고 `asyncio.wait_for` 20초 상한을 넣었다. 파일은 5초 안에 끝난다(43건).
+- 검증: verifier가 12:32에 그 파일 43 passed(4.7초)를 확인. "실제 서버에서는 일어나지 않는다"는 주장은 verifier가 반박하지 못했다(K 절): 실제 uvicorn과 컨테이너에 keep-alive 35요청, Range 9종, 동시 50요청, 전송 중 끊기 30회, 멈춘 연결 20개를 보낸 뒤에도 전부 끝나고 서버가 정상. 교훈: 작성 중인 테스트가 멈춘 채 디스크에 남으면 다른 사람의 전체 pytest가 함께 걸린다. ASGI를 직접 부르는 도우미에는 처음부터 시간 상한을 둔다.
+
+### [ISSUE-054] 날짜가 지나면 깨지는 테스트가 ISSUE-051 말고도 더 있었음(가장 이른 것은 2026-11-30경)
+- 현상: verifier가 함수 본문의 `date.today()`까지 옮기는 시계 이동 플러그인으로 전체 pytest를 돌리자 추가 실패가 나왔다. `test_ml.py::test_train_smoke_and_prediction_api`는 2026-12-01부터 실패(`assert 404 == 200`), `test_rules_api.py::test_check_reports_each_holding_in_its_own_currency`는 2027-11경부터(`bars == 0`), `test_forecasts_api.py` 10건은 2028-09-21~10-31 사이부터, `test_projection.py` 2건과 `test_demo_mode.py` 2건은 2030-12~2032-01 사이부터 실패. ISSUE-051을 고칠 때 쓴 첫 플러그인은 서비스의 기본 시계 인자만 옮겨서 이 넷을 놓쳤다.
+- 원인: ISSUE-049·051과 같다. 가짜 시세는 `TODAY = 2026-10-16`에서 끝나는데 서비스가 실제 오늘에서 창을 잡는다. LSTM 예측은 입력 창이 약 110일이라 몇 주 만에 봉이 모자라고, 규칙 점검·예측·시뮬레이션은 창이 길어 더 늦게 드러난다.
+- 근거: verifier 스크래치의 시계 이동 로그와 이분 탐색 결과(VERIFICATION.md "배포 1단계 검증 2차" N 절, N-DEPLOY-10), `services/predictions.py`·`services/forecasts.py`·`services/projection.py`·`api/market.py`의 `date.today()` 호출.
+- 해결(app-engineer, 2026-11-11): `PredictionService`에 `today` 기본 인자(`date.today`, 동작 불변)를 넣고 `test_ml.py`가 서비스의 오늘을 `TODAY`로 고정. `test_rules_api.py`는 기존 autouse fixture에서 `get_rule_service`를 `today=TODAY`로 고정(프로덕션 변경 없음). 단언은 그대로다. `test_forecasts_api.py`(2028-09 이후)와 `test_projection.py`·`test_demo_mode.py`의 4건(2030-12 이후)은 `services/forecasts.py`의 날짜 호출이 캐시·달력 로직과 얽혀 있어 이번에는 고치지 않았다(TODO_FOR_ME 팀 후속).
+- 검증: app-engineer — 두 파일 22건이 +20·+400·+800일에서 통과, 현재 시계 전체 1479 passed. verifier 재확인(VERIFICATION.md "마지막 재확인") — +0/+20/+60/+400일 모두 1479 passed, `PredictionService`의 기본 시계는 실제 시계라 실서비스 동작 불변, 두 테스트의 단언은 줄지 않음. 교훈: 고정 날짜 픽스처를 쓰는 테스트는 서비스의 시계도 같이 고정한다. 시계를 옮긴 전체 실행을 단계가 끝날 때 한 번씩 돌린다.
+
+### [ISSUE-055] 검증 기록에 적은 문자열 때문에 실매매 방지 테스트가 실패함
+- 현상: 2026-11-11 14:1x 시계 이동 전체 실행 중 `tests/test_execution.py::test_no_file_turns_live_trading_on` 1건 실패. 메시지는 `docs/dev/VERIFICATION.md`의 한 줄을 가리켰다. 같은 실행의 앞 회차(그 줄이 생기기 전)는 통과했다.
+- 원인: 이 테스트는 저장소 파일을 훑어 실매매를 켜는 꼴의 문자열(변수 이름 뒤에 켜짐 값)이 있으면 실패한다. verifier가 "적대적 환경에서도 테스트가 통과한다"를 설명하면서 그 꼴의 문자열을 그대로 인용했다. 코드·설정이 바뀐 것은 아니다.
+- 근거: 실패 메시지의 파일·줄, `tests/test_execution.py`의 `PATTERNS`.
+- 해결(verifier, 리드 지시): 그 줄을 "실매매 값을 켠 환경변수" 같은 표현으로 바꿨다(자기 절의 문구 수정).
+- 검증: 수정 뒤 `tests/test_execution.py` 12 passed, 그 테스트의 패턴 4개를 `VERIFICATION.md` 전체에 돌려 0건(verifier N-DEPLOY-14). 교훈: 기록·문서에서도 그 변수 이름과 켜짐 값을 붙여 쓰지 않는다. 가드 테스트가 문서까지 훑는 것은 의도된 동작이다.

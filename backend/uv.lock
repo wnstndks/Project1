@@ -84,7 +84,7 @@ wheels = [
 name = "asset-manager-backend"
 version = "0.1.0"
 source = { virtual = "." }
-default-groups = ["dev", "ml"]
+default-groups = ["dev", "lstm", "ml"]
 dependencies = [
     { name = "alembic" },
     { name = "anthropic" },
@@ -100,8 +100,6 @@ dependencies = [
     { name = "python-multipart" },
     { name = "scikit-learn" },
     { name = "sqlalchemy" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
-    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "yfinance" },
 ]
@@ -111,6 +109,10 @@ dev = [
     { name = "httpx2" },
     { name = "pytest" },
     { name = "ruff" },
+]
+lstm = [
+    { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
 ]
 ml = [
     { name = "lightgbm" },
@@ -132,7 +134,6 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "torch", specifier = ">=2.4", index = "https://download.pytorch.org/whl/cpu" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "yfinance", specifier = ">=0.2.50" },
 ]
@@ -143,6 +144,7 @@ dev = [
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.6" },
 ]
+lstm = [{ name = "torch", specifier = ">=2.4", index = "https://download.pytorch.org/whl/cpu" }]
 ml = [
     { name = "lightgbm", specifier = ">=4.7" },
     { name = "transformers", specifier = ">=4.46" },

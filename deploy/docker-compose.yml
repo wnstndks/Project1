@@ -1,0 +1,126 @@
+# Read-only public demo behind a Cloudflare Tunnel (DECISIONS.md D-035).
+#
+# Run from this folder (deploy/), so that deploy/.env is the file Compose reads:
+#   docker compose up -d --build                      demo only, http://127.0.0.1:8010
+#   docker compose --profile quick up -d --build      + random https://....trycloudflare.com
+#   docker compose --profile named up -d --build      + fixed hostname (TUNNEL_TOKEN)
+#
+# What the containers can see: the image (code only) and one named volume with the demo
+# database. Nothing from the host is mounted: no backend/.env, no backend/asset_manager.db,
+# no backend/artifacts. Do not add env_file, bind mounts or host paths here.
+
+name: asset-manager-demo
+
+x-locked-down: &locked-down
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-cloudflared: &cloudflared
+  <<: *locked-down
+  image: cloudflare/cloudflared:2026.10.7
+  depends_on:
+    demo:
+      condition: service_healthy
+  mem_limit: 256m
+  memswap_limit: 256m
+  cpus: 0.5
+  pids_limit: 128
+
+services:
+  demo:
+    <<: *locked-down
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: asset-manager-demo:local
+    # Every setting is written out here. deploy/.env only fills the ${...} placeholders;
+    # it is not handed to the container, and backend/.env is never read.
+    environment:
+      AM_ENV: production
+      AM_DEMO_MODE: "true"
+      AM_LIVE_TRADING: "false"
+      # Real prices. The demo is never switched to synthetic data.
+      AM_MARKET_PROVIDER: yfinance
+      AM_STATIC_DIR: /app/static
+      AM_DATABASE_URL: sqlite:////data/demo.db
+      # Empty on purpose: trained models carry the real holdings, so the demo answers
+      # "no model". The folder sits on the volume only so nothing tries to write under /app.
+      AM_ARTIFACTS_DIR: /data/artifacts
+      # JSON arrays. 127.0.0.1 is the container health check, localhost the loopback port
+      # below; the third entry is the public name.
+      AM_ALLOWED_HOSTS: '["localhost","127.0.0.1","${DEMO_HOSTNAME:-*.trycloudflare.com}"]'
+      # The frontend is served from the same origin, so no other origin may call the API.
+      AM_CORS_ORIGINS: "[]"
+      AM_RATE_LIMIT_PER_MINUTE: "${DEMO_RATE_LIMIT_PER_MINUTE:-120}"
+      # Set by Cloudflare's edge for every request that comes through the tunnel.
+      AM_CLIENT_IP_HEADER: CF-Connecting-IP
+      # Optional: SEC EDGAR wants "app-name contact-email". Empty skips the 13F investors.
+      AM_SEC_USER_AGENT: "${DEMO_SEC_USER_AGENT:-}"
+      # Entrypoint switches (backend/scripts/entrypoint.sh).
+      # uvicorn believes X-Forwarded-For/-Proto only from the two tunnel containers.
+      FORWARDED_ALLOW_IPS: "${DEMO_SUBNET_PREFIX:-172.30.35}.3,${DEMO_SUBNET_PREFIX:-172.30.35}.4"
+      DEMO_SEED_ON_FAILURE: "${DEMO_SEED_ON_FAILURE:-abort}"
+      # numpy/scikit-learn size their thread pools by the host's cores, not by the CPU limit
+      # below: keep them in line with it.
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    volumes:
+      - demo-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    # Loopback of this PC only, for checking before the tunnel is up. Never 0.0.0.0.
+    ports:
+      - "127.0.0.1:${DEMO_LOCAL_PORT:-8010}:8000"
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.5
+    # Threads count as pids: request threads + background fetch pools stay far below this.
+    pids_limit: 512
+    stop_grace_period: 20s
+    networks:
+      edge:
+        ipv4_address: ${DEMO_SUBNET_PREFIX:-172.30.35}.2
+
+  # Quick tunnel: no Cloudflare account. The address is random, changes on every start and
+  # is printed in this container's log (docker compose logs tunnel).
+  tunnel:
+    <<: *cloudflared
+    profiles: [quick]
+    command: tunnel --no-autoupdate --url http://demo:8000
+    networks:
+      edge:
+        ipv4_address: ${DEMO_SUBNET_PREFIX:-172.30.35}.3
+
+  # Named tunnel: fixed hostname from your Cloudflare account. In the Zero Trust dashboard
+  # the tunnel's public hostname must point at the service http://demo:8000.
+  tunnel-named:
+    <<: *cloudflared
+    profiles: [named]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    networks:
+      edge:
+        ipv4_address: ${DEMO_SUBNET_PREFIX:-172.30.35}.4
+
+volumes:
+  # Demo ledger and price cache only. `docker compose down -v` deletes it; the next start
+  # seeds a fresh demo ledger.
+  demo-data:
+
+networks:
+  # Fixed addresses so the app can tell the tunnel from anything else on the bridge. If
+  # the range collides with another network on this PC, change DEMO_SUBNET_PREFIX.
+  edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DEMO_SUBNET_PREFIX:-172.30.35}.0/28

@@ -7,6 +7,7 @@ import { BenchmarkChart } from '../components/BenchmarkChart'
 import { CONGRESS_DAYS, CongressTrades } from '../components/CongressTrades'
 import { GuruOverlap } from '../components/GuruOverlap'
 import { Card, ErrorBox, Muted, SegmentedControl, Skeleton } from '../components/ui'
+import { AUTH_TEXT } from '../lib/auth'
 import {
   BENCHMARK_ORDER,
   benchmarkLabel,
@@ -18,6 +19,7 @@ import { displaySymbol } from '../lib/format'
 import { isLoaded, needsSecUserAgent, pct, sourceLabel } from '../lib/gurus'
 import { MIN_HISTORY_DAYS, historySpanDays } from '../lib/history'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
+import { useDemoMode } from '../lib/session'
 
 const SEC_HINT = "backend/.env에 AM_SEC_USER_AGENT를 '앱이름 이메일' 형식으로 넣으면 비교할 수 있습니다."
 
@@ -146,6 +148,7 @@ function BenchmarkSection() {
 function OverlapSection() {
   const compare = useGuruCompare()
   const sync = useSyncGurus()
+  const demo = useDemoMode()
   if (compare.error)
     return (
       <Card title="유명 투자자와 겹치는 종목">
@@ -168,13 +171,19 @@ function OverlapSection() {
         <button
           type="button"
           onClick={() => sync.mutate()}
-          disabled={syncing || sync.isPending}
+          disabled={syncing || sync.isPending || demo}
+          title={demo ? AUTH_TEXT.demoReadOnly : undefined}
           className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover disabled:opacity-50"
         >
           다시 불러오기
         </button>
       }
     >
+      {sync.error ? (
+        <div className="mb-3">
+          <ErrorBox error={sync.error} />
+        </div>
+      ) : null}
       {syncing && (
         <p role="status" className="mb-3 text-sm text-ink-2">
           처음 불러오는 중(수십 초)… 받는 대로 자동으로 채워집니다.

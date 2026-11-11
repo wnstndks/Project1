@@ -1448,3 +1448,527 @@ verifier는 세션이 끊겨 브라우저 확인을 수행하지 못해 리드�
 - `oversizing`의 "손절선까지 손실 합" 줄은 표본 5건 이상일 때만 나오게 바뀌어 이번 데모(3건)에서는 그 줄의 수치를 대조하지 못했다. 표본이 충분한 데이터로의 대조는 다음 검증 과제.
 
 재현: backend\ `py -3.11 -m uv run pytest -o addopts="" -q` / `ruff check .` / `ruff format --check .` / `alembic heads`; `AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run alembic check`; `PYTHONPATH=. py -3.11 -m uv run python scripts/check_lesson_links.py`; frontend\ `npm test -- --run` / `npm run lint` / `npm run build` / `npm run gen:api`(전후 sha1 비교); 데모 서버 `AM_DATABASE_URL=sqlite:///demo.db py -3.11 -m uv run uvicorn app.main:app --port 8002` → `GET /api/learn/skills`·`/week`×2·`/lessons`; 깨진 강의 시뮬레이션은 `backend/app` 사본에서 두 편을 고친 뒤 `PYTHONPATH=<사본> AM_DATABASE_URL=sqlite:///verify_empty.db <backend>/.venv/Scripts/python.exe -m uvicorn app.main:app --port 8003`(실제 콘텐츠 불변); 인용 확인은 urllib로 4쪽 저장 후 문구 검색. 검증 뒤 8002·8003 종료, `verify_empty.db`·사본 삭제.
+
+## 배포 1단계 검증 1차 (2026-11-11, verifier)
+
+대상: 계획 K-1 / 결정 D-035(읽기 전용 데모 컨테이너 + 단일 계정 로그인). 코드·설정·문서는 고치지 않았고, 이 절은 항목이 끝날 때마다 이어 적는다(추가만, 기존 내용 수정 없음). 스크립트·로그는 스크래치 `scratchpad/verifier/deploy/`에 있다(저장소 밖).
+
+**이 검증의 전제와 한계**
+- 1차 범위 밖(2차에서 본다): `main.py`의 정적 서빙 + SPA fallback, `tests/test_static_serving.py`, CI, 프론트 테스트 일부. app-engineer가 검증 도중(11:11~) `backend/app/main.py`와 새 파일 `backend/app/api/frontend.py`를 고치고 있었다. 아래 결과는 **각 항목에 적은 시각의 작업 트리** 기준이고, 그 영역에서 생긴 일시적 실패는 "진행 중"으로 구분했다.
+- 터널(`quick`·`named` profile, cloudflared)은 띄우지 않았다. 터널을 거쳐야만 확인되는 것(Cloudflare가 넣는 `CF-Connecting-IP`, 터널 뒤의 방문자별 요청 제한, cloudflared의 `read_only` 동작)은 **미실시**다.
+- `backend/.env`, 실제 DB `backend/asset_manager.db`, `backend/artifacts/`는 열지 않았다. 스크래치 인스턴스는 `Settings.model_config["env_file"] = None`으로 `.env`를 읽지 않게 하고 모든 설정을 환경변수로만 주었다(DB·artifacts 경로가 스크래치가 아니면 시작 전 assert로 중단).
+- 스크래치 인스턴스의 외부 서비스(하원 서기국·13F/ARK·GDELT·스크린샷 추출기)는 호출 이름만 기록하고 예외를 던지는 기록용 대역으로 바꿨다(요청이 방어선을 통과해도 외부로 나가지 않게, 그리고 통과 여부를 셀 수 있게). 시세 공급자는 `AM_MARKET_PROVIDER=fake`의 `FakeProvider`를 호출 기록 래퍼로 감쌌다. uvicorn·라우터·미들웨어·설정 검증은 실제 코드 그대로다.
+- 로그인 검증용 비밀번호·세션 시크릿은 스크립트 안에서 무작위로 만들어 127.0.0.1 스크래치 인스턴스에만 썼고, 파일·로그·이 기록 어디에도 값을 남기지 않았다(누출 검사는 "문자열이 있다/없다"만 출력).
+- 기록의 종목은 데모 seed(`backend/seed/`)와 합성 티커(`AAA`·`BBB`·`CCC`)뿐이다.
+- 리드에게 보내는 중간 체크포인트: 이 세션에는 SendMessage 도구가 없어(사용 가능한 도구는 Read·Grep·Glob·Bash·Write·handback뿐) 보내지 못했다. 대신 이 절에 항목마다 바로 적는다.
+
+**진행 기록**
+- 11:14 전체 `pytest` 1회차 시작 → 97% 부근에서 30분 넘게 멈춤. 리드 안내: 원인은 app-engineer가 11:12에 새로 만든 `backend/tests/test_static_serving.py`(작성 중, 1차 범위 밖). 11:46 **내가 띄운** pytest 프로세스 사슬만 종료하고(PID 31112와 그 부모 사슬, 시작 11:14:06, 로그 `A_pytest_full_hung_1114.log`) `--ignore=tests/test_static_serving.py`로 다시 돌렸다(11:46:36 시작, PID 33312 사슬). 같은 시각에 돌던 다른 팀원의 pytest(11:46:59 시작, `tests/test_static_serving.py` 단독)와 8001 개발 서버는 건드리지 않았다(종료 전후 `/api/health` 200).
+- 11:50경 리드 정정: 멈춤은 app-engineer가 고쳤다고 함(테스트 도우미의 가짜 `receive()`가 매번 즉시 `http.request`를 돌려줘 Starlette `FileResponse`의 disconnect 대기와 무한 루프, "앱 코드 문제가 아님"이라는 주장). 이 주장은 내가 확인하지 않았고 **2차 반박 대상**이다(아래 "2차에서 볼 것").
+
+### A. 재현 (백엔드 테스트·린트) — 통과
+
+| 무엇 | 결과 | 시각·로그 |
+| --- | --- | --- |
+| `py -3.11 -m uv run pytest -o addopts="" -q -p no:cacheprovider --ignore=tests/test_static_serving.py` | **1436 passed**, 실패 0 (149.85초) | 11:46~11:49, `A_pytest_full2.log` |
+| 보안·배포 테스트 5개 파일 한 번에 | **175 passed** | 11:53, `A_pytest_five.log` |
+| 파일별 | `test_security` 71 / `test_auth` 31 / `test_demo_mode` 40 / `test_backup_db` 23 / `test_import_without_torch` 10 | 같은 로그 |
+| `tests/test_static_serving.py` 단독(작성 중, 2차 대상) | 43 passed (4.7초) — 12:32의 파일(11:53 수정본) 기준 사실만 기록 | `A_pytest_static.log` |
+| `ruff check . --no-cache` | All checks passed | `A_ruff.log` |
+| `ruff format --check . --no-cache` | 191 files already formatted | 같은 로그 |
+
+- 팀원 보고와 대조: risk-engineer 보고의 142(71+31+40)와 일치. 전체 수는 보고(1435 통과 + 1 실패)와 달리 **1436 통과**다. 알려진 실패 `test_portfolio_api.py::test_sparklines_read_closes_where_each_position_is_priced`는 이 시각의 작업 트리에서 통과했다(`test_portfolio_api.py` 26 passed; 수정 내용 자체는 app-engineer 영역이라 2차에서 본다).
+- `.pytest_cache`·`.ruff_cache`를 저장소에 남기지 않으려고 `-p no:cacheprovider`·`--no-cache`를 붙였다. 결과에는 영향이 없다.
+- **N-DEPLOY-1 (정보)** app-engineer 체크포인트는 `tests/test_import_without_torch.py`를 "11 passed"로 적었는데 지금 파일은 **10건**이다(`--collect-only`로 확인). 보고 이후 테스트가 줄었거나 보고가 틀렸다. 최종 보고에서 수를 맞출 것.
+
+### B. 로그인 인스턴스 전수 (실제 uvicorn, 127.0.0.1:8011) — 통과 (110개 확인, 실패 0)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_B_login.py` → `B_results.txt`, 서버 로그 `B_server.log`·`B2_server.log`. 12:16~12:17. 설정: `AM_ENV=development` + 무작위 비밀번호의 기본 비용 scrypt 해시 + 무작위 48바이트 시크릿, 스크래치 DB(alembic head + 합성 거래 3건).
+
+- **라우트 열거**: `fastapi.routing.iter_route_contexts(app.routes)`로 실제 앱에서 67개(메서드×경로, 경로 61개)를 얻었다. 전부 `/api` 아래다(그 밖은 개발 모드의 `/docs`·`/redoc`·`/openapi.json`·`/docs/oauth2-redirect` 4개).
+- **쿠키 없이 전 라우트**: 공개 4개(`GET /api/health`, `GET /api/auth/session`, `POST /api/auth/login`, `POST /api/auth/logout`)를 뺀 **63개 전부 401 `auth_required`**. 쓰기 라우트는 본문 없이/JSON 본문으로 두 번씩 보냈다. 통과한 라우트 없음.
+- 보호 경로 57개 각각에 HEAD·OPTIONS·PATCH·PUT·DELETE·POST·TRACE를 보내도 전부 401.
+- **경로 철자 28가지**(끝 슬래시, `//api/…`, `/api//…`, 대문자, `%2F`, `%61pi`, `/api/auth/../transactions`, `/api/auth/%2e%2e/…`, `/api/auth/..%2F…`, `/api/health/../…`, `;x`, `%00`, 절대 형식 `http://host/api/…` 등): 장부 데이터를 돌려준 것 없음. `/api/auth/` 접두어 아래 트릭은 전부 404(라우터 불일치), `/api/health` 쪽 트릭은 401, `/api/auth/session/`은 307 → 원래 경로.
+- `X-Original-URL`·`X-Rewrite-URL`·`X-Forwarded-Prefix`·`X-Forwarded-For`·`Authorization`·`X-HTTP-Method-Override`·가짜 쿠키를 붙여도 401. `Host: evil.example` → 400.
+- 쿠키 없는 전수 동안 DB 전 테이블 행 수 변화 없음, 시세 공급자 호출 0, 외부 서비스 대역 호출 0.
+- **로그인**: 204 + `Set-Cookie: am_session=…; HttpOnly; Max-Age=604800; Path=/; SameSite=strict`(Domain 없음, 개발 모드라 Secure 없음), `Cache-Control: no-store`. 이후 `GET /api/auth/session`이 `authenticated: true`.
+- **같은 요청이 쿠키로 열림**: GET 라우트 44개 중 401·403 없음(200 34개, 모델·학습 작업·투자자·강의가 없어서 404 9개, `news` 1개는 내 GDELT 대역이 던진 예외로 500 — 대역 탓).
+- **쓰기 Origin 검사**: Origin 없음(비브라우저) 201, 같은 호스트 Origin 201. 다른 사이트 Origin 11가지(`http(s)://evil.example`, `null`, `http://127.0.0.1:8011.evil.example`, `http://evil.example@127.0.0.1:8011`, 다른 포트, 포트 없음, `localhost:8011`, `ftp://`, `//host`, 빈 값) 전부 **403 `csrf_origin_mismatch`**. Origin 없이 `Sec-Fetch-Site: cross-site`도 403. 전체 삭제(`DELETE /api/transactions?confirm=all`)와 로그아웃도 다른 사이트 Origin이면 403. 다른 사이트 Origin의 GET은 200이지만 `Access-Control-Allow-Origin`이 없어 페이지가 읽지 못한다.
+  - 설계대로인 것(정보): 같은 호스트의 `https://` Origin은 통과(호스트만 비교), `AM_CORS_ORIGINS` 기본값의 `http://localhost:5173`은 신뢰 Origin이라 통과.
+- **변조·만료 토큰 14가지**(MAC 한 글자, 만료만 늘림, nonce 변경, MAC 제거, 버전, 빈 값, 무작위, **올바른 키로 서명한 만료 토큰**, 다른 시크릿, 해시가 바뀐 뒤의 키, 256자 초과, 끝에 점, MAC 대문자화): 전부 401. production 쿠키 이름으로 보낸 유효 토큰도 개발 모드에서는 401.
+- **로그아웃**: 204 + 쿠키 삭제(`Max-Age=0`). 같은 쿠키로 GET·POST 모두 401, 세션은 `authenticated: false`.
+- **틀린 비밀번호 반복**: 1~5번째 401 `invalid_credentials`, **6번째부터 429 `rate_limited` + `Retry-After: 900`**. 잠긴 동안 맞는 비밀번호도 429(닫힘), `/api/health`는 200. 실패 응답에 쿠키 없음. 100KB 로그인 본문 → 413.
+- **누출 검사**(로그인 성공 응답의 `Set-Cookie`를 뺀 모든 응답 본문·헤더 + 서버 로그 전체에서 문자열 검색): 비밀번호·틀린 비밀번호·해시·해시의 salt/key 부분·세션 시크릿·토큰·토큰 MAC **모두 없음**. 서버 로그의 로그인 관련 줄은 `login failed from 127.0.0.1` 꼴뿐이고 `scrypt$`·`password`·`Cookie`·`am_session` 문자열은 0회.
+- **`AM_ENV=production` + 로그인**(같은 포트로 다시 띄움): 쿠키 없이 401 + HSTS·nosniff·X-Frame-Options·CSP·Referrer-Policy·`no-store`; `/docs`·`/redoc`·`/openapi.json` 404; 쿠키는 `__Host-am_session; HttpOnly; Max-Age=604800; Path=/; SameSite=strict; Secure`; 그 쿠키로 200, 같은 토큰을 개발용 이름으로 보내면 401; 다른 사이트 Origin 쓰기 403; 서버 로그에 비밀값 없음.
+- 두 번 모두 끝난 뒤 8011 포트 닫힘 확인.
+
+발견(둘 다 차단 아님):
+- **N-DEPLOY-2 (정보)** 개발 모드(`AM_ENV=development`)에서 로그인을 켜도 `/docs`·`/redoc`·`/openapi.json`은 세션 없이 200이다(`/api` 밖이라 인증 미들웨어가 보지 않음, risk-engineer가 "알려진 한계"로 적은 것과 일치). DEPLOY.md는 "공개 데모를 돌리는 PC에서는 실제 앱(8001)에 로그인을 켠다"고 안내하는데 그 인스턴스가 바로 이 조합이다. 스키마는 공개 저장소 내용이라 데이터 노출은 아니다. 제안: DEPLOY.md "로그인" 절에 한 줄 적거나, 로그인이 설정되면 문서 경로도 닫는다.
+- **N-DEPLOY-3 (정보)** 1,024자를 넘는 비밀번호를 보내면 422 응답의 `input`에 보낸 값이 그대로 돌아온다(FastAPI 기본 검증 오류, `B_results.txt` 8절). 보낸 사람에게만 가고 서버 로그에는 남지 않으며 실제 비밀번호는 1,024자 이하라 누출은 아니다. 제안: `LoginIn` 검증 오류에서 `input`을 빼면 깔끔하다.
+
+### C. 데모 인스턴스 전수 (실제 uvicorn, 127.0.0.1:8013) — 통과 (72개 확인, 실패 0)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_C_demo.py` → `C_results.txt`(1회차는 `C_results_run1.txt`), 서버 로그 `C_server.log`·`C2_server.log`. 12:24~12:27. 설정은 compose와 같게 `AM_ENV=production`·`AM_DEMO_MODE=true`·`AM_ALLOWED_HOSTS=["localhost","127.0.0.1","*.trycloudflare.com"]`·`AM_CORS_ORIGINS=[]`·`AM_CLIENT_IP_HEADER=CF-Connecting-IP`, 단 `AM_STATIC_DIR`은 주지 않았다(정적 서빙은 작성 중, 리드 지시). 합성 장부 `AAA`·`CCC`·`ETH-USD`.
+
+- 1회차는 72개 중 5개가 FAIL이었는데 **전부 내 스크립트의 기대값 오류**였다(제품 문제 아님): ① 차단 20개와 허용 3개를 한 루프에서 돌려, 허용된 시뮬레이션이 채운 시세 캐시(`price_bars` 0→4,486)를 "쓰기 전수 뒤 변화"로 잡음 ② 없는 메서드 `FOO`는 uvicorn의 HTTP 파서가 앱에 닿기 전에 400으로 거절(닫힘) ③ 스크래치 uvicorn은 기본 `forwarded_allow_ips=127.0.0.1`이라 127.0.0.1에서 보낸 `X-Forwarded-For`를 믿음(컨테이너는 터널 주소만 믿는다 → F에서 확인). `patch_C.py`로 기대값을 고쳐 다시 돌린 결과가 아래다.
+- **쓰기 라우트 23개 = 허용 3 + 차단 20**. 차단 20개를 본문 없이 / 유효한 JSON 본문 / `?confirm=all`로 세 번씩(60요청): **전부 403 `demo_read_only`**. 그 직후 DB 전 테이블 행 수 변화 없음, 시세 공급자 호출 0, 외부 서비스 대역 호출 0. multipart 업로드(`/api/imports/screenshot`)도 403.
+- 허용 3개: `POST /api/auth/login` → 409 `login_not_configured`(쿠키 없음), `POST /api/auth/logout` → 204, `POST /api/projection/simulate` → 200. 시뮬레이션이 바꾼 테이블은 시세 캐시(`price_bars`·`symbol_syncs`)뿐이고 공급자에 물은 종목은 허용 집합 안이다.
+- 경로 61개 전부에 POST·PUT·PATCH·DELETE·TRACE·PROPFIND(허용 3개 제외): 전부 403 `demo_read_only`. HEAD·OPTIONS는 전 경로 405(라우터).
+- **우회 시도 38가지**: 끝 슬래시·`/api//…`·`%2F`·`%61pi`·`/api/projection/simulate/../transactions`·`simulate%2F..%2F..%2Ftransactions`·`/api/auth/login/../../transactions`·`;x`·`%20`·`%00`·절대 형식 → 403. `//api/…`·대문자 경로·`/%2Fapi/…`·`/./api/…`·`/x/../api/…` → 404(라우터 불일치, `/api`로 해석되지 않음). 소문자 메서드 `post` → 400(파서). `X-HTTP-Method-Override`·`X-HTTP-Method`·`X-Method-Override`·`_method=DELETE`·`X-Original-URL`·`X-Rewrite-URL`은 무시됨(GET은 GET으로, 허용된 POST는 그 경로로만 처리). chunked 본문 POST → 403. 한 연결에 `logout` 뒤 `DELETE 전체`를 이어 보내도 둘째는 403. 이 구간 전후 전 테이블 변화 없음, 거래 3건 그대로.
+- 본문 상한: 허용 라우트에 70KB 본문 → 413, Content-Length 없는 80KB chunked → 413.
+- **종목 가드**: 티커를 받는 GET 라우트 13개. 장부 밖 철자 — 경로형 9개 × 24가지(`BBB`, 소문자, 앞뒤 공백, `AAA,BBB`, `BBB,AAA`, `%2C`, `%00`, 전각 문자, `^GSPC`, `DOGE-USD`, `KRW-DOGE`, `..`, `KRW=X2`, 탭·개행·세미콜론 등) = 216요청, 쿼리형 4개 × 11가지 × 3형태(단독, 허용 종목 뒤에 반복, 앞에 반복) = 132요청 → **348요청 전부 403 `demo_symbol_not_allowed`**. 공급자 호출 기록에 허용 집합 밖 종목 0건, `price_bars`·`symbol_syncs`의 종목은 전부 허용 집합 안.
+  - 혼합: `symbols=AAA,BBB`·`symbols=AAA&symbols=BBB`·공백/세미콜론/`|`/개행 구분 → 403. 허용 종목끼리 쉼표로 붙인 경로(`/api/market/AAA,SPY/history`) → 422(라우트의 티커 형식 검사, 공급자 호출 없음). 이름이 다른 파라미터(`Symbols=`, `symbols[]=`)는 가드도 라우트도 무시해 기본 목록으로 200. `start=1990-01-01`을 붙인 장부 밖 종목도 403. HEAD → 405.
+  - 허용 종목 13가지 철자(`AAA`, `aaa`, 공백 포함, `eth`, `KRW-ETH`, `SPY`, `QQQ`, `btc`, `BRK-B`, `ARKK` 등)는 200.
+- GET 라우트 44개 전수: 401 없음. 종목 캐시는 끝까지 허용 집합 안, 거래 3건 그대로.
+- `/docs`·`/redoc`·`/openapi.json`·`/docs/oauth2-redirect` → 404. Host: `evil.example`·`127.0.0.1.evil.example`·`trycloudflare.com`(점 없는 최상위)·`abc.trycloudflare.com.evil.example`·빈 값 → 400, `abc.trycloudflare.com`·`localhost`·`LOCALHOST` → 200.
+- 응답 헤더: 200·403(쓰기)·403(종목)·404(`/api` 안팎)·405·413·422 모두 HSTS(`max-age=31536000; includeSubDomains`)·`X-Content-Type-Options: nosniff`·`X-Frame-Options: DENY`·CSP(`default-src 'self'; script-src 'self'; … frame-ancestors 'none'`)·Referrer-Policy·COOP·Permissions-Policy가 붙고, `/api` 응답은 `Cache-Control: no-store`. 잘못된 Host의 400에는 헤더가 없다(TrustedHost가 가장 바깥, 알려진 한계). 다른 사이트 Origin의 preflight → 400, CORS 허용 헤더 없음.
+- 요청 제한(같은 설정에 분당 30으로 다시 띄움): 연속 35회 → 200×30, 429×5. 429는 `rate_limited` + `Retry-After` + 보안 헤더. 거절된 쓰기도 같이 센다. `/api/health` 40회는 전부 200. 형식이 틀린 `CF-Connecting-IP`는 소켓 주소로 돌아가 계속 429.
+- 끝난 뒤 8013 포트 닫힘 확인.
+
+발견:
+- **N-DEPLOY-4 (정보, 알려진 한계의 실측)** 데모에서 방문자의 평범한 GET이 내부 쓰기와 외부 호출을 일으킨다. GET 44개 전수 한 번에 `price_bars` +1,618행, `event_syncs` +2, `guru_syncs` +1, `upcoming_events` +5가 생겼고(`C_results.txt` 6절), 외부 대역 중 `congress.index`(하원 서기국 색인), `guru.fetch`(ARK/13F), `gdelt.daily`(뉴스)에 닿았다. 장부·규칙·정책·킬스위치·강의 진행 테이블은 변하지 않았다. risk-engineer·data-engineer 보고의 "알려진 한계"와 일치하고 DEPLOY.md "외부 호출"에도 적혀 있다. 실제 호출량은 F에서 컨테이너 로그로 다시 본다.
+- **N-DEPLOY-5 (정보)** `AM_CLIENT_IP_HEADER=CF-Connecting-IP`인 인스턴스에 **직접** 붙으면 그 헤더 값만 바꿔 새 요청 한도를 받는다(`C_results.txt` 8절: 한도 소진 뒤 다른 값으로 200). 설정 설명대로 "모든 요청이 그 프록시를 거칠 때만 안전"하다. compose는 호스트의 127.0.0.1에만 포트를 열어 인터넷에서는 터널로만 닿으므로 지금 구성에서는 PC 안의 사용자만 할 수 있다. Cloudflare가 방문자가 보낸 같은 이름의 헤더를 덮어쓰는지는 터널을 띄우지 않아 **확인하지 못했다**(가설: 덮어쓴다).
+
+### D. 시작 거부 — 통과 (99개 확인, 실패 0)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_D_startup.py` → `D_results.txt`, 프로세스 출력 `D/*.log`. 12:29.
+
+- **순수 함수 `deployment_problem`** 17조합: production 단독, 해시만(시크릿 없음, 개발·production 둘 다), 짧은 시크릿(16자), 형식이 틀린 해시, 평문을 해시 자리에 넣음, production의 약한 해시(n=16), 시크릿만 있고 해시·데모 없음 → 전부 거부. **데모 + 실매매 3조합(production/development/로그인 포함) → 전부 거부**(`AM_DEMO_MODE cannot be combined with real orders`). 이 조합은 지시대로 함수 호출로만 확인했다(실매매 값을 넣은 설정 객체를 만들지 않았고 서버도 띄우지 않았다). `config.py:188-194`에서 `real_orders_enabled=self.live_trading`으로 이 함수에 연결됨을 코드로 확인. production+데모, production+로그인, 개발 기본값은 허용.
+- **설정 객체**(`Settings(_env_file=None, …)`) 8조합: 전부 `ValidationError`. `str()`·`repr()`에 넣은 해시·시크릿·표식 문자열 없음(`hide_input_in_errors`). 정상 조합의 `repr(settings)`에도 해시·시크릿이 없다(`SecretStr`).
+- **실제 명령**(스크래치 DB, 127.0.0.1:8014): `python -m uvicorn app.main:app`과 엔트리포인트 첫 단계인 `python -m alembic upgrade head`를 6조합 × 2로 실행. 12번 모두 0이 아닌 종료 코드, 이유 문장 출력(`AM_ENV=production needs either AM_DEMO_MODE … or a login …`, `AM_AUTH_PASSWORD_HASH needs AM_SESSION_SECRET …`, `AM_SESSION_SECRET must be at least 32 bytes`, `AM_AUTH_PASSWORD_HASH: non-numeric scrypt cost …`, `… too cheap for production …`), 출력에 값 없음, pydantic의 `input_value` 없음. 스크래치 DB 파일은 만들어지지도 않았다(마이그레이션 전에 멈춤). 포트는 열리지 않았다.
+- 이 12번의 프로세스는 `uvicorn app.main:app` 그대로라 앱이 스스로 `backend/.env`를 읽는다(내가 열어 본 것은 아니다). 시나리오가 `.env` 내용에 좌우되지 않게 `AM_DEMO_MODE=false`·`AM_AUTH_PASSWORD_HASH=`·`AM_SESSION_SECRET=`·스크래치 DB·`AM_MARKET_PROVIDER=fake`를 환경변수로 덮었다.
+
+### E. 이미지 — 통과
+
+빌드 시각의 작업 트리에는 app-engineer의 정적 서빙(`main.py` 끝 블록 + `api/frontend.py`)이 들어 있다. 12:38 이후 저장소에서 바뀐 것은 문서뿐이라(`find -newer`로 확인: `CLAUDE.md`·`README.md`·`docs/DEPLOY.md`·`docs/dev/*`) 아래 이미지는 2차의 "최종 트리" 이미지이기도 하다.
+
+| 무엇 | 결과 | 근거 |
+| --- | --- | --- |
+| `docker build -t asset-manager-demo:verify .` | exit 0. 전 단계 CACHED(12:29에 다른 팀원이 같은 트리로 빌드해 둠) | `E_build.log` |
+| `docker build --no-cache -t asset-manager-demo:verify-nocache .` | **exit 0, 28초**. `npm ci` 176개, `uv sync --locked --no-default-groups` 65개, `vite build` 통과 | `E_build_nocache.log` |
+| 두 이미지의 `/app` 내용 | 파일 195개의 sha256 목록이 동일(`.pyc` 제외), `/opt/venv` 파일 수 11,136 동일 | 재현 가능한 빌드 |
+| 크기 | **914MB** | `docker images` |
+| 실행 사용자 | `Config.User=10001:10001`, 컨테이너 안 `id` → `uid=10001(app) gid=10001(app)` | `E_image_probe.txt` |
+| `/app` 쓰기 | `/app`·`/app/app`·`/opt/venv` 쓰기 `PermissionError`(root 소유 0755), `/data`·`/tmp`만 가능. 엔트리포인트 0555 root | 같은 파일 |
+| deploy/README "확인"의 find(사용자 10001과 root 둘 다) | 출력 없음 | — |
+| 파일시스템 전체에서 `.env*`·`*.db`·`*.sqlite*`·`artifacts`·`.git`·`*.key`·`*.joblib`·`*.pt` | 없음. `*.pem`은 CA 인증서 묶음, `*.log`는 기반 이미지의 apt/dpkg 로그뿐 | — |
+| `/app`·`/data`의 `tests`·`test_*`·`conftest.py`·`docs`·`.git*`·`.claude`·`*.md` | 없음. `/app` 최상위는 `alembic`·`alembic.ini`·`app`·`scripts`·`seed`·`static` | — |
+| 설치된 것 | 배포판 65개. `torch`·`transformers`·`tokenizers`·`lightgbm`·`pytest`·`ruff`·`pip`(venv) **없음**. `sklearn`·`yfinance`·`curl_cffi`·`pypdf`·`anthropic`·`uvicorn`은 기본 의존성으로 있음 | `E_image_probe.txt` |
+| 환경변수(이미지) | `AM_ENV=production`·`AM_STATIC_DIR`·`AM_DATABASE_URL`·`AM_ARTIFACTS_DIR` + 파이썬 기반 이미지의 값뿐. Labels 없음 | `docker inspect` |
+| `docker history --no-trunc` | 26줄. `secret·token·passw·hash·api key·credential·메일 주소·TUNNEL·ANTHROPIC·FINNHUB·SEC_USER` 패턴 0건. `AM_*=`는 위 4개뿐 | `E_history.txt` |
+| compose 없이 `docker run --rm asset-manager-demo:verify` | **종료 코드 1**, `AM_ENV=production needs either AM_DEMO_MODE (read-only demo) or a login …`, `input_value` 없음 | `E_bare_run.log` |
+| 빌드 컨텍스트(README의 명령) | 파일 **299개**: `backend/{alembic,alembic.ini,app,pyproject.toml,scripts,seed,uv.lock}` + `frontend/{src,public,설정 파일}`. `.env`·`*.db`·`artifacts/`·`tests/`·`docs/`·`deploy/`·`.git`·`node_modules`·`dist` 없음. **git이 무시하는 파일 0개**(`git check-ignore`) | `E_context_files.txt` |
+| `static/index.html` | 796바이트, inline `<script>` 0개 | `E_image_probe.txt` |
+
+- data-engineer 보고의 "컨텍스트 285개"는 그 뒤 추가된 파일(보안 모듈·프론트 테스트 등) 때문에 299개가 됐다. 구성은 허용 목록 그대로다.
+- 정보: 이미지에 `backend/scripts/`가 통째로 들어가 `backup_db.py`·`check_lesson_links.py`도 실린다(비밀 아님, 실행 경로에서 쓰지 않음). `/opt/venv/.gitignore`는 uv가 만든 가상환경 표식이다.
+- compose가 빌드한 `asset-manager-demo:local`도 `/app` 해시가 `:verify`와 같다(F는 그 이미지로 실행).
+
+### F. 컨테이너 데모 실행 (터널 없이, 127.0.0.1:8012) — 통과 (1회차 78개 중 2개 FAIL은 내 스크립트 탓, 재확인 통과)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_F_container.py` → `F_results.txt`, 로그 `F_up.log`·`F_demo_first_start.log`·`F_demo_run.log`·`F_demo_restart.log`·`F_down.log`. 12:45~12:46. compose 호출은 전부 `docker compose -f deploy/docker-compose.yml --env-file <스크래치>/F_compose.env -p am-verify …`이고 env 파일은 `COMPOSE_PROFILES=`(빈 값)·`DEMO_LOCAL_PORT=8012` 두 줄이다. `deploy/.env`는 만들지 않았다. `config --services`가 `demo` 하나만 내는 것을 확인한 뒤 `up -d --build demo`로 서비스 이름까지 지정했다(cloudflared 컨테이너는 한 번도 생기지 않았다: `docker ps -a` 라벨 필터 결과 `demo asset-manager-demo:local running` 한 줄).
+
+- **첫 시작**: `up`이 돌아온 뒤 **10초 만에 healthy**(전체 13초, 같은 날 두 번째 실행은 17초). 로그: `alembic upgrade head`(마이그레이션 18단계) → `demo ledger is empty: python -m seed.load` → 거래 16줄 → `demo ledger seeded` → `starting uvicorn (1 worker)`. fake 공급자 경고 없음. seed 직후 DB: `transactions` **16**, `price_bars` 4,043, `symbol_syncs` 9, 나머지 0. 장부 종목은 seed의 9개(AAPL·MSFT·VOO·NVDA·TSLA + 코인 4종).
+  - DEPLOY.md의 "첫 시작은 시세를 받아 1~3분"은 이 PC에서 13~17초였다(상한으로는 맞다).
+- **쓰기**: 차단 20개 → 403 `demo_read_only`. 끝 슬래시·`/api//…`·`%2F`·`simulate/../transactions`·`login/../../transactions` → 403. `DELETE /api/transactions?confirm=all` → 403. GET에 `X-HTTP-Method-Override: DELETE` → 무시(거래 16건 그대로 나열). 로그인 → 409 `login_not_configured`, 로그아웃 → 204.
+- **종목 가드**: 티커 라우트 13개에 `IBM`·`DOGE-USD`·`ZZZZQ`(단독, `AAPL`과 혼합) → 전부 403 `demo_symbol_not_allowed`.
+- **1회차의 FAIL 2개**("거절된 요청 뒤 DB 변화 없음", "캐시 종목 변화 없음": `price_bars` 4,043→4,546, `symbol_syncs` 9→10)는 내 스크립트가 그 구간에 **허용된 읽기** `GET /api/transactions`(메서드 오버라이드 확인용)를 섞어 보냈기 때문이다. 그 읽기가 원화 환산용 환율 시계열 한 종목(허용 집합의 `KRW=X`, 503봉)을 채웠다. 거절 요청만 보낸 재확인(2차 R1, `R_results.txt`): **115개 거절 요청 전후 DB의 모든 테이블 행 수와 캐시 종목 목록이 동일**. 끝까지 캐시 종목은 허용 집합 안이었다(`IBM`·`DOGE` 없음).
+- **핵심 읽기 한 바퀴**(20개): 전부 응답. `holdings` 0.4초, `history` 1.3초, `learn/skills` 1.3초, `projection/assumptions` 5.6초(첫 시세 수집), 예측은 404 `not_trained`(모델 없음, 의도), LSTM은 501 `lstm_not_installed`. `POST /api/projection/simulate` 200(0.5초), 방문자가 요청할 수 있는 최대 크기(40년 × 20,000경로)도 0.8초. 70KB 본문 → 413. 이 읽기들로 바뀐 테이블은 시세 캐시뿐(`price_bars` 4,043→14,079).
+  - 외부 호출을 아끼려고 컨테이너에서는 의회 거래(`/api/congress/*`)·투자자 비교(`/api/gurus*`)를 **부르지 않았다**(C에서 대역으로 확인). 뉴스는 2차 R4에서 한 번만 불렀다.
+- **문서·Host·헤더**: `/openapi.json` → 404(JSON). `/docs`·`/redoc` → **200 `text/html` 796바이트**(정적 서빙이 들어온 뒤로는 SPA의 `index.html`이 답한다. Swagger·스키마는 나오지 않는다 → N-DEPLOY-7). Host `evil.example`·`host.docker.internal`·`demo` → 400, `abc.trycloudflare.com`·`localhost`·`127.0.0.1` → 200. 200·403(쓰기)·403(종목)·404·`GET /` 모두 HSTS·nosniff·`X-Frame-Options: DENY`·CSP·Referrer-Policy·COOP·Permissions-Policy, `/api`는 `no-store`, **`Server` 헤더 없음**. 없는 `/api` 경로는 JSON 404.
+- **요청 제한(기본 분당 120)**: 헤더 없이 연속 135회(0.8초) → **200×121, 429×14, 첫 429는 122번째**. 429는 `rate_limited` + `Retry-After: 1` + 보안 헤더 + `no-store`. 서로 다른 `X-Forwarded-For` 12개·`X-Real-IP`/`Forwarded` 12개 → 전부 429(uvicorn은 터널 주소 `172.30.35.3,172.30.35.4`의 전달 헤더만 믿고, 이 PC에서 온 요청의 상대 주소는 게이트웨이 `172.30.35.1`). 형식이 틀린 `CF-Connecting-IP` → 429. 거절된 쓰기도 429. `/api/health` 20회·정적 페이지는 제한 없음. 다른 `CF-Connecting-IP` 값은 새 한도(N-DEPLOY-5와 같음).
+- **`docker inspect`**: Mounts = named volume `am-verify_demo-data` → `/data` **하나**(Binds도 그것뿐, 호스트 경로 없음). Tmpfs = `/tmp: rw,noexec,nosuid,nodev,size=128m,mode=1777`. PortBindings = `8000/tcp → 127.0.0.1:8012`뿐. `ReadonlyRootfs=true`, `CapDrop=["ALL"]`·CapAdd 없음, `no-new-privileges:true`, `User=10001:10001`, Privileged false, 메모리 1GiB·pids 512·CPU 1.5, restart `unless-stopped`, 네트워크 `am-verify_edge` 172.30.35.2, ExtraHosts 없음. 환경변수 이름 25개에 PASSWORD·SECRET·TOKEN·API_KEY 류 없음, `AM_LIVE_TRADING=false`·`AM_DEMO_MODE=true`·`AM_ENV=production`·`AM_MARKET_PROVIDER=yfinance`·`AM_SEC_USER_AGENT` 빈 값.
+- **컨테이너 안**: uid/gid 10001, `CapEff=0`·`CapBnd=0`, `NoNewPrivs=1`, seccomp 필터, 루트 파일시스템 `ro`, `/tmp`는 `noexec`. `/app`·`/app/app`·`/app/static`·`/opt/venv`·`/`·`/etc`·`/home` 쓰기 → 전부 `Read-only file system`, `/tmp`·`/data`만 가능. 프로세스는 uvicorn 1개(`--workers 1`).
+- **위험 확인(사실)**: 컨테이너 안에서 `host.docker.internal`이 `192.168.65.254`로 풀리고, `GET http://host.docker.internal:8001/api/health`(Host를 `localhost:8001`로 준 urllib 요청 한 번, 읽기 전용) → **200 `{"status":"ok"}`**. DEPLOY.md "공개 데모를 돌리는 PC에서 지킬 것"의 경고는 사실이다. Host를 맞춰 주면 실제 앱의 `TrustedHost`도 통과한다(D-035의 "브라우저 전제라 방어가 아니다"와 일치).
+- **로그**: 423줄, Traceback 0, 500 응답 0, ERROR 0.
+- **재시작**: 7초 만에 healthy, `demo ledger has 16 transactions: seed skipped`, seed는 두 번의 시작 동안 한 번만 실행, 거래 16건 유지.
+- **정리**: `down -v` 뒤 프로젝트의 컨테이너·볼륨·네트워크 없음, 8012 닫힘.
+- **네트워크 없는 첫 시작**(`docker run --network none`, 새 볼륨, compose와 같은 잠금 옵션·환경, `DEMO_SEED_RETRY_DELAY=5`; 2차 R6에서 실행, `R_nonet_abort.log`·`R_nonet_continue.log`):
+  - 기본(`abort`): **종료 코드 1**(9초). `ERROR: seeding the demo ledger failed (output above).` → `Not serving an empty demo and not falling back to synthetic prices.` → `Exiting in 5s; the restart policy then tries again …`. 원인은 `MarketDataError: yfinance request failed for AAPL: … Could not resolve host`(파이썬 traceback이 로그에 찍힌다). uvicorn은 뜨지 않았고 fake 전환 없음. 남은 DB는 `transactions` 0·`price_bars` 0(합성 값이 쓰이지 않았다).
+  - `DEMO_SEED_ON_FAILURE=continue`: `serving with an EMPTY ledger` 문구와 함께 뜬다. `/api/transactions`·`/api/portfolio/holdings` → `[]`, `/api/portfolio/summary`·`/api/market/SPY/quote` → **502**(`yfinance request failed …`), 지어낸 가격 없음.
+- 미실시: 터널을 거친 요청(Cloudflare의 `CF-Connecting-IP`, 방문자별 한도), cloudflared 컨테이너의 `read_only` 동작, 브라우저로 화면 열기(확장 연결 없음).
+
+발견:
+- **N-DEPLOY-6 (보통 — 코드 결함은 아니고 공개 전 사용자 단계)** 지금 이 PC의 실제 앱(8001)은 로그인이 꺼져 있고(`GET http://127.0.0.1:8001/api/auth/session` → `auth_required: false`, 12:5x에 호스트에서 한 번 조회) 데모 컨테이너에서 닿는다(위 "위험 확인"). 이 상태로 터널을 열면, 데모 앱이 뚫릴 경우 실제 장부를 읽고 고칠 수 있다. DEPLOY.md·TODO_FOR_ME가 이미 "공개 전 8001에 로그인을 켠다"를 사용자 단계로 적고 있다. **터널을 열기 전에 반드시 끝나 있어야 하는 조건**으로 표시한다.
+- **N-DEPLOY-7 (정보)** production + 정적 서빙에서 `/docs`·`/redoc`은 404가 아니라 200(SPA의 `index.html`)이다. API 스키마·Swagger는 나오지 않고 `/openapi.json`은 404라서 DEPLOY.md의 "API 문서 꺼짐"은 기능상 맞다. 응답 코드로 "꺼짐"을 점검하는 사람은 `/openapi.json`을 봐야 한다(CI 스모크는 그렇게 한다).
+- **N-DEPLOY-8 (정보, 배포 범위 밖의 기존 동작)** 네트워크가 없을 때 `/api/market/fx/usdkrw`·`/api/market/kimchi`는 502가 아니라 404 `Unknown symbol 'KRW=X'`로 답한다(`R_results.txt` R6). 합성 값은 아니지만 "연결 실패"가 "없는 종목"으로 표시된다.
+
+### G. 백업 — 통과 (34개 확인, 실패 0)
+
+재현: `py -3.11 <스크래치>/run_G_backup.py` → `G_results.txt`(1회차 `G_results_run1.txt`). 12:57~12:59. **모든 호출에 `--source`/`-Source`와 스크래치 대상 폴더를 명시**했다(기본 원본은 앱의 실제 DB라서 기본값으로는 한 번도 실행하지 않았다). 기본 대상 `%USERPROFILE%\asset-manager-backups`는 이 검증으로 생기지 않았다.
+
+- 1회차의 FAIL 3개는 내 테스트가 사본을 `mode=ro`(immutable 아님)로 열어 사본 옆에 `-wal`/`-shm`을 만들고, 그 파일을 다음 확인에서 센 탓이다. 내 쪽 열기를 `immutable=1`로 바꿔 다시 돌렸다(`patch_G.py`).
+- `backup_db.py`: 생성(이름 `asset_manager-YYYYMMDD-HHMMSS.db`) → 사본 `integrity_check` = `ok`, 5,000행 전부. 원본 파일은 sha256 동일. 대상 폴더에 `.partial` 없음.
+- **서버가 켜진 상황**: 다른 연결이 WAL에 250행을 커밋하고 연 채로 있는 동안 백업 → 사본에 5,250행(`-wal`에만 있던 행 포함). 백업 뒤 그 연결의 쓰기도 정상.
+- **보관 개수**: `--keep 3`으로 5번 → 최신 3개만 남고 오래된 것 삭제, 삭제 목록 출력. 이름이 정확히 맞지 않는 파일 7종(`….db.bak`, `….db.partial`, `other.db`, 날짜 형식이 다른 것, 대문자 이름, 메모 파일)은 그대로.
+- **실패 시 삭제 없음**(`--keep 1`을 줘도): 없는 원본 → exit 1(원본을 새로 만들지 않음), DB가 아닌 파일 → exit 1, 페이지를 훼손한 DB → exit 1(사본도 남지 않음), `--keep 0` → 거부, 대상이 파일 → 실패, 메모리 DB URL·비 sqlite URL → 거부. 매번 대상 폴더의 파일 해시가 그대로였다. `sqlite:///` URL을 `--source`로 주는 경로 동작. 같은 초에 두 번 실행하면 둘째는 `not overwriting`으로 exit 1(덮어쓰지 않음).
+- **`scripts/backup-db.ps1`**(PowerShell, `-Source`·`-DestDir` 명시): ASCII 전용 확인, 백업 생성·exit 0, `-Keep 2`로 3번 → 2개, 상대 `-DestDir`은 호출한 폴더 기준(`backend/` 아래에 아무것도 생기지 않음), 없는 원본 → 종료 코드 1·삭제 없음, `-Keep 0`은 파라미터 검사에서 거부, 공백·한글이 든 대상 경로 동작.
+- 미실시: 실제 DB에 대한 실행(금지), 작업 스케줄러 등록(`schtasks`, 사용자 단계).
+
+발견:
+- **N-DEPLOY-9 (정보)** 원본을 연 프로세스가 없을 때 백업을 돌리면 **원본 옆에 `<원본>-shm`(32,768바이트)·`<원본>-wal`(0바이트)이 생겨 남는다**(`G_results.txt` 6행). WAL 모드 DB를 읽기 전용으로 열 때 SQLite가 만드는 파일이고 장부 행은 들어 있지 않으며 `.gitignore`가 `*.db-wal`·`*.db-shm`을 무시한다. 원본 `.db` 자체는 바이트 단위로 같다. `backup_db.py` 머리말의 "The source … is never created or modified"는 "원본 파일은 바뀌지 않지만 SQLite의 보조 파일이 옆에 생길 수 있다"가 정확하다. 사본도 WAL 모드라 다른 도구로 열면 같은 보조 파일이 생긴다. 제안: 머리말 한 줄 보완.
+
+### H. 비밀·규칙 누출 — 통과 (자세한 표는 2차 T)
+
+2차 범위까지 들어온 최종 작업 트리로 한 번에 확인했다(`run_T_leaks.py` → `T_results.txt`). 1차 질문에 대한 답만 적는다.
+
+- 커밋될 파일(수정 45 + 신규 41)에 scrypt 해시 문자열 0건, 토큰·키 0건(걸린 1건은 테스트의 가짜 값), 실제 메일 주소 0건, 계좌 형식 숫자 0건, `AM_LIVE_TRADING`을 켜는 줄 0건. 테스트의 해시는 실행할 때 `hash_password()`로 만드는 값이고 비밀번호·시크릿 상수는 `test-only …`로 시작하는 테스트 문자열이다(`tests/test_auth.py:47-49`, `tests/test_demo_mode.py:64-65`).
+- `deploy/.env`·`backend/.env`·`*.db`·`*.db-wal`/`-shm`·`*.db.partial`·`frontend/dist`·`backend/artifacts/`·`.claude`·`backend/.dev-backend*.log`는 `git check-ignore`로 무시됨을 확인했고, 추적 중인 파일에도 신규 파일에도 그런 것이 없다.
+- 실행 경로의 Fake: `FakeProvider`는 `deps.get_provider`에서 `AM_MARKET_PROVIDER == "fake"`일 때만 만들어진다(`backend/app/deps.py:48-49`). compose는 `yfinance`로 고정, Dockerfile에는 그 변수가 없고, 엔트리포인트는 `fake`이면 경고만 찍는다(`entrypoint.sh:35-37`). seed 실패·시세 실패 때 Fake로 넘어가는 코드는 없다(F의 네트워크 없는 시작 두 가지로 실측).
+- `AM_LIVE_TRADING`: 저장소 전체에서 이 값을 **쓰는** 곳은 없다. 읽는 곳은 `config.py`(검증), `services/rules.py`(표시), `strategy/execution.py:156`(`settings.live_trading is True`일 때만 live 경로)뿐이고, compose와 CI는 `false`로 명시한다. 이 검증 중에도 켜지 않았다.
+
+### I. 문서 대조 — 통과 (자세한 대조는 2차 S)
+
+`docs/DEPLOY.md`(리드가 13시 전후 고친 현재 파일)와 `deploy/README.md`의 명령·기본값·서비스 이름·응답 코드는 실제와 맞다. 차이는 정보 수준 둘뿐이다: `/docs`의 응답 코드(N-DEPLOY-7), 첫 시작 소요 시간(문서 1~3분, 실측 13~17초). 항목별 대조는 2차 S에 적는다.
+
+### 1차 요약
+
+| 항목 | 판정 | 확인 수 | 비고 |
+| --- | --- | --- | --- |
+| A 재현 | 통과 | pytest 1436(정적 서빙 제외)·ruff 2종 | 2차 J에서 1479로 다시 확인 |
+| B 로그인 인스턴스 | 통과 | 110 | 비로그인 63개 라우트 전부 401 |
+| C 데모 인스턴스 | 통과 | 72 | 쓰기 20개 403, 종목 348요청 403 |
+| D 시작 거부 | 통과 | 99 | 실제 명령 12회 모두 거부, 값 노출 없음 |
+| E 이미지 | 통과 | — | 914MB, 비루트, 비밀·DB·모델·테스트 없음 |
+| F 컨테이너 | 통과 | 78 + 재확인 | 공개 전 전제 N-DEPLOY-6 |
+| G 백업 | 통과 | 34 | 스크래치 DB만 |
+| H 누출 | 통과 | 86개 파일 | — |
+| I 문서 | 통과 | — | 정보 수준 차이 2 |
+
+1차 발견: N-DEPLOY-1~9. **중대 0, 보통 1(N-DEPLOY-6: 코드가 아니라 공개 전 사용자 단계), 나머지 정보.** 1차 범위에서 커밋을 막는 것은 없다.
+
+1차 미실시: 터널을 거친 요청 전부(금지), 브라우저 확인(확장 연결 없음), `hash_password` 대화형 실행(에이전트는 비밀번호를 입력하지 않음 — 테스트로 갈음), 실제 DB 백업(금지), 컨테이너에서의 의회·투자자 라우트(외부 호출 절약), 리드에게 보내는 중간 메시지(SendMessage 도구 없음 — 이 파일로 대신).
+
+## 배포 1단계 검증 2차 (2026-11-11, verifier)
+
+대상: app-engineer의 최종 보고(13:00경) 이후의 작업 트리 — 정적 서빙(`backend/app/api/frontend.py` + `main.py` 끝 블록), torch 없는 경로, 로그인 화면·데모 UI, conftest 환경 고정, ISSUE-051, CI. 규칙과 전제는 1차와 같다(코드·설정·문서 수정 없음, 터널 없음, `backend/.env`·실제 DB 미접근, 스크래치 인스턴스는 `.env`를 읽지 않게 하고 외부 서비스는 기록용 대역). 1차 E·F의 이미지는 12:38에 빌드했고 그 뒤 저장소에서 바뀐 것은 문서뿐이라(`find -newer`) 그 이미지가 곧 최종 트리의 이미지다.
+
+진행 기록: 13:50경 세션이 끊겼다 다시 이어졌다. 그 전까지의 실행 결과는 스크래치 결과 파일에서 수치를 옮겨 적었고 통과한 실행은 다시 돌리지 않았다.
+
+### J. 재현 — 통과
+
+재현: `sh <스크래치>/run_J.sh` → `J_backend.log`·`J_frontend.log`·`J_genapi.log`. 12:53~12:57.
+
+| 무엇 | 결과 | 주장과 대조 |
+| --- | --- | --- |
+| `py -3.11 -m uv run pytest -o addopts="" -q -p no:cacheprovider`(전체, 정적 서빙 포함) | **1479 passed** (160.5초) | app-engineer 주장 1479와 일치 |
+| `ruff check . --no-cache` / `ruff format --check . --no-cache` | All checks passed / 191 files already formatted | 일치 |
+| `tests/test_import_without_torch.py` 수집 | **10건** | 체크포인트 1의 "11 passed"는 틀렸고 최종 보고도 "verifier 10, agent 11"로만 적었다 → N-DEPLOY-1 유지(수는 10이 맞다) |
+| `tests/test_static_serving.py` 수집 | 43건 | 일치 |
+| `npm test` | **45 files, 309 tests passed** (6.0초) | 일치 |
+| `npm run lint`(oxlint) | 출력 없이 종료 0 | 일치 |
+| `npm run build`(`tsc -b && vite build`) | 통과, `dist/assets` 25개 파일 | 일치 |
+| `npm run gen:api` 전후 sha256 | `openapi.json` `748715f7…`, `schema.d.ts` `10105e14…` — **전후 동일** | "diff 없음" 일치 |
+
+- `gen:api`는 추적 중인 두 파일을 다시 쓰는 명령이라, 실행 전에 바이트 사본을 떠 두고 결과가 다르면 원본을 되돌리게 해 두었다. 결과가 같아 되돌릴 일은 없었다(`J_genapi.log`: `GENAPI: no difference`).
+- "시계 +200일에서도 1479 passed"는 N에서 따로 본다(그 주장 자체는 맞지만 충분하지 않았다 → N-DEPLOY-10).
+- "Chrome으로 데모 컨테이너 확인(CSP 위반 없음)"은 브라우저를 쓸 수 없어 **재현하지 못했다**. 대신 K에서 번들과 CSP를 정적으로 대조했다.
+
+### K. 정적 서빙 — 통과 (컨테이너와 로컬 uvicorn 둘 다, 실패 0)
+
+같은 점검 묶음(`static_checks.py`)을 두 곳에 돌렸다.
+- **컨테이너**(리눅스, compose와 같은 설정, 127.0.0.1:8012): `run_R_container.py` → `R_results.txt` R3절. 12:57~12:58.
+- **로컬 uvicorn**(Windows, `AM_ENV=production`·`AM_DEMO_MODE=true`·`AM_STATIC_DIR=frontend/dist`, 127.0.0.1:8015): `run_KL_local.py` → `KL_results.txt`(54개 확인, 실패 0), 서버 로그 `K_server.log`. 13:03.
+
+| 확인 | 컨테이너 | 로컬 uvicorn |
+| --- | --- | --- |
+| `GET /` → 200 `text/html`, `Cache-Control: no-cache` | 통과(796바이트) | 통과, `frontend/dist/index.html`과 바이트 동일 |
+| 페이지 경로 12개(`/coach`, `/assets/AAPL`, `/assets/BRK.B`, `/assets/BTC-USD`, `/learn/abc`, `/login?next=/coach`, `/assets/AAA?symbol=ZZZ`, `/assets/ZZZZ?symbols=IBM,KO`, `/transactions/`, `/a/b/c/d`, `/docs`, `/redoc`) → `index.html` + `no-cache` | 통과 | 통과 |
+| `index.html`이 가리키는 해시 파일(`/assets/index-*.js`·`.css`) → 200, `text/javascript`/`text/css`, `public, max-age=31536000, immutable`, Content-Length = 본문 길이, nosniff + CSP | 통과 | 통과. dist의 **28개 파일 전부** 바이트 동일하게 서빙, `.js` 25개 전부 `text/javascript`, `.css`는 `text/css`(Windows 레지스트리의 형식이 아니라 모듈의 표를 쓴다) |
+| `/theme-init.js`·`/favicon.svg`·`/index.html` → 200 + `no-cache` | 통과 | 통과 |
+| 빌드 확장자인데 없는 경로 8개(`.js`·`.css`·`.map`·`.woff2`·`.json`·`.png`·`sw.js`·`.webmanifest`) → 404, `index.html` 아님 | 통과 | 통과 |
+| 없는 `/api` 경로(`/api/nothing`, `/api`, `/api/`, `/api/transactions/x/y`, `/api/assets/AAPL`) × GET·HEAD·POST·PUT·DELETE → HTML 없음, 200 없음 | 통과: GET·HEAD 404, **POST·PUT·DELETE는 403 `demo_read_only`**(데모) | 같음. GET은 `{"detail":"Not Found"}` |
+| 페이지·파일 경로로의 POST·PUT·DELETE·PATCH → 404 | 통과 | 통과 |
+| **경로 탈출 74가지** → 폴더 밖 바이트 0 | 통과: 200(`index.html` 그대로) 67, 404 6, 400 1 | 통과: 200(`index.html`) 68, 404 5, 400 1 |
+| 데모 종목 가드가 페이지 경로를 막지 않음(`/assets/AAA?symbol=ZZZ` → 200 `index.html`), API 가드는 그대로(`/api/market/ZZZ/quote` → 403) | 통과 | 통과 |
+| 정적 요청은 요청 제한에 세지 않음 | 한 주소에서 180회 → 전부 200 | L에서 확인 |
+| 정적 요청이 외부 서비스·시세 공급자에 닿지 않음 | — | 대역 호출 0 |
+
+- 경로 탈출 목록: `..`, `%2e%2e`, `%2f`, 이중 인코딩(`%252e`), 백슬래시와 `%5c`, `//etc/passwd`, `/C:/Windows/win.ini`·`/C:Windows/win.ini`, UNC, `file://`, 점 파일(`/.env`, `/.git/config`, `/assets/.env`), `/app/app/config.py`, `/data/demo.db`, `/proc/self/environ`, NUL(`%00`), `....//`, `..;/`, 과장 UTF-8(`%c0%ae`), `../` 60번, 4KB 경로, 70,000자 경로, Windows의 `::$DATA`·끝 점·끝 공백·대문자 이름·장치 이름(`CON`, `NUL`, `aux.js`), 저장소의 `backend/.env`·`backend/asset_manager.db`·`backend/app/config.py`·`src/main.tsx`·`package.json`을 향한 상대 경로. 판정 기준: 200 응답의 본문이 `index.html`과 바이트 동일하지 않거나, 어떤 응답이든 `root:x:`·`class Settings`·`SQLite format 3`·`AM_ENV=` 같은 표식이 있으면 누출. **두 환경 모두 0건.**
+- 코드로 본 이유(`api/frontend.py:97-112`): 조각 중 점으로 시작하는 것이 있으면 거절, 그 뒤 `resolve()`한 경로가 폴더 안의 일반 파일일 때만 서빙. 포함 검사는 정규화 뒤에 하므로 백슬래시·드라이브 문자·심볼릭 링크가 폴더 밖을 가리켜도 걸린다.
+
+**"멈춤은 테스트 도우미 탓이고 실제 서버에서는 일어나지 않는다"는 주장 — 반박 실패(주장 유지).** 실제 서버 두 곳에 다음을 보냈고 모두 끝났다.
+- 한 연결(keep-alive)에서 HEAD·GET을 섞어 35요청: 컨테이너 0.06초, 로컬 0.05초. HEAD는 본문 없이 전체 Content-Length.
+- Range 9종(380,719바이트 번들): `bytes=0-99` → 206·100바이트, `100-`·끝 10바이트·`-50` → 206, 범위 초과 → 416, 다중 범위 → 206, 형식 오류 3종 → 400. 전부 응답.
+- 동시 50요청(번들·페이지·API·정적 혼합): 전부 200·전체 길이, 컨테이너 0.09초, 로컬 0.07초.
+- 본문 전송 중 RST로 끊기 30회 + 응답을 읽지 않고 끊는 HEAD 20회 + 요청을 다 보내지 않고 끊기 20회 + 읽지 않고 붙어만 있는 연결 20개. 그 직후 `/api/health`·`/`·번들·`/api/health` → 전부 200, 각 0.02초 이내.
+- 끝난 뒤 유휴 상태: 컨테이너 `docker stats` **CPU 0.12%**(pids 27, 메모리 322MiB/1GiB)·healthy, 로컬은 유휴 4초 동안 서버 프로세스 **CPU 시간 0.00초**. 서버 로그에 Traceback·500 없음(양쪽).
+- 따라서 FileResponse의 disconnect 대기가 실제 서버에서 바쁜 루프가 된다는 증거는 찾지 못했다. (테스트 도우미를 고쳤다는 부분은 `tests/test_static_serving.py` 43건이 4.7초에 끝나는 것으로만 확인했다.)
+
+**시작 거부**: `AM_STATIC_DIR`이 빈 폴더 / 없는 폴더 / 파일일 때 세 번 모두 종료 코드 1, `RuntimeError: AM_STATIC_DIR=… has no index.html. Build the frontend …`. 빈 값이면 기존 동작(1차 C: `GET /` 404, 정적 블록 미설치).
+
+**빌드 산출물과 CSP**: `dist/index.html`(796바이트)에 inline `<script>` 0, inline 이벤트 핸들러(`on…=`) 0, 외부 출처 `src`/`href` 0. 번들 25개 파일에서 `eval(`·`new Function(`·`new Worker(`·`new WebSocket(`·`importScripts(`·`document.write(` 0건, `fetch("http…` 0건. 번들 안의 절대 URL은 `www.w3.org`(SVG·XHTML 네임스페이스 20), 라이브러리 문서 링크(reactrouter.com, react.dev, redux.js.org, github.com, bit.ly, tradingview.com)와 `localhost` 2건뿐이고 요청 대상이 아니다(문자열·오류 메시지). CSS에 `@import`·외부 `url()` 없음. `script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'`과 충돌하는 것을 찾지 못했다. **브라우저 콘솔에서의 CSP 위반 0은 재현하지 못했다(미실시).**
+
+발견:
+- **N-DEPLOY-12 (정보)** app-engineer 보고의 "`/api` unknown path → JSON 404 for any method (also in demo)"는 데모에서는 정확하지 않다: 쓰기 메서드는 라우터에 닿기 전에 읽기 전용 계층이 **403 `demo_read_only`**(JSON)로 답한다. HTML이 나오지 않는다는 요점은 맞고 더 닫힌 쪽이다. 보고·문서의 표현만 고치면 된다.
+- 정보(번호 없음): Windows에서는 `assets\.env`처럼 백슬래시로 이은 조각이 "점으로 시작하는 조각" 규칙을 지나친다. 그래도 폴더 포함 검사는 그대로라 dist 안의 파일만 나올 수 있고, dist에는 점 파일이 없다(확인). 배포 대상은 리눅스 컨테이너다.
+
+### L. 로그인 + 정적 서빙 (실제 uvicorn, `AM_ENV=production`, 스크래치 DB, `frontend/dist`) — 통과
+
+`KL_results.txt` L절, 서버 로그 `L_server.log`. 설정: 무작위 비밀번호의 기본 비용 해시 + 무작위 시크릿, `AM_RATE_LIMIT_PER_MINUTE=8`, `AM_CORS_ORIGINS=[]`.
+
+- 세션 없이: `/`·`/login`·`/login?next=/coach`·`/coach`·`/assets/AAPL`·`/theme-init.js`·`/favicon.svg`·해시 파일 3개를 4번씩 **40요청 전부 200**(분당 8 제한에도 429 없음 → 정적은 제한에 세지 않는다). 페이지에 CSP·HSTS·X-Frame-Options·nosniff.
+- 세션 없이: `/api/portfolio/summary` → **401 `auth_required`**, 없는 `/api` 경로 → 401(HTML 아님), `/api/auth/session` → `{auth_required: true, authenticated: false, demo_mode: false}`.
+- 로그인 → 204 + `__Host-am_session` 쿠키 → `/api/portfolio/summary` 200, 없는 `/api` 경로는 JSON 404 → 로그아웃 204 → 같은 쿠키 거절.
+- `/api` 한도는 그대로 동작(연속 12회 중 429 발생)하고 그동안에도 페이지·파일은 200.
+- 서버 로그에 비밀번호·시크릿·해시·토큰 없음. 끝난 뒤 8015 닫힘.
+- 미실시: 실제 브라우저에서의 로그인 흐름(`Secure` 쿠키는 https에서만 저장되므로 터널 뒤에서만 볼 수 있다), 401 뒤 `/login?next=…` 이동, 모바일 헤더. 프론트 단위 테스트(`Login.test.tsx`·`App.test.tsx`·`queryClient.test.ts`)가 통과한다는 것만 J에서 확인했다.
+
+### M. conftest의 환경 고정 — 통과
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_M_conftest.py` → `M_results.txt`.
+
+- `tests/conftest.py:10-22`가 app을 import하기 전에 `os.environ`에 `AM_ENV=development`·`AM_DEMO_MODE=false`·`AM_AUTH_PASSWORD_HASH=`·`AM_SESSION_SECRET=`·`AM_RATE_LIMIT_PER_MINUTE=0`·`AM_CLIENT_IP_HEADER=`·`AM_STATIC_DIR=`·`AM_ALLOWED_HOSTS=[기본값]`을 넣는다(환경변수가 `.env`보다 우선).
+- 적대적 셸 환경(`AM_ENV=production`, `AM_DEMO_MODE=true`, 테스트용 무작위 해시·시크릿, `AM_RATE_LIMIT_PER_MINUTE=1`, `AM_CLIENT_IP_HEADER=CF-Connecting-IP`, `AM_STATIC_DIR=frontend/dist`, `AM_ALLOWED_HOSTS=["only.example"]`)을 준 채 API 테스트 10개 파일(`test_portfolio_api`·`test_coach_api`·`test_learn_api`·`test_static_serving`·`test_imports`·`test_imports_manual`·`test_corporate_actions`·`test_rules_api`·`test_market_data`·`test_forecasts_api`)을 돌렸다: **평범한 환경 275 passed, 적대적 환경 275 passed**. 401·403·429·400으로 무너지는 테스트 없음. (`tests/test_transactions*.py`라는 파일은 없다. 거래 API는 위 파일들과 `test_ledger.py`가 다룬다.)
+- `backend/.env`는 건드리지 않았다(셸 환경변수로만 흉내 냈다).
+
+**`AM_LIVE_TRADING`은 고정되지 않는다 — 영향 확인(코드):**
+- 그 값을 읽어 동작이 갈리는 곳은 `app/strategy/execution.py:156`(`live = settings.live_trading is True`) 하나다. live이면 `live_factory()`를 부르는데 기본값이 `live_broker_unavailable`(같은 파일 122행)이고 `NotImplementedError`를 던져 결과가 `failed`/"실매매 브로커가 없음"이 된다. **저장소에 실제 주문을 내는 브로커 구현이 없다**(`place_order`·`submit_order`·증권사 API 이름으로 검색해 0건). 그래서 개발자의 `.env`가 실매매 값을 켜 두었더라도(변수 `AM_LIVE_TRADING`에 참 값) 테스트가 실주문 경로에 닿을 수는 없다.
+- 남는 영향은 표시값을 단언하는 테스트(`rules`·`coach` 응답의 `live_trading: false`)가 깨질 수 있다는 것뿐이다.
+- 배경 작업이 실제 DB에 쓰는 경로도 봤다: 동기화·학습 라우트를 부르는 테스트(`test_congress_api`·`test_gurus_api`·`test_demo_mode`)는 전부 `get_session_factory`를 테스트 DB로 바꾼다.
+
+발견:
+- **N-DEPLOY-11 (정보)** conftest가 `AM_LIVE_TRADING`을 고정하지 않는다. 지금은 실주문 구현이 없어 위험이 아니지만, 실매매 브로커를 붙이는 날에는 "테스트는 항상 false"가 conftest에 있어야 한다. 제안: 같은 `os.environ.update`에 `"AM_LIVE_TRADING": "false"` 한 줄(브로커 구현보다 먼저).
+
+### N. ISSUE-051과 날짜 의존 — 수정은 통과, 같은 종류의 테스트가 더 있다 (N-DEPLOY-10, 수정 대기)
+
+**ISSUE-051 수정이 테스트를 약하게 만들었나 — 아니다.** `git diff tests/test_portfolio_api.py`: 스파크라인 테스트만 `get_portfolio_service`를 `PortfolioService(db, market, today=lambda: TODAY)`로 바꿔 끼우고, 기대값을 `TODAY` 기준 30일 창의 공급자 종가로 계산한다. 단언은 `AAPL`(달러 종가)·`KRW-BTC`(원화 종가) 시계열의 **값 일치**와 봉 수 **`(23, 31)`**(이전에는 `0 < len(aapl) < len(btc)`)이다. "평일 < 매일"과 원화 시계열을 여전히 단언하고 오히려 더 좁다. 그 대가로 이 테스트는 라우트의 기본 시계 배선을 지나지 않는다(다른 포트폴리오 테스트가 기본 배선을 쓴다).
+
+**시계를 옮겨 본 결과.** app-engineer의 플러그인(`scratchpad/shift_clock.py`: 서비스 클래스의 **기본 인자** 시계 9개만 옮김)과, 그 한계를 메운 내 플러그인(`verifier/deploy/shift_clock2.py`: 함수 본문에서 `date.today()`·`datetime.now()`를 부르는 모듈 `api/market`·`services/forecasts`·`services/predictions`·`services/projection`·`services/corporate_actions`의 `date`/`datetime` 이름까지 교체) 두 가지로 전체 pytest를 돌렸다. 로그 `N_shift.log`·`N_shift2.log`·`N_bisect.log`.
+
+| 이동 | app-engineer 플러그인 | 내 플러그인(본문 시계 포함) |
+| --- | --- | --- |
+| +45일 | 1479 passed | **1 failed**: `tests/test_ml.py::test_train_smoke_and_prediction_api` (`ValueError: Need 30 rows after warm-up, have 10`) |
+| +400일 | **1 failed**: `tests/test_rules_api.py::test_check_reports_each_holding_in_its_own_currency` (`assert c["bars"] > 0` → 0) | 2 failed (위 둘) |
+| +1200일 | — | 12 failed (위 둘 + `tests/test_forecasts_api.py` 10건) |
+
+단일 테스트로 경계를 좁힌 결과(오늘 = 2026-11-11):
+
+| 테스트 | 통과하는 마지막 이동 | 처음 실패 | **실제 달력으로** | 원인 |
+| --- | --- | --- | --- | --- |
+| `test_ml.py::test_train_smoke_and_prediction_api` | +19일 | +20일 | **2026-12-01부터 실패**(11-30까지 통과) | `services/predictions.py:86` `_history_start()`가 실제 `date.today()`에서 112일((30+40)×1.6)을 거슬러 간다. 테스트의 `FakeProvider(today=TODAY)`는 2026-10-16에서 끝나므로 창에 남는 봉이 매일 줄어 30행 아래로 떨어진다 |
+| `test_rules_api.py::test_check_reports_each_holding_in_its_own_currency` | +365일 | +380일 | **2027-11-21경부터** | `services/rules.py:60` `BARS_LOOKBACK = timedelta(days=400)`. 오늘−400일이 2026-10-16을 넘으면 봉 0개 |
+| `test_forecasts_api.py`(16건 중 10건) | +680일 | +720일 | 2028-09-21 ~ 2028-10-31 사이 | 예측 서비스의 730일 창 |
+| `test_projection.py`·`test_market_data.py`·`test_demo_mode.py` | +1500일 | +1900일(4건) | 2030-12 ~ 2032-01 사이 | 5년 창·기본 365일 창 |
+
+- 첫 줄이 급하다: **지금 코드 그대로면 약 3주 뒤(2026-12-01)부터 `backend` CI 잡과 로컬 `pytest`가 코드 변경 없이 빨갛게 된다**(CI는 `lstm` 그룹을 설치해 `tests/test_ml.py`를 돌린다). ISSUE-051과 같은 종류(고정된 가짜 시세 + 실제 시계)다.
+- app-engineer 보고의 "+0·+200에서 1479 passed"와 "본문에서 `date.today()`를 부르는 곳은 `services/forecasts.py`·`services/projection.py`·`api/market.py`"는 그 자체로는 맞지만, **`services/predictions.py:86`(가장 먼저 깨지는 곳)과 `services/rules.py`의 400일 창이 빠져 있고** +200일까지만 봐서 +400일의 실패를 놓쳤다.
+- 내 플러그인의 한계: 시스템 시계를 실제로 바꾼 것이 아니라 모듈 안의 `date`·`datetime` 이름을 하위 클래스로 바꾼 것이다. +0일에서는 전부 통과하고, 실패마다 원인 줄과 메시지가 직접 대응하므로(위 표) 대역이 만든 가짜 실패일 가능성은 낮다고 본다. 날짜는 단일 테스트 재실행으로 좁힌 값이다(+19 통과, +20 실패).
+
+발견:
+- **N-DEPLOY-10 (보통, 커밋 전 수정 대상 — 리드 지시로 app-engineer가 수정 중)** 실제 날짜에 따라 깨지는 테스트가 ISSUE-051 말고 4묶음 더 있다(위 표). 제안: 스파크라인과 같은 방식으로 테스트가 서비스의 시계를 `TODAY`에 고정하거나, 본문의 `date.today()`를 주입 가능한 시계로 바꾼다. 그리고 "시계 이동 +N일" 점검을 +400일 이상까지 CI 밖의 정기 점검으로 남긴다. **수정 뒤 재확인(`shift_clock2`로 +0/+20/+60/+400일)은 리드의 완료 알림을 기다리는 중이다.**
+
+### O. torch 없는 경로 — 통과
+
+- **데모 컨테이너 안**(`R_results.txt` R4): `GET /api/predictions`·`/api/predictions/AAPL`·`/AAPL/backtest`·`/AAPL/train` → 전부 **501 `lstm_not_installed`**. `POST /api/predictions/AAPL/train`은 데모에서는 읽기 전용 계층이 먼저 403 `demo_read_only`. 장부 밖 티커는 403 `demo_symbol_not_allowed`.
+- **같은 이미지의 로그인 인스턴스**(쓰기가 데모 잠금에 걸리지 않게; `run_O_image_login.py` → `O_results.txt`, 10개 확인 실패 0, 14:10): 쿠키 없이 401 → 로그인 → **5개 라우트(POST 포함) 전부 501 `lstm_not_installed`**. 페이지는 세션 없이 200, 장부는 빈 목록(데모가 아니면 seed가 돌지 않는다), 컨테이너 로그에 비밀값 없음. 시세는 `fake`, DB는 tmpfs, 끝나고 컨테이너 삭제.
+- **이미지 안에서 `import app.main`**: 성공. 설치된 것 중 `torch`·`transformers`·`lightgbm`·`tokenizers` 없음, import 뒤 `sys.modules`에도 없음. `app.ml`·`app.ml.sentiment`(torch를 쓰지 않는 부분)만 올라온다.
+- **뉴스**: 데모 컨테이너에서 `GET /api/news/AAPL` 한 번 → 200(10.9초), `sentiment_enabled: false`, `finnhub_enabled` 키 있음, 감성 점수가 든 기사 0. 다만 **기사 자체가 0건**이었고 응답의 `warnings` 내용을 기록하지 않아 이유(GDELT 응답 없음·제한 등)는 확인하지 못했다. "가짜 점수 없음"은 코드로도 확인: `deps.get_scorer`가 `finbert_installed()`가 아니면 `None`을 돌려주고 대체 채점기는 없다(`backend/app/deps.py:160-165`). 외부 호출을 아끼려고 다시 부르지 않았다.
+- `tests/test_import_without_torch.py` 10건 통과(J).
+
+### P. CI — 통과 (GitHub Actions 자체는 미실시)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_P_ci.py` → `P_results.txt`(10개 확인, 실패 0), 스모크 출력 `P_smoke_am-verify-ci.log`. 13:17.
+
+- `ci.yml`은 YAML로 읽힌다. 트리거: `push`의 `branches: [main, agent-team]` + `pull_request`. 잡 3개(`backend`·`frontend`·`docker`), 같은 ref의 새 실행이 이전 실행을 취소.
+- `backend` 잡: `uv sync --locked --no-group ml` → ruff 2종 → `alembic upgrade head`·`alembic check` → `uv run pytest` → OpenAPI diff. 로컬에서 `py -3.11 -m uv sync --locked --no-group ml --dry-run`: 잠금 파일 그대로 풀리고 **빠지는 것은 `ml` 그룹(lightgbm·transformers와 그 의존성)뿐, torch(`lstm`)는 남는다**. `pyproject.toml`의 `default-groups = ["dev", "ml", "lstm"]`와 맞다. 따라서 CI는 `tests/test_ml.py`를 돌린다(→ N-DEPLOY-10의 첫 줄이 CI에 그대로 해당).
+- `docker` 잡을 ci.yml에 적힌 스크립트 그대로 재현했다. 바꾼 것은 이미지 태그(`:ci` → 같은 트리의 `:verify`), 컨테이너 이름, 호스트 포트(8000은 이 PC의 다른 프로젝트가 써서 8016)뿐이고, 스모크 단계는 `jq`가 이 PC에 없어 데모 컨테이너의 네트워크를 공유하는 alpine 도우미 안에서 **수정 없이**(`BASE=http://127.0.0.1:8000`) 실행했다.
+  - "The image has no secrets, database or trained models in it" → exit 0.
+  - "Start the demo container"(잠금 옵션 + `AM_MARKET_PROVIDER=fake`) → 기동, 엔트리포인트가 `WARNING: AM_MARKET_PROVIDER=fake serves synthetic prices. Never publish this instance.`를 찍는다.
+  - "Smoke test" → **exit 0, `::error::` 0줄**.
+  - **대조 실행**: 같은 이미지를 데모 잠금 없이(`AM_ENV=development`·`AM_DEMO_MODE=false`) 띄우면 같은 스모크가 `session.demo_mode is not true`로 **exit 1**. 스모크가 잠금이 빠진 것을 잡는다.
+  - 끝나고 컨테이너 2개 삭제, 포트 닫힘.
+- `AM_MARKET_PROVIDER=fake`가 있는 곳: `ci.yml`의 스모크 기동 줄 하나(주석으로 CI 전용임을 적음). `deploy/docker-compose.yml`은 `yfinance`로 고정, `Dockerfile`에는 그 변수가 없고, `entrypoint.sh`는 값이 `fake`이면 경고만 한다. 실행 경로에 fake 전환 없음.
+- 미실시: 실제 GitHub Actions 실행(푸시하지 않음), ubuntu 러너에서의 `setup-uv`·`setup-node` 동작.
+
+### Q. 화면 문구·규칙 — 통과 (코드 대조, 브라우저 미실시)
+
+- **금지어**: `frontend/src` 전체에서 `추천|사세요|파세요|오를|예상 수익`이 걸리는 파일은 11개이고 전부 이번 변경 이전의 문구·테스트다(`lib/coach.ts`·`lib/forecast.ts`·`lib/learn.ts`의 규칙 문구, 접기 안의 "오를 확률", 금지어를 단언하는 테스트들). 이번에 새로 생긴 `lib/auth.ts`·`lib/session.tsx`·`pages/Login.tsx`·`api/errors.ts`·`api/queryClient.ts`와 `App.tsx`에는 0건. `lib/auth.test.ts:88`이 `AUTH_TEXT`의 모든 문장에 같은 식을 단언한다. `ForecastPanel.tsx`의 이번 변경은 버튼 비활성 3줄뿐이다(`git diff`).
+- **문구 단일 출처**: 로그인·데모 문장은 전부 `lib/auth.ts`의 `AUTH_TEXT`에 있고, 서버의 403 문장 "데모에서는 저장·수정할 수 없어요"(`security/demo.py`)와 `AUTH_TEXT.demoReadOnly`가 글자까지 같다.
+- **데모 띠는 데모에서만**: `App.tsx:126-131` `{session?.demo_mode && …}`. 빌드된 번들에 띠 문장이 들어 있다(`dist/assets/index-*.js` 1곳).
+- **데모에서 쓰기 버튼 비활성**: `useDemoMode()` 사용처가 보고의 12개 화면·컴포넌트와 일치한다 — `TransactionForm`·`Transactions`·`BulkDelete`·`CorporateActions`·`Import`(2곳)·`Rules`·`Coach`(2곳)·`Lesson`·`Compare`·`CongressTrades`·`ForecastPanel`·`AssetDetail`. 여기에 띠용 `App.tsx`.
+- **색**: 새 파일(`Login.tsx`·`App.tsx`·`session.tsx`·`auth.ts`)에 16진수 색·`rgb()`·Tailwind 색상 숫자 클래스·inline `style` 없음. 띠는 `bg-ink`·`text-surface`(CSS 변수 토큰)이고 손익 색을 쓰지 않는다.
+- **로그인 뒤 이동**: `nextPath()`는 `/`로 시작하고 `//`·백슬래시가 없는 앱 내부 경로만 받고, 값은 React Router `navigate()`로만 쓰인다(다른 사이트로 보내지 못한다).
+- 서버가 최종 판단자라는 점: 버튼 비활성과 무관하게 데모의 쓰기는 서버가 403으로 막는다(C·F·R).
+- 미실시: 실제 화면에서의 띠·버튼 상태·모바일 헤더(브라우저 없음). app-engineer가 남긴 것으로 적은 3건(데모 예측 영역의 안내 문장 없음, 가져오기 파일 선택은 막지 않음, `useForecastTraining` 폴링이 `Retry-After`를 따르지 않음)은 화면 완성도 문제이고 서버 방어와 무관하다.
+
+### R. 최종 이미지·컨테이너 — 통과 (48개 확인, 실패 0; 단 N-DEPLOY-10 수정 뒤 이미지가 달라지면 스모크 재확인 필요)
+
+재현: `cd backend; py -3.11 -m uv run python <스크래치>/run_R_container.py` → `R_results.txt`, 로그 `R_demo.log`·`R_nonet_abort.log`·`R_nonet_continue.log`. 12:57~12:58. 이미지는 1차 E의 것(12:38 빌드, 그때의 트리 = app-engineer 최종 보고 시점의 코드).
+
+- R1 거절 요청만 115개 → 전부 403, **전후 DB 완전 동일**(F의 1회차 FAIL 해명).
+- R2 **seed가 실제 시세를 썼다는 증거**: seed된 16개 단가를 같은 종목·같은 날의 `FakeProvider` 값과 비교 → 일치 0건(예: 2026-01-15 VOO 636.62 대 합성 236.93, 같은 날 원화 BTC 1.409억 대 합성 5.32억).
+- R3 정적 서빙(K의 컨테이너 열), R4 torch 없는 경로(O).
+- 컨테이너 로그 643줄에 Traceback 0·500 0·ERROR 0. 경고는 70,000자 경로에 대한 `Invalid HTTP request received.` 한 줄.
+- R5 `down -v` 뒤 잔여물 없음. R6 네트워크 없는 시작(1차 F에 적음).
+- 1차 F의 `docker inspect`·컨테이너 내부 확인·`host.docker.internal:8001` 도달은 같은 이미지·같은 compose라 다시 돌리지 않았다.
+- **주의**: 14시 전후로 app-engineer가 N-DEPLOY-10 때문에 `backend/app/services/predictions.py`를 고치고 있다(작업 트리에서 수정 시각 13:54 확인). 그 파일은 이미지에 들어가므로 **수정이 끝나면 이미지를 다시 빌드해 CI 스모크(P)와 LSTM 501(O)을 한 번 더 확인해야 "최종 트리 이미지"라는 말이 다시 성립한다.** 실제 시세 seed를 다시 할 필요는 없다(바뀌는 것이 LSTM 서비스의 시계뿐이라면).
+
+### S. 문서 대조 — 통과 (정보 수준 차이만)
+
+대상: 지금의 `docs/DEPLOY.md`(165줄, 리드가 N-DEPLOY-2를 "로그인" 절에 반영한 판)와 `deploy/README.md`.
+
+| 문서의 말 | 실제 | 근거 |
+| --- | --- | --- |
+| 장부는 `backend/seed/`의 데모 거래, 실제 보유 내역은 이미지에도 볼륨에도 없다 | 맞음: seed 16건, 이미지·컨텍스트에 DB 없음 | E, F |
+| 시세는 실제 시세, 못 받아도 합성으로 바꾸지 않는다 | 맞음 | R2, F(네트워크 없는 시작) |
+| `/api` 쓰기는 모두 403 `demo_read_only`, 계산만 하는 요청만 허용 | 맞음: 차단 20, 허용 3(`simulate`·로그인·로그아웃) | C, F, R1 |
+| 다른 티커는 403 `demo_symbol_not_allowed` | 맞음 | C, F, R1 |
+| 방문자 주소당 분당 120회 | 맞음(121번째까지 통과, 기본값 `DEMO_RATE_LIMIT_PER_MINUTE:-120`). "방문자 주소당"은 터널 뒤에서만 성립하는데 그건 미실시 | F |
+| 예측 모델 없음으로 답한다 | 맞음: `forecasts/status`가 `trained: false`, 종목 예측 404 `not_trained` | F |
+| `/docs`·`/openapi.json` 꺼짐 | 기능상 맞음. `/openapi.json` 404, `/docs`는 200(SPA 껍데기) | N-DEPLOY-7 |
+| 데모와 실매매를 함께 켜면 시작 거부 | 맞음(순수 함수로만 확인) | D |
+| `Copy-Item .env.example .env` → `COMPOSE_PROFILES=` → `docker compose up -d --build` → `ps`에서 healthy | 같은 compose 파일을 `--env-file`로 돌려 확인(`deploy/.env`는 만들지 않음). 기본 포트 8010(`DEMO_LOCAL_PORT:-8010`) | F |
+| 첫 시작 1~3분 | 이 PC에서 13~17초 | F, R1 |
+| seed를 못 받으면 빈 데모를 띄우지 않고 약 5분 뒤 다시 시도 | 맞음: 기본 `DEMO_SEED_RETRY_DELAY` 300초 뒤 종료 코드 1, `restart: unless-stopped`(지연은 5초로 줄여 실측) | F |
+| "화면 위에 데모 안내 띠", "데모에서는 저장·수정할 수 없어요" | 코드·번들·서버 응답 문장으로만 확인. **브라우저로는 보지 못했다** | Q |
+| quick/named 터널 절차(`logs tunnel`, `TUNNEL_TOKEN`, `DEMO_HOSTNAME`, 서비스 `http://demo:8000`, `--profile quick down` 뒤 `up -d`) | 서비스 이름 `tunnel`·`tunnel-named`, 변수 이름, 앱 포트 8000, `DEMO_HOSTNAME`이 `AM_ALLOWED_HOSTS` 셋째 항목이 되는 것은 compose 파일과 일치. **실행은 하지 않았다(금지)** | compose 파일 |
+| 백업 기본 대상 `%USERPROFILE%\asset-manager-backups`, 최근 14개, `-DestDir`·`-Keep`, 서버가 켜져 있어도 된다 | 맞음(스크래치 DB로) | G |
+| 컨테이너는 이 PC의 localhost 서비스에 닿을 수 있다 → 8001에 로그인을 켠다 | 사실 | F, N-DEPLOY-6 |
+| `py -3.11 -m uv run python -m app.security.hash_password`(두 번 묻고 한 줄 출력) | 모듈·동작은 코드와 테스트로 확인. 대화형 실행은 하지 않았다(에이전트는 비밀번호를 입력하지 않는다) | `security/hash_password.py` |
+| `.env.example`에 시크릿 만드는 명령이 있다 | 맞음(`backend/.env.example:49`) | — |
+| 로그인 안 한 `/api`는 401, production은 데모나 로그인 없이는 시작 거부 | 맞음 | B, D |
+| 5번 틀리면 15분 잠금, 로그인 7일 유지, 해시·시크릿을 바꾸면 전부 로그아웃 | 맞음: 6번째 429 + `Retry-After: 900`, `Max-Age=604800`, 다른 시크릿·다른 해시로 서명한 토큰 401 | B |
+| 개발 실행에서는 로그인을 켜도 `/docs`가 열려 있다 | 맞음 | B |
+| 프로세스 1개 | 맞음(`--workers 1`, 컨테이너 프로세스 1개) | F |
+| (README) `127.0.0.1:8010`만 연다 / "확인" 절의 `Invoke-RestMethod`·`curl.exe … -X POST`·`find`·`docker inspect` | 응답 코드와 출력이 문서대로(403, 출력 없음, volume 하나·Tmpfs `/tmp`·HostIp 127.0.0.1) | E, F |
+| (README) 빌드 컨텍스트 목록 명령(PowerShell here-string) | **적힌 그대로 PowerShell에서 실행**: exit 0, 299개 파일, `.env`·`.db`·`artifacts/`·`tests/` 0건(`S_readme_context.log`) | — |
+| (README) 실패 안내 문구(`AM_ENV=production needs either AM_DEMO_MODE …`, seed 실패 설명, `DEMO_SEED_ON_FAILURE=continue`, `400 Invalid host header`) | 메시지·동작 일치. `Pool overlaps`/`DEMO_SUBNET_PREFIX`는 겹침을 만들지 않아 미실시 | D, E, F |
+
+발견:
+- **N-DEPLOY-13 (정보)** README "확인" 절의 두 명령에 작은 빈틈이 있다. ① `find /app /data /tmp /root /home …`은 컨테이너 사용자 10001로 돌아 `/root`를 읽지 못하고 `2>/dev/null`이 그걸 가린다(내가 `--user 0`으로 다시 돌려 `/root`에도 없음을 확인). 제안: 명령에 `--user 0`. ② 빌드 컨텍스트 명령은 실행할 때마다 태그 없는 이미지를 하나 남긴다(내 것은 지웠다). 제안: `-t`를 붙이고 끝에 `docker rmi`, 또는 한 줄 안내.
+
+### T. 누출 최종 확인 — 통과
+
+재현: `py -3.11 <스크래치>/run_T_leaks.py` → `T_results.txt`. `git status --short --untracked-files=all`의 수정 45개(diff의 추가 줄만)와 신규 41개(전체), 합쳐 86개 파일 7,499줄.
+
+| 검사 | 걸린 것 | 해석 |
+| --- | --- | --- |
+| scrypt 해시 문자열 | 0 | 테스트는 실행 중 `hash_password()`로 만든다 |
+| 메일 주소 | 6(`backend/tests/test_backup_db.py`의 `user@db.example`) | 메일이 아니라 "sqlite가 아닌 URL은 거부"를 보는 가짜 `postgresql://user@db.example/…`의 일부 |
+| 토큰·키 접두어(JWT, `sk-ant-`, `ghp_`, `AKIA`, `xox*`) | 1(`backend/tests/test_security.py:541`) | `fake_key = "sk-ant-api03-FAKE-0123456789"` — 시작 오류가 값을 찍지 않는지 보는 테스트의 **가짜 값**(이름에 FAKE, 길이 28) |
+| 비밀 변수에 값 대입 | 2(`docs/dev/VERIFICATION.md:1538-1539`) | 내가 1차 D에 옮겨 적은 **오류 문장**(`AM_AUTH_PASSWORD_HASH needs AM_SESSION_SECRET …`, `AM_AUTH_PASSWORD_HASH: non-numeric scrypt cost …`)이다. 변수 이름과 메시지뿐이고 값은 없다 |
+| `AM_LIVE_TRADING`을 켜는 줄 | 0 | — |
+| 40자 이상 불투명 문자열 | 0(생성 파일·잠금 파일 제외) | — |
+| 계좌 형식 숫자 | 0 | — |
+| 공인 IPv4 | 2(`test_security.py:417, 423`의 `1.1.1.1`, `6.6.6.6`) | 클라이언트 주소 헤더 테스트의 예시 주소 |
+| 사용자 프로필 경로(일반명 `user` 외) | 0 | — |
+
+- 추적 중인 파일 가운데 `.env`·`*.db*`·`*.sqlite*`·`dist/`·`*.log`·`.claude/`·`backend/artifacts/`·`node_modules/` → **0**. 신규(무시되지 않은) 파일 가운데 그런 것 → **0**. `git check-ignore`가 `deploy/.env`·`backend/.env`·`backend/asset_manager.db`·`frontend/dist/…`·`.claude/…`·`backend/artifacts/…`·`backend/.dev-backend.log`·`*.db.partial`·`*.db-wal`을 모두 무시로 답한다.
+- **실제 보유 정보**: 바뀐 문서·배포 파일에 나오는 대문자 토큰 가운데 티커로 읽히는 것은 합성(`AAA`·`BBB`·`CCC`), 벤치마크(`ARKK`·`BRK`·`SPY`·`QQQ`), 테스트 철자(`DOGE-USD`·`ETH-USD`·`GSPC`)뿐이다. 이 기록(F·R)에 내가 적은 종목과 가격은 공개 저장소의 `backend/seed/load.py`에 있는 데모 9종목과 그 거래일의 시장 종가다. **실제 장부와 대조하지는 못했다**(열 수 없으므로) — 실제 보유 종목이 우연히 이 목록과 겹치는지는 사용자만 판단할 수 있다.
+- 이 검사 뒤에 바뀐 파일(app-engineer의 N-DEPLOY-10 수정, 이 기록의 추가분)은 handback 직전에 같은 스크립트로 한 번 더 본다.
+
+### 2차 요약 (N-DEPLOY-10 수정 재확인 전의 상태)
+
+| 항목 | 판정 | 확인 수 | 비고 |
+| --- | --- | --- | --- |
+| J 재현 | 통과 | pytest 1479, vitest 309, lint·build·gen:api | 주장과 일치(테스트 수 10/11만 정정) |
+| K 정적 서빙 | 통과 | 컨테이너 + 로컬(54) | 멈춤 주장 반박 실패, 경로 탈출 0건 |
+| L 로그인 + 정적 | 통과 | L절 14 | 브라우저 미실시 |
+| M conftest 고정 | 통과 | 275 × 2 | `AM_LIVE_TRADING` 미고정은 정보(N-DEPLOY-11) |
+| N 날짜 의존 | **발견 있음** | — | ISSUE-051 수정은 통과. N-DEPLOY-10 수정 대기 |
+| O torch 없는 경로 | 통과 | 10 + R4 | 뉴스 0건의 이유는 미확인 |
+| P CI | 통과 | 10 | GitHub Actions 자체는 미실시 |
+| Q 문구·규칙 | 통과 | 코드 대조 | 브라우저 미실시 |
+| R 최종 이미지·컨테이너 | 통과 | 48 | predictions.py 수정 뒤 재빌드 스모크 필요 |
+| S 문서 | 통과 | 표 24행 | 정보 2 |
+| T 누출 | 통과 | 86개 파일 | handback 전 재실행 예정 |
+
+**발견 전체(1·2차)**
+
+| 번호 | 심각도 | 한 줄 | 언제까지 |
+| --- | --- | --- | --- |
+| N-DEPLOY-1 | 정보 | `test_import_without_torch.py`는 10건(보고의 11은 오기) | 보고·기록 정정 |
+| N-DEPLOY-2 | 정보 | 개발 모드 + 로그인에서 `/docs` 등은 세션 없이 열림 | DEPLOY.md에 반영됨(확인) |
+| N-DEPLOY-3 | 정보 | 1,024자 초과 비밀번호의 422가 입력을 되돌려 줌 | 뒤로 |
+| N-DEPLOY-4 | 정보 | 데모의 GET이 내부 쓰기·외부 호출(하원·ARK·GDELT)을 일으킴 | 알려진 한계, 뒤로 |
+| N-DEPLOY-5 | 정보 | 직접 연결에서는 `CF-Connecting-IP` 값으로 한도를 새로 받음 | 터널 뒤 확인(사용자) |
+| N-DEPLOY-6 | **보통** | 지금 8001은 로그인 없음 + 컨테이너에서 닿음 | **터널을 열기 전**(사용자 단계) |
+| N-DEPLOY-7 | 정보 | production의 `/docs`는 200(SPA 껍데기), 스키마는 안 나옴 | 뒤로 |
+| N-DEPLOY-8 | 정보 | 네트워크 없을 때 환율 조회가 502가 아니라 404 | 뒤로(배포 범위 밖) |
+| N-DEPLOY-9 | 정보 | 백업이 원본 옆에 `-shm`·`-wal`을 남김 | 머리말 보완, 뒤로 |
+| N-DEPLOY-10 | **보통** | 날짜 의존 테스트 4묶음, 첫 번째는 **2026-12-01부터 실패** | **커밋 전**(수정 중) |
+| N-DEPLOY-11 | 정보 | conftest가 `AM_LIVE_TRADING`을 고정하지 않음(실주문 구현 없음) | 실매매 브로커 전 |
+| N-DEPLOY-12 | 정보 | 데모에서 없는 `/api` 경로의 쓰기는 404가 아니라 403(JSON) | 보고 표현 정정 |
+| N-DEPLOY-13 | 정보 | README "확인" 명령 2개의 빈틈(`/root` 미포함, 태그 없는 이미지) | 뒤로 |
+
+중대 0. **커밋 전에 끝나야 하는 것은 N-DEPLOY-10 하나**(수정 → 재확인). **터널을 열기 전에 끝나야 하는 것은 N-DEPLOY-6**과 아래 미실시 가운데 터널 항목이다.
+
+**미실시와 이유**
+- 터널(quick·named) 기동과 그 뒤의 모든 확인: Cloudflare가 넣는 `CF-Connecting-IP`와 방문자별 한도, https에서의 `Secure`·`__Host-` 쿠키 저장, cloudflared의 `read_only` 동작, 공개 주소의 Host 허용 — **금지 사항이라 하지 않았다. 공개 직후 사용자가 README "확인" 절과 함께 볼 것.**
+- 브라우저로 보는 것 전부(데모 띠, 버튼 비활성, CSP 콘솔, 로그인 화면 흐름, 모바일 헤더): 브라우저 확장이 연결돼 있지 않았다.
+- GitHub Actions 실제 실행: 푸시하지 않았다.
+- 실제 DB 백업, `hash_password` 대화형 실행, 작업 스케줄러 등록: 사용자 몫.
+- 컨테이너에서의 의회·투자자 라우트, 뉴스 `warnings` 내용: 외부 호출을 아끼느라 부르지 않았거나 한 번만 불렀다.
+- N-DEPLOY-10 수정 뒤의 재확인(`shift_clock2` +0/+20/+60/+400일, 이미지 재빌드 스모크): **대기**.
+
+### 마지막 재확인 (14:19~, 코드 기준 최종 트리)
+
+리드 알림: app-engineer가 N-DEPLOY-10의 1·2번을 고쳤고 이후 바뀌는 것은 문서뿐이다. 바뀐 파일 4개 — `backend/app/services/predictions.py`(13:54), `backend/tests/test_rules_api.py`(13:54), `backend/tests/test_ml.py`(14:03), `backend/tests/conftest.py`(14:20).
+
+**N-DEPLOY-14 (정보 — 내 기록이 저장소의 가드 테스트를 깼다. 고쳤다.)**
+- 현상: 2차 M절(14:1x에 추가)에 "개발자의 `.env`에 실매매 변수와 참 값을 등호로 이어 쓴 문자열"이 들어갔고, 저장소 파일을 훑어 실매매를 켜는 문자열을 찾는 `backend/tests/test_execution.py::test_no_file_turns_live_trading_on`이 `docs\dev\VERIFICATION.md:1726`에서 1건을 잡았다(리드가 단독 실행으로 확인, app-engineer의 +30·+400일 전체 실행도 이 1건만 실패).
+- 원인: 내가 그 테스트의 존재를 알면서도(1차 H에서 그 값이 어디서도 켜지지 않음을 확인했다) 기록 문장에 리터럴을 그대로 적었다. 추가 직후에 돌린 내 누출 검사(`T_results.txt`의 "live trading switched on 1건")도 같은 줄을 잡았는데, 재확인보다 먼저 읽고 고치지 않았다.
+- 수정(14:19, 리드 지시로 "추가만" 규칙의 예외): 그 문장만 "실매매 값을 켜 두었더라도(변수 이름에 참 값)"으로 바꿨다(`fix_record_line.py`, 내 절 앞부분의 바이트는 전후 동일함을 단언). 그 테스트의 `PATTERNS` 4개를 `VERIFICATION.md` 전체에 다시 돌려 **0건**.
+- 검증: `py -3.11 -m uv run pytest tests/test_execution.py -o addopts="" -q` → **12 passed**. 아래 전체 실행에서도 통과.
+- 교훈: 검증 기록을 추가한 뒤에는 `tests/test_execution.py`를 한 번 돌린다. 변수 이름과 참 값을 붙여 쓰지 않는다.
+
+**N-DEPLOY-10 수정 확인**
+
+코드 검토:
+- `services/predictions.py`: `PredictionService.__init__`에 `today: Callable[[], date] = date.today`가 생기고 `_history_start(config, today)`가 그 값을 받는다. `_history_start`의 호출부는 `forecast()` 한 곳(110행), `PredictionService`를 만드는 곳은 `deps.py:94` 한 곳이고 인자를 주지 않으므로 **실서비스 동작은 그대로**(기본값이 실제 시계). 같은 파일 205행의 학습 창(`date.today() - 365 × years`)은 그대로 남아 있다.
+- `tests/test_ml.py`: `get_prediction_service`를 `PredictionService(market, artifacts_dir, today=lambda: TODAY)`로 바꿔 끼우는 줄과 그 도우미만 추가. 단언 8개는 그대로(`git diff`에서 지워진 줄은 import 한 줄).
+- `tests/test_rules_api.py`: autouse fixture에서 `get_rule_service`를 `RuleService(…, today=lambda: TODAY)`로 고정. `RuleService`에는 원래 `today` 인자가 있어 프로덕션 변경 없음. 단언 변화 없음. 인자 구성은 `deps.get_rule_service`와 같다.
+- `tests/conftest.py`: 환경 고정 목록에 실매매 변수를 꺼짐으로 넣는 한 줄(N-DEPLOY-11 제안 채택).
+- 약해진 것은 없지만 두 테스트 모두 이제 `deps`의 기본 배선(인자 없는 생성)을 지나지 않는다. 기본 배선은 한 줄짜리라 위험은 작다.
+
+`shift_clock2`(본문 시계까지 옮기는 내 플러그인)로 전체 pytest, 한 번에 하나씩(`N2_shift_a.log`·`N2_shift_b.log`·`N2_final.log`):
+
+| 이동 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| +0일 | 1479 passed | **1479 passed** |
+| +20일 (= 2026-12-01) | `test_ml` 1건 실패(단일 실행) | **1479 passed** |
+| +60일 | (+45일에서 `test_ml` 1 failed) | **1479 passed** |
+| +400일 | 2 failed(`test_ml`, `test_rules_api`) | **1479 passed** |
+| 플러그인 없이, 지금 시계(최종 conftest) | — | **1479 passed (161초, 14:43 시작)** |
+
+- 남은 것(고치지 않기로 한 것, 부분 실행으로 확인): `tests/test_forecasts_api.py` 10건은 +680일 통과·+800일 실패(수정 전에 좁힌 경계는 +680/+720 → **2028-09-21 ~ 2028-10-31 사이부터**), `tests/test_projection.py` 2건과 `tests/test_demo_mode.py` 2건은 +1500일 통과·+1900일 실패(**2030-12 ~ 2032-01 사이부터**). 같은 +800일 실행에서 `test_execution`·`test_ml`·`test_rules_api`는 통과(40 passed). 이 두 묶음은 리드·app-engineer가 고치지 않고 남은 위험으로 두기로 했다. ISSUE로 남겨 두지 않으면 그때 가서 원인을 다시 찾아야 한다.
+- app-engineer가 보고한 수치와 대조: +0일 1479 일치. +30·+400일의 "1 failed"는 내 기록 문자열 때문이었고(N-DEPLOY-14) 고친 뒤 +400일은 위 표와 같다. +800일의 "11 failed"는 그 1건 + `test_forecasts_api.py` 10건이라는 설명과 위 부분 실행이 맞는다.
+
+**M 재실행**(conftest에 한 줄이 늘어난 뒤, `M_results.txt`): 평범한 환경 **275 passed**, 적대적 환경 **275 passed**(각 66초). 한 줄 추가로 달라진 것 없음.
+
+**이미지 재빌드**(14:21, `E2_build.log`): `docker build -t asset-manager-demo:verify .` exit 0, 이미지 `2133934c6050`(914MB). 12:38 이미지와 `/app` 파일 해시를 비교하면 **달라진 것은 `/app/app/services/predictions.py` 하나**다. 빌드 뒤 `backend/app`·`alembic`·`seed`·`scripts`·`pyproject.toml`·`uv.lock`·`frontend`·`Dockerfile`·`deploy`에서 바뀐 파일 없음(`find -newer`), 즉 이 이미지가 코드 기준 최종 트리의 이미지다.
+- CI 스모크(P의 스크립트, 새 이미지): **10개 확인 실패 0** — 이미지 안 비밀·DB·모델 없음, 기동, 스모크 exit 0(`/api/predictions` 501 포함), 데모 잠금을 뺀 대조 실행은 exit 1.
+- 로그인 인스턴스에서 `/api/predictions*` 5개(POST 포함) → 전부 501 `lstm_not_installed`(O의 스크립트, 10개 확인 실패 0).
+- 실제 시세 seed와 컨테이너 전수(F·R)는 다시 하지 않았다. 바뀐 것이 torch가 없으면 501로 끝나는 LSTM 서비스의 시계 인자뿐이기 때문이다.
+
+**누출 검사 재실행**(수정 47 + 신규 41, 88개 파일): 실매매를 켜는 줄 **0**, 해시 0, 불투명 긴 문자열 0, 추적·신규 파일 중 로컬 전용 0. 새로 걸린 것은 전부 이 기록이 T절에서 인용한 테스트용 가짜 값과 오류 문장이다(`VERIFICATION.md`의 `sk-ant-api03-FAKE-…` 인용 1건, 변수 이름이 든 오류 문장 4건).
+
+**정리**: 내가 만든 컨테이너·볼륨·네트워크 없음(`docker ps -a`·`volume ls`·`network ls`를 시작 시점 목록과 비교), 검증용 이미지 태그는 내가 만든 세 개(`:verify`·`:verify-nocache`·내 compose가 만든 `:local`)를 전부 지웠다. 스크래치 서버 포트(8011~8018) 닫힘, 내 프로세스 없음. `deploy/.env` 없음, `%USERPROFILE%\asset-manager-backups` 생기지 않음. 8001 개발 서버는 처음부터 끝까지 건드리지 않았고 지금도 `/api/health` 200이다.
+- 내 것이 아니어서 그대로 둔 것: 익명 볼륨 `2152ee7d…`(12:36:30 생성 — 그 시각에 나는 컨테이너를 띄우지 않았다. 가설: 다른 팀원의 스모크 컨테이너가 `-v` 없이 지워지며 남음), 이미지 `asset-manager-demo:probe`·`asset-manager-deps:probe`(리드), `backend/verify_empty.db-shm`·`-wal`(11-06의 이전 검증 세션이 남긴 무시 대상 파일 — N-DEPLOY-9와 같은 현상).
+- **지금 떠 있는, 내 것이 아닌 컨테이너**: 14:40경부터 `asset-manager-demo-demo-1`(compose 기본 프로젝트 이름 `asset-manager-demo`, `127.0.0.1:8010`, healthy, 이미지 `asset-manager-demo:local` `976b356c…`, 볼륨 `asset-manager-demo_demo-data`, 네트워크 `asset-manager-demo_edge`)이 있다. 내가 띄운 것은 전부 `am-verify` 접두어였고 이것은 내가 만들지 않았다(리드나 사용자의 로컬 확인으로 보인다 — 가설). `docker ps -a`에 cloudflared 컨테이너는 없다. 건드리지 않았다.
+
+### 최종 판정 (1·2차)
+
+| 항목 | 판정 |
+| --- | --- |
+| A·J 재현 | 통과 — pytest 1479, ruff 2종, vitest 309, lint, build, gen:api 무변화 |
+| B 로그인 전수 | 통과 |
+| C 데모 전수 | 통과 |
+| D 시작 거부 | 통과 |
+| E·R 이미지 | 통과(재빌드 포함) |
+| F 컨테이너 | 통과 |
+| G 백업 | 통과 |
+| H·T 누출 | 통과(N-DEPLOY-14는 내 기록의 문제였고 수정) |
+| I·S 문서 | 통과 |
+| K 정적 서빙 / L 로그인 + 정적 | 통과 |
+| M conftest | 통과 |
+| N 날짜 의존 | 1·2번 수정 확인, 3·4번은 남은 위험(2028·2030년대) |
+| O torch 없는 경로 | 통과 |
+| P CI | 통과(Actions 자체는 미실시) |
+| Q 문구·규칙 | 통과(브라우저 미실시) |
+
+- **커밋을 막는 것: 없음.** N-DEPLOY-10의 급한 부분(2026-12-01, 2027-11)은 고쳐졌다.
+- **터널을 열기 전에 사용자가 끝내야 하는 것**: N-DEPLOY-6(8001에 로그인 켜기), 그리고 공개 직후 터널 경유 확인(방문자별 한도, https 쿠키, cloudflared 동작) — 내가 할 수 없었던 부분이다.
+- **커밋 뒤로 미뤄도 되는 것**: N-DEPLOY-3·4·5·7·8·9·12·13(정보), N-DEPLOY-10의 남은 두 묶음(ISSUE로 남길 것), N-DEPLOY-1(보고의 수 정정).
+- 브라우저로 본 것은 하나도 없다. 화면에 대한 판정은 전부 코드·번들·HTTP 응답에 근거한다.

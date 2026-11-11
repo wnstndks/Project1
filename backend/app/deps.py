@@ -28,7 +28,7 @@ from app.services.guru_compare import GuruCompareService
 from app.services.gurus import GuruService
 from app.services.learn import LearnService
 from app.services.market_data import MarketDataService, QuoteCache
-from app.services.news import NewsService
+from app.services.news import NewsService, finbert_installed
 from app.services.portfolio import PortfolioService
 from app.services.predictions import PredictionService, TrainingJobs
 from app.services.projection import ProjectionService
@@ -158,8 +158,11 @@ def get_finnhub() -> FinnhubClient | None:
 
 
 @lru_cache
-def get_scorer() -> SentimentScorer:
-    return FinBertScorer()
+def get_scorer() -> SentimentScorer | None:
+    """FinBERT, or None where its libraries are not installed (the deployment image leaves
+    out torch and transformers, D-035). The news service then skips headline scoring and
+    reports `sentiment_enabled=False`; no stand-in scorer is used."""
+    return FinBertScorer() if finbert_installed() else None
 
 
 def get_news_service(
@@ -167,7 +170,7 @@ def get_news_service(
     provider: MarketDataProvider = Depends(get_provider),
     gdelt: GdeltClient = Depends(get_gdelt),
     finnhub: FinnhubClient | None = Depends(get_finnhub),
-    scorer: SentimentScorer = Depends(get_scorer),
+    scorer: SentimentScorer | None = Depends(get_scorer),
 ) -> NewsService:
     return NewsService(db, provider, gdelt, finnhub, scorer)
 

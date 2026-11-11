@@ -10,6 +10,7 @@ import { NewsCard } from '../components/NewsCard'
 import { PriceForecastChart } from '../components/PriceForecastChart'
 import { RuleCard } from '../components/RuleCard'
 import { Card, ErrorBox, InfoRow, Muted, PnL, SegmentedControl, Skeleton } from '../components/ui'
+import { AUTH_TEXT, isDemoSymbolRefusal } from '../lib/auth'
 import { useMoney } from '../lib/currency'
 import { daysAgo, displaySymbol, formatQty, formatUsd } from '../lib/format'
 import { isSuspiciousCost } from '../lib/holdings'
@@ -17,6 +18,7 @@ import { DEFAULT_MA_PERIODS, dayChange, fiftyTwoWeek, MA_PERIODS, sma } from '..
 import { MA_STYLE, type MaLine } from '../lib/priceChart'
 import { changeLabel, quoteTimeLabel } from '../lib/quoteTime'
 import { RANGE_OPTIONS, rangeStart, type RangeKey } from '../lib/ranges'
+import { useDemoMode } from '../lib/session'
 import { PRICE_CHECK_REASON } from '../lib/transactionChecks'
 
 const CHART_RANGES = RANGE_OPTIONS.filter((o) => o.value === '1M' || o.value === '3M' || o.value === '6M' || o.value === '1Y')
@@ -40,6 +42,7 @@ export function AssetDetail() {
   const fx = useUsdKrw().data?.price
   const { currency, pick, format, formatOther, compact } = useMoney()
   const convert = useConvertCurrency()
+  const demo = useDemoMode()
   const [confirmConvert, setConfirmConvert] = useState(false)
 
   // Coins in the won view show the Upbit KRW market, the price KRW holdings are valued at.
@@ -76,6 +79,19 @@ export function AssetDetail() {
     return { all: bars, visible: bars.slice(from), prevClose, ma, extremes: fiftyTwoWeek(bars) }
   }, [allBars, scale, start, periods])
 
+  // The demo only answers for its own ledger: say so in the server's words, with a way back.
+  if (isDemoSymbolRefusal(info.error)) {
+    return (
+      <div className="py-8 text-center">
+        <p role="status" className="text-sm text-ink-2">
+          {info.error.message}
+        </p>
+        <Link to="/" className="mt-3 inline-block text-sm font-semibold text-accent hover:underline">
+          {AUTH_TEXT.demoSymbolHome}
+        </Link>
+      </div>
+    )
+  }
   if (info.error) return <ErrorBox error={info.error} />
   if (!info.data) return <Muted>불러오는 중…</Muted>
 
@@ -287,7 +303,8 @@ export function AssetDetail() {
                 <button
                   type="button"
                   className="rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-surface disabled:opacity-50"
-                  disabled={convert.isPending}
+                  disabled={convert.isPending || demo}
+                  title={demo ? AUTH_TEXT.demoReadOnly : undefined}
                   onClick={() =>
                     convert.mutate({ symbol: resolved, currency: 'KRW' }, { onSettled: () => setConfirmConvert(false) })
                   }
@@ -301,7 +318,9 @@ export function AssetDetail() {
             ) : (
               <button
                 type="button"
-                className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover"
+                className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:bg-hover disabled:opacity-50"
+                disabled={demo}
+                title={demo ? AUTH_TEXT.demoReadOnly : undefined}
                 onClick={() => setConfirmConvert(true)}
               >
                 원화(업비트)로 전환
