@@ -1065,6 +1065,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fundamentals/held": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Held Fundamentals
+         * @description Every held stock (coins have no statements and are left out).
+         */
+        get: operations["held_fundamentals_api_fundamentals_held_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fundamentals/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Symbol Fundamentals */
+        get: operations["symbol_fundamentals_api_fundamentals__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1786,6 +1823,69 @@ export interface components {
                 };
             };
         };
+        /** FundamentalsOut */
+        FundamentalsOut: {
+            /** Symbol */
+            symbol: string;
+            /** Supported */
+            supported: boolean;
+            /** As Of */
+            as_of: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Error */
+            error: string | null;
+            /** Currency */
+            currency: string | null;
+            /** Name */
+            name: string | null;
+            /** Sector */
+            sector: string | null;
+            /** Industry */
+            industry: string | null;
+            /** Summary */
+            summary: string | null;
+            /** Market Cap */
+            market_cap: number | null;
+            /** Per Trailing */
+            per_trailing: number | null;
+            /** Per Forward */
+            per_forward: number | null;
+            /** Pbr */
+            pbr: number | null;
+            /** Psr */
+            psr: number | null;
+            /** Eps Trailing */
+            eps_trailing: number | null;
+            /** Eps Forward */
+            eps_forward: number | null;
+            /** Book Value Per Share */
+            book_value_per_share: number | null;
+            /** Dividend Yield Pct */
+            dividend_yield_pct: number | null;
+            /** Operating Margin Pct */
+            operating_margin_pct: number | null;
+            /** Net Margin Pct */
+            net_margin_pct: number | null;
+            /** Roe Pct */
+            roe_pct: number | null;
+            /** Revenue Growth Pct */
+            revenue_growth_pct: number | null;
+            /** Earnings Growth Pct */
+            earnings_growth_pct: number | null;
+            /** Debt To Equity Pct */
+            debt_to_equity_pct: number | null;
+            /** Annual */
+            annual: components["schemas"]["StatementRowOut"][];
+            /** Quarterly */
+            quarterly: components["schemas"]["StatementRowOut"][];
+            /** Notes */
+            notes: ("per_negative_earnings" | "per_forward_negative_earnings" | "operating_loss_net_profit" | "operating_loss_net_profit_annual" | "operating_income_not_reported" | "zero_revenue_quarter" | "net_income_above_operating_income" | "net_income_above_operating_income_annual" | "currency_mismatch")[];
+            /** Source Ko */
+            source_ko: string;
+            /** Disclaimer Ko */
+            disclaimer_ko: string;
+        };
         /** GuruCompareOut */
         GuruCompareOut: {
             guru: components["schemas"]["GuruOut"];
@@ -1871,6 +1971,21 @@ export interface components {
             asset_class: string;
             /** Horizons */
             horizons: components["schemas"]["HeldHorizonOut"][];
+        };
+        /**
+         * HeldFundamentalsOut
+         * @description Figures of every held stock, in the order of the holdings list (largest value first).
+         *     Held ETFs are included with `supported=false`; coins are not listed.
+         */
+        HeldFundamentalsOut: {
+            /** Items */
+            items: components["schemas"]["FundamentalsOut"][];
+            /** As Of */
+            as_of: string | null;
+            /** Source Ko */
+            source_ko: string;
+            /** Disclaimer Ko */
+            disclaimer_ko: string;
         };
         /**
          * HeldHorizonOut
@@ -3173,6 +3288,23 @@ export interface components {
             symbol: string;
             /** Closes */
             closes: number[];
+        };
+        /**
+         * StatementRowOut
+         * @description One period of the income statement, in whole units of the statement currency.
+         */
+        StatementRowOut: {
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /** Revenue */
+            revenue: number | null;
+            /** Operating Income */
+            operating_income: number | null;
+            /** Net Income */
+            net_income: number | null;
         };
         /**
          * SummaryOut
@@ -5433,6 +5565,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProgressOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    held_fundamentals_api_fundamentals_held_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldFundamentalsOut"];
+                };
+            };
+        };
+    };
+    symbol_fundamentals_api_fundamentals__symbol__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundamentalsOut"];
                 };
             };
             /** @description Validation Error */

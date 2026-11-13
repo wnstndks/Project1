@@ -10,7 +10,14 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx2 as httpx
 
-from app.data.provider import Bar, CorporateEvent, MarketDataError, Quote, UpcomingEvent
+from app.data.provider import (
+    Bar,
+    CorporateEvent,
+    Fundamentals,
+    MarketDataError,
+    Quote,
+    UpcomingEvent,
+)
 
 UPBIT_URL = "https://api.upbit.com/v1"
 PAGE = 200  # Upbit's maximum candles per request
@@ -69,6 +76,9 @@ class UpbitProvider:
     def get_upcoming_events(self, symbol: str) -> list[UpcomingEvent]:
         return []  # coins have no earnings or dividends
 
+    def get_fundamentals(self, symbol: str) -> Fundamentals | None:
+        return None  # coins have no financial statements; no request is made
+
     def _get(self, path: str, params: dict, missing_ok: bool = False) -> list[dict]:
         try:
             res = self.http.get(UPBIT_URL + path, params=params)
@@ -107,3 +117,6 @@ class RoutingProvider:
 
     def get_upcoming_events(self, symbol: str) -> list[UpcomingEvent]:
         return self._for(symbol).get_upcoming_events(symbol)
+
+    def get_fundamentals(self, symbol: str) -> Fundamentals | None:
+        return self._for(symbol).get_fundamentals(symbol)

@@ -77,3 +77,13 @@ def trades_every_day(symbol: str) -> bool:
     users can hold.
     """
     return symbol.endswith("-USD") or symbol in UPBIT_MARKETS.values()
+
+
+def has_fundamentals(symbol: str) -> bool:
+    """Whether the asset can have financial statements (DECISIONS.md D-036).
+
+    False for coins (`BTC-USD`), Upbit markets (`KRW-BTC`), FX pairs (`KRW=X`) and indices
+    (`^GSPC`): providers answer None for these without a network request. True does not
+    promise data (an ETF has a price but no income statement).
+    """
+    return not (trades_every_day(symbol) or symbol.startswith(("KRW-", "^")) or "=" in symbol)

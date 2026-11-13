@@ -132,6 +132,10 @@ REVIEWED_SYMBOL_READS = {
     "/api/forecasts/{symbol}",
     "/api/forecasts/{symbol}/backtest",
     "/api/congress/trades",
+    # D-036: one provider lookup per symbol per 24 hours (1 hour after a failure), stored in
+    # the `fundamentals` table. Its sibling /api/fundamentals/held takes no parameter and
+    # only covers the ledger's stocks (test_fundamentals_stay_inside_the_demo_ledger).
+    "/api/fundamentals/{symbol}",
 }
 # Every other path or query parameter of a read route, each checked not to carry a ticker.
 # A new name fails test_every_read_parameter_is_reviewed until it is added here or to
@@ -461,10 +465,28 @@ def test_ticker_routes_refuse_symbols_outside_the_demo(demo, db, provider):
             assert res.status_code == 403, (path, name)
             assert res.json() == NOT_ALLOWED, (path, name)
             checked += 1
-    assert checked == len(REVIEWED_SYMBOL_READS) == 13
+    assert checked == len(REVIEWED_SYMBOL_READS) == 14
     # Refused before any dependency reached the provider or the cache.
     assert provider.history_calls == [] and quoted == []
+    assert provider.fundamentals_calls == []
     assert count(db, PriceBar) == 0
+
+
+def test_fundamentals_stay_inside_the_demo_ledger(demo, provider):
+    """The parameterless /held route asks the provider about the ledger's stocks only (the
+    coin has no statements), and a visitor repeating the requests causes no further lookups:
+    the table caches each symbol for a day."""
+    held = demo.get("/api/fundamentals/held")
+    assert held.status_code == 200
+    assert [item["symbol"] for item in held.json()["items"]] == [HELD]
+    assert provider.fundamentals_calls == [HELD]
+    for _ in range(3):
+        assert demo.get("/api/fundamentals/held").status_code == 200
+        assert demo.get(f"/api/fundamentals/{HELD}").status_code == 200
+        assert demo.get("/api/fundamentals/eth").status_code == 200  # a coin: no lookup at all
+    assert provider.fundamentals_calls == [HELD]
+    assert demo.get(f"/api/fundamentals/{OUTSIDE}").json() == NOT_ALLOWED
+    assert provider.fundamentals_calls == [HELD]
 
 
 @pytest.mark.parametrize(

@@ -510,3 +510,23 @@ S2-1d(예측 변동성으로 SPY·BTC 노출 조절, D-024, STRATEGIES.md S2)를
 - **GitHub Actions 첫 실행**(커밋 `68a38f6`, `agent-team` 푸시에서 CI가 처음 돎): backend 잡 통과(리눅스에서 린트·마이그레이션 일치·전체 pytest·OpenAPI 최신 여부), frontend 잡 통과, docker 잡은 이미지 점검 단계의 셸 종료 코드 문제로 실패(ISSUE-056, 이미지에는 문제 없음) → 수정 커밋 `8192c65`에서 backend·frontend·docker 세 잡 모두 통과(2026-11-11).
 
 세션이 여러 번 재시작되어(11-10 저녁, 11-11 10:16·10:40·11:06·13:50) 팀원이 그때마다 멈췄고 `SendMessage`로 다시 이어 갔다. 서브에이전트는 스크래치에 보고 파일을 쓰지 못해 리드가 체크포인트를 옮겨 적었다.
+
+## 종목별 기업 재무 지표 (2026-11-11~12)
+
+사용자 요청: "각 주식마다 영업이익, PER, PBR 같은 것". 결정은 D-036(7번에 착수 중 결정), 데이터 문제는 ISSUE-058.
+
+상태: **구현·검증 완료.** 실제 앱(8001·5173)에 반영했다(리드가 백업 뒤 실제 DB에 `5fa037bd0839` 적용).
+
+- **WP1 data-engineer** (완료): `provider.Fundamentals`·`StatementRow`와 `get_fundamentals`(yfinance·Fake·Upbit·Routing), `assets.has_fundamentals`, `services/fundamentals.py`(종목당 한 행 캐시, TTL 24시간, 실패 1시간 뒤 재시도, 마지막 값 유지, 모듈 락으로 동시 요청 중복 조회 방지). 흔한 예시 종목을 한 번씩 조회해 Yahoo 필드의 단위·기간을 주가·손익계산서로 다시 계산해 확정했다(ISSUE-058). 두 번의 후속 수정으로 "손익계산서 우선"이 됐다: 영업이익률(분기 표와 1~6%p 어긋남 → 리드 관찰), EPS·PER·PSR(Yahoo EPS가 주가를 따라 바뀜 → verifier N-FUND-1·2). `tests/test_fundamentals.py` 271건.
+- **WP1 app-engineer** (완료): 테이블 `fundamentals`(마이그레이션 `5fa037bd0839`), `schemas/fundamentals.py`·`api/fundamentals.py`(`GET /api/fundamentals/held`·`/{symbol}`, 실패는 200 + `stale` + `error`, note 코드 9개), `gen:api`, 종목 상세 "기업 재무" 카드(가치·수익성·성장·안정성·배당 + 연간/분기 손익 표 + 사업 설명 접기 + 출처·기준일·고지), 홈 "보유 주식 재무 한눈에"(기본 접힘), `lib/fundamentals.ts`(문구·표기 단일 출처, 금지어 검사). `tests/test_fundamentals_api.py` 65건, 프론트 테스트 파일 4개 추가.
+- **risk-engineer** (완료): 새 읽기 라우트 검토(종목 가드 적용, `/held`는 장부 주식만, 반복 조회 0), `tests/test_demo_mode.py` 검토 목록 갱신과 `test_fundamentals_stay_inside_the_demo_ledger`. 동시 요청 중복 조회 우려 → data-engineer가 락으로 해결.
+- **WP2 verifier** (완료, VERIFICATION.md "기업 재무 지표 검증"): 중대 0. **커밋을 막는 것 없음.**
+  - 재현: 백엔드 pytest **1,816 passed**(단계 시작 전 1,479), `ruff check`·`ruff format --check` 통과, 프론트 vitest **362 passed·49 files**(시작 전 309·45), oxlint·`npm run build` 통과, `gen:api` 재실행 해시 동일, 마이그레이션 왕복과 `alembic check` 통과.
+  - 실제 데이터 독립 대조(AAPL·MSFT·KO·JPM·TSM·SPY·BTC-USD, 종목당 조회 1회): 9개 지표를 원본 표에서 손으로 다시 계산해 일치. 배당수익률 퍼센트 스케일, 은행은 영업이익률·부채비율만 None, 통화가 다른 종목은 6개 필드 None, ETF는 `supported=false`, 코인은 yfinance 접근 0회.
+  - 서비스: TTL·실패 보류·마지막 값 유지·옛 payload 9종·스레드 10개 동시 호출에서 종목당 조회 1회. 락이나 재판정을 뺀 변이에서는 팀 테스트가 실패했다(테스트가 실제로 검증함).
+  - API 81개 확인, note 9개 조건 27/27, 데모에서 장부 밖 종목은 403 + 공급자 호출 0. 화면 문자열 63개에 금지어 없음, 손익 색·▲▼ 없음, 큰 금액 표기 47개 값이 손계산과 일치.
+  - 발견: N-FUND-1(보통, EPS·PER이 재무제표와 대조되지 않음)·2·3은 수정 뒤 해소 확인. N-FUND-7(주석의 종목 이름)은 리드가 대조해 닫았고 그 과정에서 ISSUE-059(예전 기록의 티커 목록)를 찾아 가렸다. **열린 것: N-FUND-4**(손익계산서 EPS가 Yahoo 값과 크게 달라도 경고만 남기고 채택 — 분할이 소급 조정되지 않은 표나 결산월을 바꾼 회사에서 틀릴 수 있음, 합성 표로만 재현). N-FUND-5·6·9·10·11과 N-FUND-8(통화가 다른 종목의 PER은 Yahoo 값 그대로)은 미룸. 전부 TODO_FOR_ME "팀 후속"에 있다.
+  - 미실시: 브라우저 확인(390px·다크·실제 데이터 화면) — verifier에게 도구가 없고 app-engineer는 스크래치 인스턴스에서 데스크톱 너비만 봤다.
+- **WP3 리드** (완료): D-036 7번, ISSUE-058·059, CLAUDE.md 재무 지표 문단, TODO_FOR_ME. 실제 DB: 백업(`%USERPROFILE%\asset-manager-backups`) → `alembic upgrade head` → 계산 규칙이 바뀔 때마다 캐시 테이블 `fundamentals`의 행만 지워 다시 받게 함(거래는 그대로). 실제 앱에서 다시 받아 영업이익률이 분기 표와 같고 PER × EPS가 주가와 같음을 확인했다. 브라우저로 화면을 직접 보지는 못했다(확장 연결 불안정) — 사용자가 실제 앱에서 보고 있다.
+
+이번 단계에서도 세션이 여러 번 끊겼고(11-11 밤 PC 재부팅 포함), 팀원의 명령이 승인 대기로 몇 시간씩 멈춘 구간이 있었다. 진행 메모는 리드의 세션 스크래치에 두고 `SendMessage`로 이어 갔다.

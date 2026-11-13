@@ -8,6 +8,7 @@ from app.api import (
     corporate_actions,
     forecasts,
     frontend,
+    fundamentals,
     gurus,
     health,
     imports,
@@ -94,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rules,
         coach,
         learn,
+        fundamentals,
     ):
         api.include_router(module.router)
     app.include_router(api)

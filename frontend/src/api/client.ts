@@ -292,3 +292,20 @@ export const learnApi = {
       body: JSON.stringify(body),
     }),
 }
+
+// --- Company fundamentals (D-036): published figures of a stock (PER, PBR, margins, income
+// statement) with their source and date. Facts, not a signal and not advice; no figure is judged.
+// Percent fields are on the 0-100 scale and money is in the statement currency. ---
+export type Fundamentals = Schemas['FundamentalsOut']
+export type FundamentalsStatement = Schemas['StatementRowOut']
+/** Why a figure is missing, as a code; the wording is in `lib/fundamentals.ts`. */
+export type FundamentalsNote = Fundamentals['notes'][number]
+export type HeldFundamentals = Schemas['HeldFundamentalsOut']
+
+/** Own object like `learnApi`, so edits here never collide with `api`. */
+export const fundamentalsApi = {
+  /** Every held stock in one request, largest position first; coins are left out. */
+  held: () => request<HeldFundamentals>('/fundamentals/held'),
+  /** One symbol. A coin or an ETF answers `supported: false` with every figure null. */
+  one: (symbol: string) => request<Fundamentals>(`/fundamentals/${encodeURIComponent(symbol)}`),
+}

@@ -5,6 +5,7 @@ import { useAssetInfo, useConvertCurrency, useForecast, useHistory, useHoldings,
 import { CandleChart, type CandleMa } from '../components/CandleChart'
 import { CongressMention } from '../components/CongressTrades'
 import { ForecastPanel } from '../components/ForecastPanel'
+import { FundamentalsCard } from '../components/FundamentalsCard'
 import { GuruHolders } from '../components/GuruHolders'
 import { NewsCard } from '../components/NewsCard'
 import { PriceForecastChart } from '../components/PriceForecastChart'
@@ -334,6 +335,9 @@ export function AssetDetail() {
           )}
         </Card>
       )}
+
+      {/* Published company figures (D-036): facts about the company, after "my position" and before its news. */}
+      <FundamentalsCard symbol={resolved} />
 
       <Card title="최근 해외 뉴스">
         <NewsCard symbol={resolved} />

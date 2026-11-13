@@ -2428,6 +2428,70 @@
           }
         }
       }
+    },
+    "/api/fundamentals/held": {
+      "get": {
+        "tags": [
+          "fundamentals"
+        ],
+        "summary": "Held Fundamentals",
+        "description": "Every held stock (coins have no statements and are left out).",
+        "operationId": "held_fundamentals_api_fundamentals_held_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeldFundamentalsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fundamentals/{symbol}": {
+      "get": {
+        "tags": [
+          "fundamentals"
+        ],
+        "summary": "Symbol Fundamentals",
+        "operationId": "symbol_fundamentals_api_fundamentals__symbol__get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundamentalsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4364,6 +4428,339 @@
         ],
         "title": "ForecastStatusOut"
       },
+      "FundamentalsOut": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "market_cap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Cap"
+          },
+          "per_trailing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Trailing"
+          },
+          "per_forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Forward"
+          },
+          "pbr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbr"
+          },
+          "psr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Psr"
+          },
+          "eps_trailing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eps Trailing"
+          },
+          "eps_forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eps Forward"
+          },
+          "book_value_per_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Value Per Share"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct"
+          },
+          "operating_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operating Margin Pct"
+          },
+          "net_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Margin Pct"
+          },
+          "roe_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe Pct"
+          },
+          "revenue_growth_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue Growth Pct"
+          },
+          "earnings_growth_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Growth Pct"
+          },
+          "debt_to_equity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debt To Equity Pct"
+          },
+          "annual": {
+            "items": {
+              "$ref": "#/components/schemas/StatementRowOut"
+            },
+            "type": "array",
+            "title": "Annual"
+          },
+          "quarterly": {
+            "items": {
+              "$ref": "#/components/schemas/StatementRowOut"
+            },
+            "type": "array",
+            "title": "Quarterly"
+          },
+          "notes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "per_negative_earnings",
+                "per_forward_negative_earnings",
+                "operating_loss_net_profit",
+                "operating_loss_net_profit_annual",
+                "operating_income_not_reported",
+                "zero_revenue_quarter",
+                "net_income_above_operating_income",
+                "net_income_above_operating_income_annual",
+                "currency_mismatch"
+              ]
+            },
+            "type": "array",
+            "title": "Notes"
+          },
+          "source_ko": {
+            "type": "string",
+            "title": "Source Ko"
+          },
+          "disclaimer_ko": {
+            "type": "string",
+            "title": "Disclaimer Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "supported",
+          "as_of",
+          "stale",
+          "error",
+          "currency",
+          "name",
+          "sector",
+          "industry",
+          "summary",
+          "market_cap",
+          "per_trailing",
+          "per_forward",
+          "pbr",
+          "psr",
+          "eps_trailing",
+          "eps_forward",
+          "book_value_per_share",
+          "dividend_yield_pct",
+          "operating_margin_pct",
+          "net_margin_pct",
+          "roe_pct",
+          "revenue_growth_pct",
+          "earnings_growth_pct",
+          "debt_to_equity_pct",
+          "annual",
+          "quarterly",
+          "notes",
+          "source_ko",
+          "disclaimer_ko"
+        ],
+        "title": "FundamentalsOut"
+      },
       "GuruCompareOut": {
         "properties": {
           "guru": {
@@ -4608,6 +5005,46 @@
         ],
         "title": "HeldForecastOut",
         "description": "GET /forecasts/held: every symbol GET /forecasts/{symbol} would answer for (symbols\never traded), sorted by symbol; symbols without a forecast are left out."
+      },
+      "HeldFundamentalsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalsOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "source_ko": {
+            "type": "string",
+            "title": "Source Ko"
+          },
+          "disclaimer_ko": {
+            "type": "string",
+            "title": "Disclaimer Ko"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "as_of",
+          "source_ko",
+          "disclaimer_ko"
+        ],
+        "title": "HeldFundamentalsOut",
+        "description": "Figures of every held stock, in the order of the holdings list (largest value first).\nHeld ETFs are included with `supported=false`; coins are not listed."
       },
       "HeldHorizonOut": {
         "properties": {
@@ -8405,6 +8842,57 @@
           "closes"
         ],
         "title": "SparklineOut"
+      },
+      "StatementRowOut": {
+        "properties": {
+          "period_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Period End"
+          },
+          "revenue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue"
+          },
+          "operating_income": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operating Income"
+          },
+          "net_income": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Income"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period_end",
+          "revenue",
+          "operating_income",
+          "net_income"
+        ],
+        "title": "StatementRowOut",
+        "description": "One period of the income statement, in whole units of the statement currency."
       },
       "SummaryOut": {
         "properties": {

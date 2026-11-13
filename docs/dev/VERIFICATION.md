@@ -1167,13 +1167,13 @@ verifier는 세션이 끊겨 브라우저 확인을 수행하지 못해 리드�
 
 | 확인 | 결과 |
 |---|---|
-| `GET /api/coach/diagnosis` `risk.actual` | **null**. `actual_error` = "단가 확인이 필요한 거래 5건(ASTS, GOOG, IONQ, MU, RKLB)이 있어 실제 추이의 낙폭을 계산하지 않았습니다. 거래 페이지에서 단가를 고치면 계산됩니다." 598,141%·584,636%는 응답 어디에도 없음 |
+| `GET /api/coach/diagnosis` `risk.actual` | **null**. `actual_error` = "단가 확인이 필요한 거래 5건(티커 가림)이 있어 실제 추이의 낙폭을 계산하지 않았습니다. 거래 페이지에서 단가를 고치면 계산됩니다." 598,141%·584,636%는 응답 어디에도 없음 |
 | `risk.windows` | 1y `usable=true` rows 251 vol 25.6807% dd 17.2944%, 3y `usable=true` rows 750 vol 26.6498% dd 27.9362%(2025-01-21→2025-04-08). 1차와 소수점 둘째 자리 차이는 현재가가 바뀌어 비중이 달라진 것. `coach_recompute.py`로 다시 독립 재계산 → **117항목 FAIL 0, 차이 0.0**(변동성·swing·낙폭·날짜·상관 14×14·베타 13종목), `actual is None` 분기 출력 |
 | 위반 detail | "지금 구성으로 지난 **3년**을 지났다면 가장 깊은 하락이 27.9%로, 적어 둔 허용 낙폭 20%를 넘습니다"(N-COACH-7 닫힘) |
 | `GET /api/coach/review?month=2026-10` | `suspicious_trades=5`, `flags_counted=true`, `caveats[0]` = "넣은 돈·시장 손익에 단가 확인이 필요한 거래 5건이 들어 있어 값이 왜곡될 수 있습니다." 입금·시장 손익 수치는 장부대로 그대로(설계: 사실 + 단서, 화면은 무색) |
 | `…?month=2025-06` | `suspicious_trades=0`, **`flags_counted=false`**, `caveats[0]` = "습관 점검은 최근 1년 거래만 보므로 이 달의 플래그는 세지 않았습니다."(N-COACH-2) |
 | `…?month=2026-09` | `suspicious_trades=0`(단가 오류 행은 10-19라 그 전 달은 깨끗), `flags_counted=true` |
-| `GET /api/coach/patterns` `rule_lag` | 282봉 5종목(GOOG·MU·RKLB·IONQ·ASTS, since 2025-09-12 = 조회 시작) `since_window_start=true`; XRP-USD 293·TSLA 75·SOL-USD 350은 `false`(N-COACH-6) |
+| `GET /api/coach/patterns` `rule_lag` | 282봉 5종목(티커 가림, since 2025-09-12 = 조회 시작) `since_window_start=true`; XRP-USD 293·TSLA 75·SOL-USD 350은 `false`(N-COACH-6) |
 | 응답 시간 | 새 프로세스 첫 호출 diagnosis 3.66s(15분 TTL 재동기화 포함), review 0.37~0.75s, patterns 0.31s |
 
 **(2) fail-closed 경로** (`<scratch>/coach_recheck.py` 뒷부분, `<scratch>/coach_recheck2.py`)
@@ -1972,3 +1972,321 @@ verifier는 세션이 끊겨 브라우저 확인을 수행하지 못해 리드�
 - **터널을 열기 전에 사용자가 끝내야 하는 것**: N-DEPLOY-6(8001에 로그인 켜기), 그리고 공개 직후 터널 경유 확인(방문자별 한도, https 쿠키, cloudflared 동작) — 내가 할 수 없었던 부분이다.
 - **커밋 뒤로 미뤄도 되는 것**: N-DEPLOY-3·4·5·7·8·9·12·13(정보), N-DEPLOY-10의 남은 두 묶음(ISSUE로 남길 것), N-DEPLOY-1(보고의 수 정정).
 - 브라우저로 본 것은 하나도 없다. 화면에 대한 판정은 전부 코드·번들·HTTP 응답에 근거한다.
+
+## 기업 재무 지표 검증 (2026-11-12, verifier)
+
+대상: D-036(종목별 기업 재무 지표)의 미커밋 작업 트리 — data-engineer(공급자 계약·yfinance 파서·Fake·서비스 캐시), app-engineer(모델·마이그레이션·스키마·라우터·화면), risk-engineer(데모 검토 목록). 코드·설정·다른 문서는 고치지 않았고 이 절만 추가했다.
+
+전제와 방법:
+- `backend/.env`, 실제 DB `backend/asset_manager.db`, 8001·5173 서버는 열지도 요청하지도 않았다. 스크래치 스크립트는 `Settings.model_config["env_file"] = None`으로 `.env`를 읽지 않게 하고 스크래치 DB만 썼다. 스크래치: `<스크래치>/verifier/fund/`.
+- 실제 데이터 대조는 **AAPL, MSFT, KO, JPM, TSM, SPY, BTC-USD**만 썼다. Yahoo 조회는 종목당 1회(13:25, 20초 안에 전부)이고 AAPL만 D-1을 위해 13:33에 한 번 더 받았다. 그 뒤 분석은 전부 저장본(`real1/`, `real2/`)으로 했다. 사용자의 보유 종목은 모르는 채로 검증했고, 리드가 저장한 실제 응답 파일은 열지 않았다.
+- 시각은 전부 2026-11-12 KST. app-engineer가 마지막 확인을 하던 중에 시작했다. 내가 본 변경: 13:12:46~47 `app/api/fundamentals.py`·`app/schemas/fundamentals.py`·`tests/test_fundamentals_api.py`, 13:14:08~55 프론트 `lib/fundamentals*`·컴포넌트 테스트 2개, 13:28:39~41 `openapi.json`·`schema.d.ts`(app-engineer의 `gen:api`). 그 뒤 코드 파일의 변경은 없다(`find -newermt`, 13:39와 끝에 다시 확인). 아래 수치는 따로 적지 않으면 **최종 트리**(13:39 이후 실행)의 것이다.
+
+### A. 재현 — 통과
+
+재현: `sh <스크래치>/verifier/fund/run_A_final.sh` → `A_final/summary.txt`(13:39:29~13:43:18). 1차 실행(13:13~13:31)의 로그는 같은 폴더의 `pytest_full.log`·`npm_test.log` 등.
+
+| 무엇 | 결과 | 주장과 대조 |
+| --- | --- | --- |
+| `py -3.11 -m uv run pytest -o addopts="" -q -p no:cacheprovider`(전체) | **1755 passed**(177.9초; 1차 13:13 실행도 1755, 169.4초) | 브리핑의 1748은 13:12 변경 이전 수치다. app-engineer 최종 주장 1755와 일치 |
+| 구성 | 직전 기준 1479 + `test_fundamentals.py` 229 + `test_fundamentals_api.py` 46 + `test_demo_mode.py` 신규 1 = 1755(`--collect-only` 파일별 수) | 일치 |
+| `tests/test_fundamentals.py` / `test_fundamentals_api.py` / `test_demo_mode.py` / `test_execution.py` 따로 | 229 / 46 / 41 / 12 passed | data-engineer 229 일치, app-engineer 46 일치 |
+| `ruff check . --no-cache` / `ruff format --check . --no-cache` | All checks passed / 196 files already formatted | 일치 |
+| `npm test` | **49 files, 358 tests passed** | 브리핑의 350은 13:14 변경 이전. 최종 주장 358과 일치 |
+| `npm run lint`(oxlint) / `npm run build` | exit 0(출력 없음) / exit 0 | 일치 |
+| `npm run gen:api` 전후 sha256(13:33, 13:48 두 번) | `openapi.json` `52cda1f4…`, `schema.d.ts` `4f36291d…` — **전후 동일** | 일치. 실행 전에 사본을 뜨고 다르면 되돌리게 해 두었고 되돌릴 일은 없었다 |
+| 마이그레이션(새 스크래치 DB, `mig_check.py`) | `heads` 1개 `5fa037bd0839`(down_revision `26d32d8e1b7a`) → `upgrade head` 뒤 `fundamentals` 테이블(symbol PK·fetched_at·attempted_at·payload JSON·error 300자, 전체 24개 테이블) → `alembic check` "No new upgrade operations detected" → `downgrade -1`로 테이블 삭제(23개) → `upgrade head` → `check` 통과 | 일치 |
+
+- 13:16에 뜬 두 생성 파일의 해시와 13:31의 해시가 달랐다(app-engineer가 13:28에 note 코드가 늘어난 스키마로 다시 생성). 13:33 이후로는 바뀌지 않았다.
+
+### B. 실제 데이터 단위·정의 독립 대조 — 통과 (발견 N-FUND-1·2)
+
+재현: `python probe_real.py real1 AAPL MSFT KO JPM TSM SPY BTC-USD`(13:25:13~13:25:32, 종목당 1회) → `real1/<종목>.raw.json`(공급자가 실제로 받은 `info`·연간·분기 손익계산서, 같은 `Ticker` 객체)·`.result.json`(`get_fundamentals` 반환값). `python analyze_real.py real1 …` → `analysis_real1.txt`. 분석 스크립트는 앱 코드를 import하지 않고 원본 표에서 직접 다시 계산한다. yfinance 1.7.0.
+
+| 확인 | AAPL | MSFT | KO | JPM | TSM |
+| --- | --- | --- | --- | --- | --- |
+| `per_trailing` vs 주가 ÷ `eps_trailing` | 38.8242 = 355.63 ÷ 9.16 | 27.1986 일치 | 28.7817 일치 | 14.3498 일치 | 25.6899 = 413.35 ÷ 원본 EPS 16.09(둘 다 달러, EPS 필드 자체는 None) |
+| `pbr` vs 주가 ÷ `book_value_per_share` | 46.1079 일치 | 8.2260 일치 | 11.2317 일치 | 2.5956 일치 | None |
+| `psr` vs `market_cap` ÷ Σ4분기 매출 | 10.7931 일치 | 11.1705 일치 | 8.2214 일치 | 4.7811 vs 4.5905(**+4.15%**, N-FUND-2) | None |
+| `operating_margin_pct` vs `quarterly[0]` 영업이익 ÷ 매출 | 31.1250 일치 | 49.7567 일치 | 33.3707 일치 | None(두 표 모두 영업이익 행 없음) | 58.6582 일치 |
+| `net_margin_pct` vs Σ4분기 순이익 ÷ Σ4분기 매출 | 27.6035 일치 | 41.1699 일치 | 28.6540 일치 | 33.2132 일치(Yahoo 값 34.59는 안 씀) | 51.1156 일치 |
+| `revenue_growth_pct` vs `quarterly[0]` ÷ 1년 전 분기 − 1 | 11.7219 일치 | 18.8045 일치 | 7.4267 일치 | 8.0594 일치(Yahoo 값 10.2는 안 씀, 경고 로그 1건) | 50.9462 일치 |
+| `dividend_yield_pct`(퍼센트 스케일) vs 배당 ÷ 주가 × 100 | 0.30 vs 0.304 | 0.74 vs 0.752 | **2.19** vs 2.173 | 1.93 vs 1.922 | 0.95 vs 0.912 |
+| `debt_to_equity_pct` vs 총부채 ÷ (주당순자산 × 주식 수) × 100 | 84.286 vs 84.29 | 28.465 vs 28.47 | 107.449 vs 113.7 | None(Yahoo가 은행에는 값을 주지 않음) | 11.619(대조 불가: 통화 다름) |
+| `roe_pct` vs 순이익 ÷ (주당순자산 × 주식 수) × 100(기말 자본 기준 근사) | 142.26 vs 117.9 | 34.22 vs 30.3 | 40.59 vs 39.1 | 18.01 vs 18.4 | 41.86(대조 불가) |
+
+- "일치"는 소수 4자리까지 같다는 뜻이다. 영업이익률의 반올림은 소수 4자리다(브리핑의 "2자리"는 Fake 쪽이고 실제 파서는 `_PCT_DIGITS = 4`).
+- 배당수익률은 Yahoo가 소수 2자리로 준 퍼센트를 그대로 쓴다(KO 2.19 — 0.0219도 219도 아니다). 부채비율·ROE도 퍼센트 스케일이 맞다(ROE의 차이는 평균 자본과 기말 자본의 차이, AAPL은 자사주 매입으로 자본이 작아 차이가 크다).
+- **JPM(은행)**: `operating_margin_pct`·`debt_to_equity_pct`만 None이고 나머지 13개 수치와 손익계산서(영업이익 칸만 None)는 나온다.
+- **TSM(ADR)**: `currency` = `TWD`, `market_cap`·`pbr`·`psr`·`eps_trailing`·`eps_forward`·`book_value_per_share` 6개가 None. 한 통화 안의 비율(이익률·성장률·ROE·부채비율)과 PER은 나온다.
+- **SPY**: `Ticker`·`info` 두 번만 접근(`quoteType` = `ETF`)하고 손익계산서 요청 없이 None. 서비스가 이를 `supported=False`로 저장하는 것은 C에서 확인.
+- **BTC-USD**: `yfinance` 모듈을 건드리면 실패하는 대역으로 바꿔 놓고 호출 → None, 접근 **0회**(`BTC-USD.result.json`의 `yf_calls: []`).
+- `annual`·`quarterly`는 최신순이고 4개·5개 상한을 지킨다(원본은 5~7개 열). 반환된 행 45개 전부 원본 칸과 같은 값이다(`equals_raw=True`). 금액은 통화의 원 단위다: AAPL 2026 회계연도 매출 478,834,000,000(약 4,788억 달러), TSM 분기 매출 1,494,243,284,000(TWD).
+
+**[N-FUND-2] (경미) 은행은 PSR의 매출과 손익계산서의 매출이 다르다** — JPM `psr` 4.7811은 `marketCap ÷ info.totalRevenue`(1,907억 달러)이고, 같은 응답의 분기 4개 `Total Revenue` 합은 1,987억 달러다(+4.15%). 순이익률은 손익계산서 합으로(33.21%), PSR은 Yahoo의 다른 매출 정의로 계산되어 한 카드 안에서 분모가 다르다. 파서의 PSR 대조 기준이 `info.totalRevenue`라 5% 허용 안에서 통과한다. 제안: PSR도 Σ4분기 매출이 있으면 그것과 대조하거나(어긋나면 None), ISSUE-058에 "은행은 매출 정의가 달라 PSR과 순이익률의 분모가 다르다"를 적는다. 커밋을 막지 않는다.
+
+### D. 리드가 관찰한 이상 징후 2건
+
+**D-1. `eps_trailing`이 조회 시점에 따라 2~12% 달랐다 — 파서가 아니라 Yahoo 값이 바뀐다(확인, N-FUND-1)**
+
+재현: `diff_info.py`(AAPL 13:25 대 13:33), `peek_team_probe2.py`·`compare_days.py`(팀 스크래치의 11-11 17:59 원본 탐침 `probe_raw.json`을 허용 종목 AAPL·MSFT·TSM만 걸러 읽음, 다른 종목 키는 가림), `replay_team_raw.py`(같은 11-11 원본을 오늘 파서에 넣어 11-11 파서의 출력과 대조), `eps_vs_statement.py`.
+
+1. **읽는 키**: `_first(info, "trailingEps", "epsTrailingTwelveMonths")`. 저장한 응답 8개(11-12의 5종목, 11-11의 3종목) 전부에서 두 키의 값이 같다. 키 선택은 원인이 아니다.
+2. **몇 분 간격 재조회**: AAPL 13:25 대 13:33 — `info` 188개 키 중 달라진 것은 `fulldayChange`·`fulldayChangePercent` 둘뿐, EPS 관련 키와 파서 출력 전체가 동일. 요청마다 흔들리는 값이 아니다.
+3. **파서 변경 전후**: 11-11 원본(AAPL·MSFT·TSM)을 오늘 파서에 넣으면 11-11 파서 출력과 다른 필드는 `operating_margin_pct`·`net_margin_pct`·`revenue_growth_pct` 셋뿐이고(반올림 수준, 예: AAPL 11.7 → 11.7219) `eps_*`·`per_*`는 같다. 손익계산서 우선으로 바꾼 것은 EPS를 건드리지 않았다.
+4. **Yahoo 값 자체의 변화**(11-11 17:59 응답 → 11-12 13:25 응답, 같은 분기·같은 순이익·같은 주식 수):
+
+| | 주가 | `trailingEps` | `trailingPE` | 손익계산서의 Diluted EPS |
+| --- | --- | --- | --- | --- |
+| AAPL | 348.51 → 355.63 (+2.04%) | **8.98 → 9.16 (+2.00%)** | 38.810 → 38.824 (+0.04%) | 회계연도(= 최근 12개월) 8.98 |
+| TSM | 396.48 → 413.35 (+4.26%) | **15.43 → 16.09 (+4.28%)** | 25.695 → 25.690 (−0.02%) | Σ4분기 491.28 TWD(달러 환산은 환율이 필요) |
+| MSFT | 533.16 → 521.125 (−2.26%) | 19.16 → 19.16 | 27.827 → 27.199 (−2.26%) | Σ4분기 19.16 |
+
+- AAPL과 TSM은 이익이 그대로인데 Yahoo가 **PER을 거의 고정한 채 EPS를 주가 변동만큼 바꿔** 보냈다. AAPL의 손익계산서 EPS는 8.98이므로 11-12 응답의 9.16은 재무제표가 주는 값이 아니고, 그날 주가로 계산한 PER은 39.60인데 응답은 38.82다(−2.0%). MSFT·KO·JPM은 정상이다(`trailingEps`가 Σ4분기 Diluted EPS와 ±0.4% 안, PER이 주가를 따라 움직임).
+- 그래서 같은 종목을 주가가 바뀐 뒤(또는 Yahoo가 값을 갱신한 뒤) 다시 받으면 EPS가 그날 주가 변동만큼 달라진다. 리드가 본 2~12%와 같은 종류의 현상이다. 다만 리드의 두 번(약 90분 간격, 주가 동일)을 그대로 재현하지는 못했다: 내 두 번(8분 간격)은 같았고, 리드의 저장본은 실제 보유 내역이라 열지 않았다. **가설**: Yahoo가 일부 종목의 `trailingEps`를 주가와 묶어 갱신하며 그 갱신이 리드의 두 조회 사이에 있었다. 원인(Yahoo 내부)은 확인할 수 없다.
+
+**[N-FUND-1] (보통) `eps_trailing`·`per_trailing`은 손익계산서와 대조되지 않고, Yahoo가 준 값이 재무제표와 어긋나도 그대로 나간다**
+- 현상: 위 표. AAPL 11-12 응답의 `eps_trailing` 9.16은 같은 응답의 연간 손익계산서 Diluted EPS 8.98보다 2.0% 크고 `per_trailing` 38.82는 주가 ÷ 8.98 = 39.60보다 2.0% 작다. TSM은 4.3%.
+- 원인: 파서의 대조 `trailingPE ≈ price ÷ trailingEps`는 Yahoo 값끼리의 대조라 둘이 함께 어긋나면 통과한다(`_multiple`). "손익계산서 우선"은 이익률·성장률 세 개에만 적용됐다.
+- 영향: 화면이 "EPS — 1주당 순이익 (최근 12개월)"과 "PER"을 기준일과 함께 사실로 보여 주는데, 주가가 크게 움직인 다음 날 받은 값은 그 변동 폭만큼 틀릴 수 있다. 24시간 캐시라 하루 동안 그대로다.
+- 제안(data-engineer): 분기 4개의 `Diluted EPS`가 모두 있으면 그 합(회계연도 끝이 최신 분기면 연간 칸)과 `trailingEps`를 대조하고, 어긋나면 손익계산서 EPS를 쓰고 PER을 `주가 ÷ 그 EPS`로 다시 계산하거나 둘 다 None으로 둔다(다른 필드와 같은 규칙). 통화가 다른 ADR은 대조할 수 없으니 지금처럼 Yahoo의 PER만 남긴다. 최소한 ISSUE-058에 이 현상과 수치를 적는다.
+- 커밋을 막는 결함은 아니다(값의 출처·기준일은 화면에 있고 오차는 하루 주가 변동 폭). 다만 D-036 2번("어긋나면 None")의 취지에 비추면 고치는 쪽이 맞다.
+
+**D-2. 순이익률 50% 초과·매출 성장률 300% 초과 — 허용 종목 범위에서는 원본이 그런 값이다(부분 확인)**
+- 내가 쓸 수 있는 종목 중 순이익률이 50%를 넘는 것은 TSM(51.1156%)이다. 손으로 확인: 분기 4개 순이익 763,064,422,000 + 706,561,938,000 + 572,479,752,000 + 485,465,363,000 = 2,527,571,475,000, 매출 1,494,243,284,000 + 1,270,380,250,000 + 1,134,103,440,000 + 1,046,090,449,000 = 4,944,817,423,000 → 51.1156%. Yahoo 자신의 `profitMargins`도 0.51116이고 일회성으로 튀는 분기는 없다(분기별 46~56%). **파서 오류가 아니다.**
+- 매출 성장률 300% 초과는 허용 종목에 없어 재현하지 못했다(최대 TSM 50.9%). 코드로 보면 `revenue_growth_pct`는 `quarterly[0].revenue ÷ (350~380일 전 분기 매출) − 1`이고 분모가 0 이하이면 None이다. 1년 전 분기 매출이 작으면 산술적으로 300%를 넘으며 상한·안내는 없다. 리드의 해당 종목은 `analyze_real.py`와 같은 계산(반환된 `quarterly[0]`과 1년 전 행으로 손계산)으로 확인하면 된다 — 응답 안에 행이 같이 있으므로 화면의 표만으로도 대조된다.
+- **안내 유무**: `notes` 7개 코드에 극단값·일회성 이익을 알리는 코드는 없다. 화면은 그 값을 그대로 보여 준다 → N-FUND-3.
+
+**[N-FUND-3] (경미) 순이익률이 100%를 넘거나 영업이익보다 순이익이 훨씬 큰 경우의 안내가 없다** — 순이익률 줄의 뜻풀이는 "매출 100원 중 세금까지 내고 남긴 돈 (최근 12개월)"인데, 영업 외 이익(지분 평가이익 등)이 큰 회사는 값이 100%를 넘을 수 있어 문장과 숫자가 맞지 않게 된다. 제안(app-engineer, 미뤄도 됨): 판정이 아닌 사실 코드 하나 — 최근 12개월 순이익이 같은 기간 영업이익보다 클 때 "순이익이 영업이익보다 커요(영업 외 손익 포함)". 지금 있는 `operating_loss_net_profit`과 같은 성격이다.
+
+### C. 서비스·캐시 — 통과
+
+14:02에 리드가 알렸다: N-FUND-1·2·3을 고치는 중이라 `app/data/yfinance_provider.py`·`provider.py`·`tests/test_fundamentals.py`(data-engineer, 13:59~)와 `app/api/fundamentals.py`·`app/schemas/fundamentals.py`·`tests/test_fundamentals_api.py`·프론트 파일(app-engineer)이 바뀌는 중이다. C의 대상인 `app/services/fundamentals.py`는 그대로다(sha256 `ab9a91c8…`, 수정 시각 11-11 18:34).
+
+재현: `python service_check.py`(14:05, 스크래치 파일 DB `service_dbs/`, 시계 주입, FakeProvider가 아닌 내 대역 공급자) → `service_check.log` **36개 확인, 실패 0**.
+
+| 확인 | 결과 |
+| --- | --- |
+| TTL 24시간 | 첫 조회 1회 → 23:59:59에는 요청 없이 같은 뷰 → 정확히 24:00:00에 다시 조회. 새 세션·새 서비스 인스턴스도 같은 캐시를 읽는다(프로세스 메모리 캐시 없음) |
+| error_ttl 1시간 | 첫 조회 실패: `data=None`·`fetched_at=None`·`stale=True`·`error`·`supported=True`. 59:59에는 재시도 없음, 정확히 1:00:00에 재시도. 행에는 `payload` SQL NULL, `attempted_at`만 |
+| 실패 시 마지막 값 유지 | 성공(t0) → 24시간 뒤 실패: 수치와 `fetched_at`은 t0 그대로, `stale=True`·`error`. 저장된 payload가 비트 단위로 같다(만들어 낸 값 없음). 30분 뒤에는 요청 없음, 1시간 뒤 재시도 성공이면 새 수치·`error=None`·`stale=False` |
+| ETF(공급자가 None) | `supported=False`·`stale=False`·`error=None`, payload SQL NULL + `fetched_at`으로 저장, 23시간 뒤 요청 없음, 24시간 뒤 다시 조회 |
+| 코인·`KRW-*`·`KRW=X`·`^GSPC` | 공급자 호출 0, 행 0, `supported=False` |
+| `get_many` | 순서 유지, 중복 제거, 재무제표 없는 자산은 조회 없이 끼워 넣음 |
+| 옛 스키마 payload | 필드 누락·필드 추가·이름 바뀜·숫자 자리에 문자열/bool·행의 필드 누락·날짜 형식 오류·dict 아님·symbol null 9종 모두 `from_payload` → None. TTL 안이어도 캐시 미스로 다시 조회. 다시 조회가 실패하면 반쪽 수치 없이 `data=None`·`fetched_at=None`·`stale`·`error` |
+| 동시성 | 스레드 10개(각자 세션, 파일 DB, 조회 0.15초)가 동시에 `get_many([AAA,BBB,CCC])` × 5회: **매번 종목당 1회**, 10개 결과 동일. 실패 종목도 묶음당 1회(1시간 안 두 번째 묶음은 0회, 1시간 뒤 묶음은 1회) |
+| 쓰기 순서 | 조회 4건이 도는 동안 행 수 0, 끝난 뒤 4(네트워크가 끝난 뒤 한 번에 기록) |
+| 락 범위 | 락이 잡혀 있어도 캐시에 있는 종목은 바로 답한다 |
+
+**변이 점검**(`make_mutants.py` → `run_mutants.sh`, 14:07, 원본 파일 불변 확인): 스크래치에 `backend/app`·`tests` 사본 3벌을 두고 `PYTHONPATH`로 사본을 물렸다(`which_app.py`로 사본이 import됨을 확인).
+
+| 사본 | 팀 테스트 `-k "concurrent or lock"` | 내 `service_check.py` |
+| --- | --- | --- |
+| base(그대로) | 4 passed | 36개 통과 |
+| m1: 락은 두되 "무엇을 받을지"를 락 **밖에서** 정함(재판정 제거) | **2 failed**(`…ask_the_provider_once_per_symbol`, `…try_a_failing_symbol_once_per_error_ttl`), 2 passed | C7 2개 실패 — 종목당 **10회** |
+| m2: 락 제거 | **2 failed**(같은 두 개), 2 passed | C7 2개 실패 — 종목당 10회 |
+
+- 동시성 테스트는 재판정이 빠지면 실제로 실패한다. 테스트가 장식이 아니다.
+- 정보(결함 아님): 락을 네트워크 구간 내내 잡는다(의도, 모듈 주석). 공급자 호출이 멈추면 그 프로세스의 다른 갱신도 그동안 기다린다. yfinance 요청의 타임아웃에 기대는 구조이고 캐시에 있는 종목의 응답은 막히지 않는다.
+
+### E. API — 통과 (최종 트리, 81개 확인 실패 0; 발견 N-FUND-5·6·9·11)
+
+14:15에 리드가 알렸다: N-FUND-1·2·3 수정이 모두 들어와 코드 기준 최종 트리다(마지막 코드 변경 14:05:31 `tests/test_fundamentals.py`, 14:07 `openapi.json`·`schema.d.ts`). E·F·G와 "수정 후 재확인"은 이 트리에서 했다. `notes[]` 코드는 9개가 됐다.
+
+재현: `python run_E.py`(14:28~14:29) → `E_results.txt`. 진짜 uvicorn + 진짜 `app.main.app`, 스크래치 DB, `AM_MARKET_PROVIDER=fake`. 공급자는 FakeProvider를 감싼 대역이다: 모든 호출을 기록하고, 지정한 종목의 `get_fundamentals`·`get_quote`를 실패시키고, note 조건마다 손으로 만든 `Fundamentals` 27개를 돌려준다(`scratch_server.py`). 인스턴스 3개(8041 빈 DB, 8042 합성 장부, 8043 데모)는 각 묶음이 끝날 때 내렸고 끝난 뒤 세 포트 모두 닫혀 있다. 외부 서비스 호출 0.
+
+| 확인 | 결과 |
+| --- | --- |
+| `/held`, 보유 없음 | 200, `items: []`, `as_of: null`, 출처·고지 포함, 공급자 호출 0 |
+| `/held`, 합성 장부(AAA·CCC 주식, ETFX = 재무제표 없음, SOLD = 전량 매도, ETH-USD) | 200, `[AAA, CCC, ETFX]` — `/api/portfolio/holdings`의 주식 순서 그대로, 코인·수량 0 종목 없음, ETFX는 `supported=false`에 수치 전부 null, `as_of`는 수치 있는 항목 중 가장 오래된 날짜. 조회는 종목당 1회, 다시 불러도 추가 조회 0 |
+| `/held`, 한 종목 갱신 실패 | 200 그대로, 그 항목만 `stale=true` + `error` + 마지막 수치, 목록 `as_of`는 그 오래된 날짜 |
+| `/{symbol}` 주식(`aaa` → `AAA`) | 200, 필드 전부, 4번 요청에 조회 1회. Fake 수치가 서로 맞는다(PER × EPS = PBR × 주당순자산, PSR, 이익률, 성장률), 행은 최신순·상한 안 |
+| `/{symbol}` 코인(`BTC-USD`·`btc`·`KRW-BTC`·`eth`) | 200 `supported=false`, 수치·날짜 없음, `stale=false`, 공급자 `get_fundamentals` 호출 0 |
+| `/{symbol}` ETF(공급자가 None) | 200 `supported=false`, 수치 null, notes 없음, `stale=false`, `as_of` 있음 |
+| 없는 종목(`NOPE`) | 404 × 3 |
+| 형식 오류(`!!`·14자·`1ABC`·`DOGE-USD`·`A B`·`KRW=X`·`^GSPC`) | 전부 422, 공급자에 닿지 않음 |
+| 첫 조회 실패 | **200** + `stale=true` + `error`("scratch outage for FAIL1") + `supported=true` + 수치·날짜 없음. 4번 요청에 조회 1회(1시간 보류) |
+| 성공 뒤 갱신 실패(스크래치 DB의 행을 25시간 전으로 돌림) | 200 + `stale=true` + `error` + **수치·행·notes가 이전 응답과 동일**, `as_of`는 예전 날짜. 보류가 지나면(시도 시각을 2시간 전으로) 다시 받아 `stale=false`·`error=null` |
+| 출처 | Fake에서 `source_ko` = "합성 데이터(오프라인 데모용)", 응답 본문 어디에도 "Yahoo" 없음. 고지에 "투자 조언이 아닙니다" |
+| 데모(`AM_ENV=production`·`AM_DEMO_MODE=true`) 장부 밖 종목 5개 | 전부 403 `demo_symbol_not_allowed`, 그 시점까지 **공급자 호출 0** |
+| 데모 장부 종목·코인·`/held` | 200(코인은 `supported=false`), 공급자가 받은 `get_fundamentals`는 장부 주식 3개 각 1회뿐. POST·PUT·DELETE는 403 `demo_read_only` |
+
+**note 코드 9개의 조건**(종목당 조건 하나, 기대 목록과 정확히 일치 27/27):
+
+| 코드 | 붙는 경우(확인) | 안 붙는 경우(확인) |
+| --- | --- | --- |
+| `per_negative_earnings` | PER 없음 + EPS −1.2 / EPS 0 / (EPS가 빠진 ADR) 12개월 순이익률 < 0 | PER 없음 + EPS 양수(대조 탈락) |
+| `per_forward_negative_earnings` | 예상 PER 없음 + 추정 EPS −0.5 | 추정 EPS 자체가 없음 |
+| `operating_loss_net_profit` | PER 있음 + `quarterly[0]` 영업이익 < 0 | 분기는 흑자·연간만 적자 |
+| `operating_loss_net_profit_annual` | PER 있음 + `quarterly[0]` 영업이익 없음 + `annual[0]` < 0 | 분기 값이 있으면 연간은 보지 않음 |
+| `operating_income_not_reported` | 영업이익률 없음 + 모든 행에 영업이익 없음 | 영업이익률이 있으면 안 붙음 |
+| `zero_revenue_quarter` | 영업이익률 없음 + 최신 분기 매출 0 | 영업이익률만 없고 행은 정상(이유 미상 → 코드 없음) |
+| `net_income_above_operating_income` | 연속 4분기 Σ순이익 600 > Σ영업이익 400 > 0 | 순이익률 null / 순이익 = 영업이익 / Σ영업이익 0 이하 / 4분기는 정상인데 연간만 해당 |
+| `net_income_above_operating_income_annual` | 분기 3개뿐이거나 분기 사이에 공백 + `annual[0]` 순이익 > 영업이익 > 0 | 4분기 합을 만들 수 있으면 연간은 보지 않음 |
+| `currency_mismatch` | 통화 TWD + 6개 필드 전부 null | 6개 중 하나라도 있음 / 통화 USD / 통화 null |
+
+- 함께 붙는 경우: 최신 분기만 영업적자(−5)이고 4분기 합은 흑자(595)이며 순이익 합(600)이 더 크면 `operating_loss_net_profit`(PER 줄)과 `net_income_above_operating_income`(순이익률 줄)이 같이 붙는다. 두 문장은 기간이 다르고("최근 분기" / "최근 12개월") 둘 다 사실이라 모순이 없다. 4분기 영업이익 합이 0 이하이면 뒤의 것은 붙지 않아 같은 말을 두 번 하지 않는다.
+- 저장한 실제 응답 5개를 최종 파서 → 캐시 payload 왕복 → `_notes`에 넣으면(`notes_on_real.py`) AAPL·MSFT·KO는 `[]`, JPM은 `["operating_income_not_reported"]`, TSM은 `["currency_mismatch"]`이다. payload 왕복은 5개 모두 원본과 같다.
+
+**[N-FUND-5] (경미) note 분류가 라우터에 있다** — `app/api/fundamentals.py`의 `_notes`·`_four_quarter_sums`는 손익계산서 행을 합산·비교하는 계산이다. "계산 로직은 서비스에만 둔다"는 규칙의 문구에 어긋난다(app-engineer가 스스로 꼽은 1번). 또 "연속 4분기"의 정의(80~100일)가 공급자(`_QUARTER_GAP`)와 라우터(`_QUARTER_GAP_DAYS`)에 따로 있어 한쪽만 바뀌면 순이익률의 기간과 note의 기간이 어긋난다. 동작은 맞다. 제안: 순수 함수로 서비스 계층에 옮기고 상수는 한 곳에서 가져온다. 커밋 뒤로 미뤄도 된다.
+
+**[N-FUND-6] (경미) 조회가 실패했고 저장된 수치가 없는 종목은 요청마다 `get_quote`를 한 번씩 부른다** — `_one`이 404 여부를 가리려고 시세를 묻는다. 없는 종목 `NOPE`를 3번 요청하면 `get_fundamentals`는 1회(보류)지만 `get_quote`는 **3회**다(시세 캐시는 없는 종목을 기억하지 않는다). 서비스 주석의 "상장폐지 종목이 요청마다 공급자를 두드리지 않는다"가 이 경로에서는 성립하지 않는다. 화면은 `retry: false`·staleTime 1시간이고 데모는 장부 밖 종목을 앞에서 막으므로 영향은 작다. 제안: 실패 행의 `error` 문구나 별도 표시로 "없는 종목"을 기억해 보류 시간 동안은 시세를 다시 묻지 않는다.
+
+**[N-FUND-9] (경미) `as_of`가 UTC 날짜다** — 한국 시각 00:00~08:59에 받은 값은 전날 날짜로 표시된다(app-engineer 3번). 값이 더 오래돼 보일 뿐 틀린 수치는 아니다. 제안: 시각을 UTC ISO로 내려 화면에서 현지 날짜로 바꾸거나 문구에 "UTC"를 적는다. 미뤄도 된다.
+
+**[N-FUND-11] (정보) `/held`는 시세 조회가 실패하면 502다** — `portfolio.holdings()`를 쓰기 때문이다(app-engineer 4번). AAA의 시세를 실패시키면 `/api/portfolio/holdings` 502, `/api/fundamentals/held` 502(`scratch quote outage for AAA`), `/api/fundamentals/AAA`는 200이다. 그때는 홈의 보유 목록도 같은 이유로 실패하므로 요약만 따로 숨는 일은 없다. 수량만 필요하니 장부에서 직접 읽으면 시세 장애와 분리할 수 있다(선택).
+
+### F. 화면 규칙 — 통과 (코드·번들·테스트 대조, 브라우저 미실시)
+
+재현: `npx rolldown src/lib/fundamentals.ts --file <스크래치>/fundamentals.bundle.mjs`로 최종 `lib/fundamentals.ts`를 스크래치에 묶고 `node format_check.mjs`(14:30) → `format_check.txt` **47개 확인 실패 0**. 컴포넌트 두 개는 읽어서 대조했다(둘 다 11-11 18:15 이후 변경 없음).
+
+- **금지어**: 모듈이 내보내는 문자열 63개(라벨·뜻풀이·note 문구·안내문)에 추천·사세요·파세요·오를·예상 수익·저평가·고평가·싸다·비싸다 없음. 세 파일에서 이 단어가 나오는 곳은 `lib/fundamentals.ts`의 머리 주석과 금지어 정규식 정의 두 군데뿐이다(Grep).
+- **색·화살표**: `lib/fundamentals.ts`·`FundamentalsCard.tsx`·`FundamentalsSummary.tsx`에 `text-gain`·`text-loss`·▲·▼·`PnL` 없음. 값은 전부 `text-ink`이고 부호만 쓴다(`−3.4%`, `+6.1%`).
+- **기준 기간**: 영업이익률 "(최근 분기)", 순이익률 "(최근 12개월)", 매출 성장률 "최근 분기 매출, 1년 전 같은 분기 대비", 이익 성장률 "최근 분기 이익, 1년 전 같은 분기 대비", PER "(최근 12개월 이익)", EPS "(최근 12개월)", PSR "최근 12개월 매출". 공급자의 정의와 맞다(B, 수정 후 재확인).
+- **없는 값**: null·undefined·NaN → "–". 배당수익률이 정확히 0이면 "배당 없음".
+- **적자 PER**: "적자라 PER을 계산할 수 없어요". **예상 PER**: 뜻풀이 "증권가 추정 이익 기준(추정)".
+- **출처·기준일·stale**: `Yahoo Finance · 2026-11-12 기준`, 갱신 실패·기한 경과면 `· 마지막으로 받은 값`, 카드에는 "새 값을 받지 못해 마지막으로 받은 값을 보여 줘요." + 오류 문구. 한 번도 못 받았으면 "지금은 재무 숫자를 받지 못했어요." 한 줄.
+- **고지**: 서버가 주는 `disclaimer_ko`("공개된 재무 숫자이며 투자 조언이 아닙니다. …")를 카드와 홈 요약 바닥에 출처와 함께 적는다. 카드 머리에 "회사가 공개한 재무 숫자예요. 예측이나 매매 신호가 아닙니다."
+- **홈 요약 숨김**: `held.error || !held.data || items.length === 0`이면 `null`(오류·로딩·보유 주식 없음). 컴포넌트 테스트에 같은 세 경우가 있다.
+- **무효화**: 장부를 바꾸는 mutation 6개(거래 생성·수정·삭제·전체 삭제·통화 변환·가져오기 확정)가 모두 `useLedgerMutation`을 거치고 그 안에서 `['fundamentals', 'held']`를 무효화한다.
+- **큰 금액 표기**(손계산과 대조, 전부 일치):
+
+| 입력 | 손계산 | 함수 |
+| --- | --- | --- |
+| 478,834,000,000 | 4,788.34억 → 100 이상이라 정수 | `4,788억`(달러면 `4,788억 달러`) |
+| 999,960,000,000 | 9,999.6억 → 반올림하면 10,000억이라 조로 올림 | `1.00조` |
+| 5,168,079,831,040 | 5.168조 | `5.17조` |
+| 99,999,999 | 9,999.9999만 → 억으로 올림 | `1.00억` |
+| 123,456,789 | 1.2346억 | `1.23억` |
+| 12,345 / 9,999 / 9,999.6 | 1.2345만 / 그대로 / 10,000으로 반올림 | `1.23만` / `9,999` / `1.00만` |
+| −4,512,000,000 | −45.12억 | `−45.1억` |
+| −0.4 | 0(음의 0 없음) | `0` |
+
+- 배수(`0.85배`·`7.42배`·`28.4배`·`1,234배`), 퍼센트(`18.2%`·`−3.4%`·`+6.1%`·0은 부호 없음·배당 2자리 `2.19%`), 주당 금액(`$8.98`·`−$1.23`·`39.20 TWD`), 기간(`2025.09`)도 같이 확인했다.
+- 정보: 홈 행의 "(영업적자)" 표시는 분기 기준·연간 기준 두 코드에 같은 낱말을 쓴다. 바로 옆 칸의 영업이익률(최근 분기)이 음수로 보이므로 틀린 표시는 아니지만 한 분기만 적자인 회사에도 붙는다(app-engineer 2번). 종목 상세의 문장은 "최근 분기"를 명시한다.
+- **미실시**: 브라우저 확인(390px·다크 테마·실제 Yahoo 데이터 화면). 도구가 없다. app-engineer도 영업적자·은행·ADR·stale·실패 화면은 컴포넌트 테스트로만 봤다고 했다(6번) → 리드가 실제 앱에서 한 번 눈으로 볼 것.
+
+### G. 규칙 위반 탐색 — 통과 (확인 요청 N-FUND-7, 정보 N-FUND-10)
+
+- **yfinance import**: `backend/app`·`tests`·`seed`·`scripts`·`alembic` 전체에서 `import yfinance`는 `app/data/yfinance_provider.py` 한 곳, `yf.Ticker`·`yf.download` 사용도 그 파일뿐.
+- **Fake·합성 대체**: `backend/app`에서 `FakeProvider`를 만드는 곳은 `deps.get_provider`의 `market_provider == "fake"` 분기뿐. `services/fundamentals.py`·`api/fundamentals.py`는 Fake를 import하지 않는다. 실패 경로는 C·E에서 `stale`·`error`와 마지막 값(없으면 null)만 나옴을 확인했다. Fake 실행의 응답은 출처를 "합성 데이터"라고 적는다.
+- **비밀값**: 바뀐 19개(이 기록 제외) + 새 14개 파일에서 키·토큰·해시·긴 불투명 문자열 없음. 걸린 것은 기존 테스트의 시험용 문자열(`tests/test_demo_mode.py`의 `test-only …`)과 "risk-engineer" 같은 낱말뿐.
+- **추적되면 안 되는 파일**: 새 파일 14개는 전부 소스·테스트·마이그레이션이다. DB·로그·`.env`·pickle 없음(`git status --short --untracked-files=all`). 내 스크래치는 저장소 밖이다.
+- **쓰기 라우트**: 새 라우트는 GET 둘뿐이라 데모 쓰기 허용 목록은 그대로이고, `tests/test_demo_mode.py`의 검토 목록에 `/api/fundamentals/{symbol}`이 올라 있다(41 passed).
+
+**[N-FUND-7] (보통, 리드 확인 요청) 파서 주석에 저장소에 처음 나오는 종목 이름이 있다** — `backend/app/data/yfinance_provider.py` 38행과 48~49행의 주석이 단위 확인에 쓴 종목을 이름으로 적는다. 그중 세 개(38행의 둘, 49행의 하나)는 HEAD의 어떤 파일에도 없던 이름이고, 48~49행의 두 종목은 리드가 실제 화면에서 어긋남을 본 뒤 추가로 탐침한 것이다. 나는 보유 목록을 모르므로 판정할 수 없다. **실제 보유 종목이 섞여 있으면** 공개 저장소 규칙("기록에 실제 보유 종목을 쓰지 않는다") 위반이니 리드가 대조해, 해당하면 이름을 지우고 "다른 두 종목"처럼 바꾼다. 해당하지 않으면 닫는다. 이 기록에는 그 이름을 적지 않았다.
+
+**[N-FUND-10] (정보) 캐시 payload에 파서 버전이 없다** — 필드 구성이 같으면 옛 파서가 만든 값도 24시간 동안 그대로 읽힌다. 이번처럼 계산 규칙만 바뀐 경우(EPS·PER·PSR) 실제 DB의 `fundamentals` 행을 지워야 새 규칙의 값이 보인다(리드가 이미 한 번 한 절차). 제안: payload에 규칙 버전 숫자를 넣어 다르면 캐시 미스로 취급한다(선택).
+
+### H. 수정 후 재확인 (N-FUND-1·2·3, 최종 트리) — 해소 확인, 새 발견 N-FUND-4·8
+
+대상: data-engineer의 `yfinance_provider.py`(`_eps_ttm`·`_line`·`_last_four`·`_warn_if_far`, EPS·PER·PSR 손익계산서 우선)·`provider.py` 주석·`tests/test_fundamentals.py`, app-engineer의 note 코드 2개(`net_income_above_operating_income`·`_annual`)와 화면 문구. 새 Yahoo 조회는 하지 않았다.
+
+**H-1. 재현**(`sh run_A.sh final2`, 14:15:58~14:19:40 → `A_final2/summary.txt`; `gen:api`는 14:22)
+
+| 무엇 | 결과 | 주장과 대조 |
+| --- | --- | --- |
+| 전체 pytest | **1816 passed**(171.8초) = 1479 + 271 + 65 + 1 | 일치 |
+| `test_fundamentals.py` / `test_fundamentals_api.py` / `test_demo_mode.py` / `test_execution.py` | 271 / 65 / 41 / 12 passed | 271·65 일치 |
+| `ruff check` / `ruff format --check` | All checks passed / 196 files already formatted | 일치 |
+| `npm test` / lint / build | **49 files, 362 tests passed** / exit 0 / exit 0 | 일치 |
+| `gen:api` 전후 sha256 | `openapi.json` `52e5347c…`, `schema.d.ts` `a92931dd…` — 전후 동일 | 일치 |
+
+**H-2. 저장본을 최종 파서에**(`replay_final.py real1`, 13:25에 공급자가 받은 객체를 pickle로 그대로 넣음 → `replay_final.txt`)
+
+| 종목 | `eps_trailing` | `per_trailing` | `psr` | 손계산 |
+| --- | --- | --- | --- | --- |
+| AAPL | 9.16 → **8.98** | 38.8242 → **39.6024** | 10.7931(같음) | 분기 표 최신 열의 EPS가 비어 있어 연간 열(2026-09-30, 분기 표 최신 열과 같은 기말)의 Diluted EPS 8.98. 355.63 ÷ 8.98 = 39.6024 |
+| MSFT | 19.16(같음) | 27.1986(같음) | 11.1705(같음) | 4.92 + 4.81 + 4.27 + 5.16 = 19.16 |
+| KO | 3.39 → 3.40 | 28.7817 → 28.6971 | 8.2214(같음) | 0.93 + 1.03 + 0.91 + 0.53 = 3.40. 97.57 ÷ 3.40 = 28.6971 |
+| JPM | 23.93 → 23.84 | 14.3498 → 14.4039 | 4.7811 → **4.5905** | 5.57 + 7.70 + 5.94 + 4.63 = 23.84. 시가총액 911,909,847,040 ÷ Σ4분기 매출 198,653,000,000 = 4.5905 |
+| TSM | None(그대로) | 25.6899(Yahoo 값 그대로) | None | 통화가 달라 대체 경로 |
+
+- 다른 필드와 손익계산서 행 45개는 13:25 출력과 같다. 경고 로그는 AAPL `trailingEps=9.16 is not the 8.98 …` 1건(+ 기존 JPM `revenueGrowth` 1건).
+- 팀의 11-11 원본(AAPL)을 같은 파서에 넣으면 EPS 8.98, PER 38.8096(주가 348.51)이다. 즉 이틀 사이 **EPS는 8.98로 고정되고 PER이 주가만큼(+2.04%) 움직인다.** → **N-FUND-1 해소**(재무제표 통화 = 거래 통화이고 EPS 행이 있는 종목).
+- JPM의 PSR이 순이익률과 같은 분모(Σ4분기 매출)를 쓴다. → **N-FUND-2 해소.**
+- `net_income_above_operating_income`·`_annual`의 조건·문구·함께 붙는 경우는 E의 표대로 확인했다. 순이익률 줄에 붙고 홈 행에는 표시하지 않는다(테스트 `leaves the home row unmarked …`). → **N-FUND-3 해소.**
+
+**H-3. 연간 열 경로("연간 기말 = 분기 표 최신 기말")가 틀린 12개월을 집을 수 있는가**(`replay_final.py`의 합성 사례, 시장 데이터 아님)
+- 정상(S4): 회계연도가 최신 분기에 끝나고 그 분기 EPS 칸이 비면 연간 값 = 같은 12개월. 맞다. 분기 사이에 공백이 있어도 연간 열은 그 12개월이라 맞다. 기말 날짜가 하루라도 다르면 이 경로를 타지 않고 Yahoo 쌍으로 간다(S6, 안전한 쪽).
+- **틀리는 경우(S5)**: 결산월을 바꾼 회사의 "연간" 열이 12개월이 아닐 때(예: 직전 기말 2025-12-31 다음에 2026-09-30, 9개월). 파서는 그 9개월 EPS 2.90을 최근 12개월 EPS로 쓴다(Yahoo 4.00, 경고 로그만). 드문 경우다. 제안: 직전 연간 열이 350~380일 앞일 때만 이 경로를 쓴다(연간 열이 하나뿐이면 지금처럼).
+
+**[N-FUND-4] (보통, 일부 가설) 손익계산서 EPS가 Yahoo 값과 아무리 달라도 경고만 남기고 손익계산서 값을 쓴다**
+- 현상(합성 사례): 분기 EPS가 0.50·0.50·5.00·5.00이고 Yahoo `trailingEps`가 2.00이면 `eps_trailing` 11.0·`per_trailing` 9.09가 나간다(S1). 분기 EPS 합이 2.00이고 Yahoo가 12.00이면 2.0·50.0이 나간다(S3). 둘 다 로그 한 줄뿐이다.
+- 원인: `_warn_if_far`는 기록만 하고 계산값을 쓴다(테스트 `…whatever_yahoo_says`가 이 동작을 고정). 수정 전에는 Yahoo의 쌍이 나갔다.
+- 왜 문제인가(**가설**, 실제 종목으로는 확인하지 못함 — 허용 종목에 해당 사례가 없다): ① 액면분할 직후 Yahoo의 분기 표가 분할 전 분기의 EPS를 소급 조정하지 않은 상태, ② 달러로 공시하지만 ADR 1주가 보통주 여러 주인 종목에서 표의 EPS가 보통주 기준인 경우. 이때 주가와 기준이 다른 EPS로 PER을 만들면 배수 단위로 틀린다. 재무제표 통화 = 거래 통화 조건은 이 둘을 걸러 내지 못한다.
+- 근거: `replay_final.txt` PART 2의 S1·S3·S5. 실제 데이터에서 관찰한 Yahoo와 손익계산서의 차이는 0.3~0.4%(KO·JPM)와 주가 연동분 2.0%(AAPL)·4.3%(TSM)였다.
+- 제안(data-engineer): 두 값이 크게(예: 1.5배 밖) 어긋나면 어느 쪽도 믿지 않고 EPS·PER을 None으로 둔다 — D-036 2번의 "어긋나면 None"과 같은 규칙이고, 주가 연동분은 이 폭 안이라 지금 동작이 유지된다. H-3의 연간 열 조건도 같이. 최소한 ISSUE-058에 한계로 적는다.
+- 커밋을 막지는 않는다(실제 응답에서 본 결함이 아니다). 다만 보유 종목에 최근 분할 종목이나 ADR이 있으면 커밋 전에 넣는 편이 안전하다 — 그 판단은 보유 목록을 아는 리드 몫이다.
+
+**[N-FUND-8] (정보, 한계) ADR의 PER은 Yahoo 값 그대로다** — TSM은 이틀 사이 주가가 +4.26% 움직였는데 응답의 PER은 25.695 → 25.690으로 그대로였다(EPS 15.43 → 16.09). 손익계산서의 Σ4분기 Diluted EPS는 491.28 TWD라 대조하려면 환율이 필요하다. 이번 범위 밖으로 두기로 했고(리드), 화면에는 통화 불일치 안내가 붙는다. ISSUE-058에 수치와 함께 적어 둘 것.
+
+### app-engineer가 꼽은 확인점에 대한 의견
+
+1. note 분류가 라우터에 있음 → 규칙 문구에는 어긋난다. N-FUND-5(경미, 미뤄도 됨).
+2. `operating_loss_net_profit`이 한 분기 적자에도 붙음 → 문장이 "최근 분기"를 명시하고 조건도 그 문장 그대로라 사실 서술이다. 문제 아님. 홈의 짧은 표시만 기간이 없다(F의 정보).
+3. `as_of`가 UTC 날짜 → N-FUND-9(경미).
+4. `/held`가 시세 실패 시 502 → 재현했다. 그때는 보유 목록도 같이 실패하므로 받아들일 만하다. N-FUND-11(정보).
+5. 홈을 열면 접혀 있어도 조회가 나감 → 맞다(훅이 컴포넌트 최상단). 종목당 24시간에 1회이고 동시 요청은 락으로 한 번만 나가며(C) 데모는 장부 종목만 조회한다(E). 받아들일 만하다.
+6. 390px·다크·실제 데이터 화면을 눈으로 보지 못함 → 나도 보지 못했다(도구 없음). 리드가 실제 앱에서 확인할 것.
+
+### 정리
+
+- 스크래치 인스턴스(8041·8042·8043)는 전부 내렸고 포트가 닫혀 있다. 8001·5173은 건드리지 않았고 요청도 보내지 않았다(8001 프로세스의 시작 시각은 14:15:39로, 수정이 들어온 뒤 리드가 다시 띄운 것이다. 그 무렵 실제 DB의 `-wal`·`-shm`과 서버 로그의 수정 시각이 바뀐 것도 그 때문이고 내 실행과는 무관하다). `backend/.env`·실제 DB는 열지 않았다.
+- 저장소에서 내가 바꾼 것은 이 절뿐이다. `gen:api`는 세 번 돌렸고 매번 결과가 같아 두 생성 파일의 내용은 그대로다(수정 시각만 바뀜). `npm run build`가 `frontend/dist`(무시 대상)를 다시 만들었다.
+- Yahoo 조회: 13:25에 6종목 각 1회(BTC-USD는 요청 없음), 13:33에 AAPL 1회. 그 밖에는 없다.
+
+### 최종 판정
+
+| 항목 | 판정 |
+| --- | --- |
+| A 재현 | 통과 — pytest 1816, ruff 2종, vitest 362(49 files), lint, build, `gen:api` 무변화, 마이그레이션 왕복 |
+| B 실제 데이터 단위·정의 | 통과 — 5종목 × 9개 대조, ETF·코인 경로. N-FUND-1·2는 수정 후 해소 |
+| C 서비스·캐시 | 통과 — 36개 확인, 변이 2종 모두 테스트가 잡음 |
+| D-1 EPS가 시점마다 다름 | 원인 확인(Yahoo 값이 주가를 따라 바뀜) → 수정 후 해소. ADR은 한계로 남음(N-FUND-8) |
+| D-2 극단값 | 허용 종목 범위에서는 원본 값(파서 오류 아님). 매출 성장률 300% 초과 사례는 미재현. 안내는 N-FUND-3으로 추가됨 |
+| E API | 통과 — 81개 확인, note 9개 조건 27/27, 데모 가드 |
+| F 화면 규칙 | 통과(코드·번들·테스트). 브라우저 미실시 |
+| G 규칙 위반 탐색 | 통과. N-FUND-7은 리드 확인 필요 |
+| H 수정 후 재확인 | N-FUND-1·2·3 해소. 새 발견 N-FUND-4 |
+
+| 번호 | 심각도 | 상태 |
+| --- | --- | --- |
+| N-FUND-1 EPS·PER이 재무제표와 대조되지 않음 | 보통 | **해소**(H-2) |
+| N-FUND-2 은행 PSR의 분모 | 경미 | **해소**(H-2) |
+| N-FUND-3 순이익 > 영업이익 안내 없음 | 경미 | **해소**(E·H-2) |
+| N-FUND-4 손익계산서 EPS를 무조건 채택(큰 어긋남·12개월 아닌 연간 열) | 보통(일부 가설) | 열림 |
+| N-FUND-5 note 분류가 라우터에, 분기 간격 상수 중복 | 경미 | 열림 |
+| N-FUND-6 실패 종목마다 요청당 `get_quote` 1회 | 경미 | 열림 |
+| N-FUND-7 파서 주석의 종목 이름(보유 종목 여부 대조) | 보통(확인 요청) | 열림 |
+| N-FUND-8 ADR의 PER은 Yahoo 값 그대로 | 정보(한계) | 기록만 |
+| N-FUND-9 `as_of`가 UTC 날짜 | 경미 | 열림 |
+| N-FUND-10 캐시에 파서 버전 없음(규칙을 바꾸면 행을 지워야 함) | 정보 | 기록만 |
+| N-FUND-11 `/held`는 시세 실패 시 502 | 정보 | 기록만 |
+
+- **커밋 전에 할 것**: N-FUND-7(리드가 주석의 종목 이름을 보유 목록과 대조, 해당하면 삭제). N-FUND-4는 보유 종목에 최근 분할 종목·ADR이 있으면 커밋 전에, 없으면 ISSUE-058에 한계로 적고 뒤로.
+- **커밋 뒤 실제 앱에서 할 것**: 실제 DB의 `fundamentals` 행을 지워 새 규칙의 값이 보이게 한다(N-FUND-10). 브라우저로 종목 상세·홈 요약을 한 번 본다(390px·다크 포함).
+- **뒤로 미뤄도 되는 것**: N-FUND-5·6·9·11, N-FUND-8(환율이 필요한 범위 밖 작업).
+- 화면을 눈으로 본 것은 없다. 화면에 대한 판정은 전부 코드·번들·컴포넌트 테스트·HTTP 응답에 근거한다.
+
+### 추가 (14:46 이후) — N-FUND-7 닫음, 주석 수정 뒤 재확인
+
+리드가 14:46~14:47에 두 가지를 바꿨다고 알렸고 디스크에서 확인했다. 위의 "최종 판정" 표는 그 전(14:45) 상태이고 이 절이 마지막 상태다.
+
+- **N-FUND-7 닫음**: 리드가 보유 목록과 대조했다 — 새 코드의 종목 이름은 해당 없음. 그래도 `backend/app/data/yfinance_provider.py` 머리 주석의 두 줄을 종목 이름 없이("a seventh name …", "an eighth …") 바꿨다(14:46:48). 대조 중에 이 파일의 **예전 절**(포트폴리오 코치 검증, 2026-10-27)의 두 줄에서 공개 규칙에 걸리는 티커 목록을 찾아 "티커 가림"으로 바꿨다(14:46:39, ISSUE-059). 그 두 줄과 파일 전체의 줄바꿈(CRLF → LF)은 리드의 변경이고 내 절의 내용은 그대로다. 이 절에는 그 이름들을 적지 않았다.
+- **주석 수정이 코드에 영향이 없는지**(`ast_compare.py`, 14:48): 14:07의 내 사본(sha256 `0af3ed2d…`, H에서 검증한 그 파일)과 현재 파일(`1d2d4daf…`)의 구문 트리가 **동일**하다(코드·docstring 불변). 달라진 줄은 5개(2줄 삭제, 3줄 추가)이고 전부 주석 줄이다. 저장본 재생(`replay_final.py real1`)의 출력도 14:17의 것과 바이트 단위로 같다 — AAPL EPS 8.98·PER 39.6024, JPM PSR 4.5905 그대로.
+- **다시 돌린 재현**(`sh run_A.sh final3`, 14:48:30~14:52:13 → `A_final3/summary.txt`): 전체 pytest **1816 passed**(171.2초), `ruff check` All checks passed, `ruff format --check` 196 files already formatted, `test_fundamentals.py` 271 / `test_fundamentals_api.py` 65 / `test_demo_mode.py` 41 / `test_execution.py` 12 passed, `npm test` 49 files 362 passed, lint·build exit 0. 리드의 주장(271 + 12 = 283 passed, ruff 2종 통과)과 일치.
+- 같은 트리에서 C와 E도 한 번 더 돌렸다(14:51~14:53): `service_check.py` 36개 통과, `run_E.py` 81개 통과, 스크래치 포트 닫힘.
+- 14:08 이후 코드 파일의 변경은 이 주석 수정 하나뿐이다(`find -newermt`, 14:53에 다시 확인; `openapi.json`·`schema.d.ts`의 14:22는 내 `gen:api`가 같은 내용으로 다시 쓴 것).
+
+**바뀐 판정**
+
+| 번호 | 상태 |
+| --- | --- |
+| N-FUND-7 | **닫음** — 리드 대조 완료, 새 코드에는 해당 없음, 주석은 일반 표현으로 바꿈, 예전 기록의 두 줄은 가림(ISSUE-059) |
+| N-FUND-5·6·9·10·11 | 리드 판단으로 커밋 뒤로 미룸. 14:53 현재 `TODO_FOR_ME.md`·`PROGRESS.md`에는 아직 이 번호들이 없다(리드가 적기로 함) |
+| N-FUND-4 | 열림 — 커밋을 막지 않음. 가드를 넣을지, ISSUE-058에 한계로 적을지는 리드·data-engineer 결정 |
+| N-FUND-8 | 한계로 기록(범위 밖) |
+
+- **커밋을 막는 것: 없음.**
+- 정보: 가려진 두 줄은 작업 트리에서만 바뀐 것이고 이미 올라간 커밋 이력에는 남아 있다. 이력을 정리할지는 사용자 결정이며 리드가 `TODO_FOR_ME.md`에 적어 두었다(ISSUE-059).

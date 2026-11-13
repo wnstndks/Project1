@@ -6,6 +6,7 @@ import { useCorporateActions, useHoldings, usePortfolioHistory, useSparklines, u
 import { AllocationBar } from '../components/AllocationBar'
 import { CoachCard } from '../components/CoachCard'
 import { CompareCard } from '../components/CompareCard'
+import { FundamentalsSummary } from '../components/FundamentalsSummary'
 import { HoldingsList } from '../components/HoldingsList'
 import { KimchiPremium } from '../components/KimchiPremium'
 import { LearnCard } from '../components/LearnCard'
@@ -92,6 +93,9 @@ export function Dashboard() {
           <Muted>보유 중인 종목이 없습니다.</Muted>
         )}
       </Card>
+
+      {/* Folded; renders nothing while loading, on an error or when no stock is held. */}
+      <FundamentalsSummary />
 
       <Card title="앞으로의 예상 자산">
         <PortfolioForecastCard usdKrw={s.usd_krw} />

@@ -7,6 +7,7 @@ import {
   coachApi,
   compareApi,
   congressApi,
+  fundamentalsApi,
   learnApi,
   type ActionStatus,
   type CoachPolicyInput,
@@ -120,6 +121,8 @@ function useLedgerMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>
       void client.invalidateQueries({ queryKey: ['coach'] })
       // The learn coach's evidence and week list are built on the trade log too.
       void client.invalidateQueries({ queryKey: ['learn'] })
+      // Which stocks the home fundamentals summary lists follows the holdings.
+      void client.invalidateQueries({ queryKey: ['fundamentals', 'held'] })
     },
   })
 }
@@ -390,6 +393,25 @@ export function useSaveProgress(id: string) {
     },
   })
 }
+
+// --- Company fundamentals (D-036): published figures, not a signal. Keys under ['fundamentals']. ---
+
+// The server caches a symbol for a day, so an hour of staleness here costs nothing; a failure is
+// shown, not retried (an unknown ticker stays unknown).
+const fundamentalsQuery = { staleTime: 60 * 60_000, retry: false } as const
+
+/** One symbol's figures (asset detail). Symbols are upper-case, so none collides with 'held'. */
+export const useFundamentals = (symbol: string) =>
+  useQuery({
+    queryKey: ['fundamentals', symbol] as const,
+    queryFn: () => fundamentalsApi.one(symbol),
+    ...fundamentalsQuery,
+    enabled: !!symbol,
+  })
+
+/** Every held stock's figures in one request (home summary); refetched after a ledger change. */
+export const useHeldFundamentals = () =>
+  useQuery({ queryKey: ['fundamentals', 'held'] as const, queryFn: fundamentalsApi.held, ...fundamentalsQuery })
 
 // --- Well-known investors and "same money" benchmarks (Compare page) ---
 const compareKeys = {

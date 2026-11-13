@@ -509,3 +509,21 @@ class LessonProgress(Base):
     quiz_total: Mapped[int | None] = mapped_column(Integer)
     quiz_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC
     updated_at: Mapped[datetime] = mapped_column(DateTime)  # UTC
+
+
+class FundamentalsRow(Base):
+    """Cached company fundamentals of one stock (services/fundamentals.py, DECISIONS.md D-036).
+
+    One row per symbol. `payload` is the provider's `Fundamentals` as JSON from the last
+    successful fetch and `fetched_at` is when that fetch succeeded. `attempted_at` is the
+    last attempt, successful or not; it holds the retry back after a failure. `error` set
+    means the last attempt failed and `payload`, if any, is from an earlier success (stale).
+    """
+
+    __tablename__ = "fundamentals"
+
+    symbol: Mapped[str] = mapped_column(String(20), primary_key=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC, last success
+    attempted_at: Mapped[datetime | None] = mapped_column(DateTime)  # UTC, last attempt
+    payload: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(String(300))

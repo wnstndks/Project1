@@ -24,6 +24,7 @@ from app.services.congress import CongressService
 from app.services.corporate_actions import CorporateActionService
 from app.services.events import EventService
 from app.services.forecasts import ForecastService, ForecastTraining
+from app.services.fundamentals import FundamentalsService
 from app.services.guru_compare import GuruCompareService
 from app.services.gurus import GuruService
 from app.services.learn import LearnService
@@ -274,3 +275,11 @@ def get_learn_service(
     source = "fake" if settings.market_provider == "fake" else "yfinance"
     events = EventService(db, provider, source=source)
     return LearnService(db, coach, rules, events=events, settings=settings)
+
+
+def get_fundamentals_service(
+    db: Session = Depends(get_db), provider: MarketDataProvider = Depends(get_provider)
+) -> FundamentalsService:
+    """Published company figures per stock (D-036), cached in the `fundamentals` table. The
+    same market provider supplies them (synthetic ones when `AM_MARKET_PROVIDER=fake`)."""
+    return FundamentalsService(db, provider)
